@@ -1,0 +1,136 @@
+/* Nandou liquid glass. Specification: /DESIGN.md. Imported after feature styles. */
+:root {
+  --glass-surface: rgb(26 39 42 / .50);
+  --glass-control: rgb(38 52 57 / .50);
+  --glass-reading: rgb(23 34 37 / .50);
+  --glass-line: rgb(208 248 255 / .16);
+  --glass-rim: rgb(235 253 255 / .38);
+  --glass-accent: #b3edf3;
+  --glass-ink: #eef9fa;
+  --glass-muted: #9cb5bc;
+  --glass-shadow: inset 0 1px 0 rgb(242 255 255 / .13), inset 0 -1px 0 rgb(0 0 0 / .14), 0 12px 36px rgb(0 0 0 / .13);
+  --ease-out: cubic-bezier(.23,1,.32,1);
+  --ease-in-out: cubic-bezier(.77,0,.175,1);
+  --motion-press: 120ms;
+  --motion-popover: 320ms;
+  --motion-dialog: 380ms;
+}
+html { scrollbar-gutter: stable; color-scheme: dark; }
+.composer { z-index: 10; }
+.composer:has(.popover),.agent-composer:has(.agent-preferences,.agent-skill-picker) { backdrop-filter:none; -webkit-backdrop-filter:none; }
+.scene-presets { position:relative; z-index:1; }
+.glass-defs { position: absolute; pointer-events: none; }
+/* The optical layer is separate from text and artwork. */
+:is(.auth-card,.composer,.agent-composer,.modal,.popover,.agent-preferences,.agent-skill-picker) {
+  background: linear-gradient(135deg,rgb(210 251 255 / .055),transparent 46%,rgb(125 212 225 / .025)),var(--glass-surface);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--glass-shadow),0 22px 70px #0003;
+  backdrop-filter: blur(22px) saturate(135%);
+  -webkit-backdrop-filter: blur(22px) saturate(135%);
+}
+:is(.auth-card,.composer,.agent-composer)::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: radial-gradient(ellipse at 0 0,#ecfeff1f,transparent 46%),linear-gradient(125deg,#f1feff0a,transparent 27%,transparent 72%,#b7f5ff0a);
+  filter: url(#nandou-glass-rim);
+}
+.composer,.agent-composer { position: relative; }
+.auth-shell .auth-card { background: linear-gradient(135deg,#d2fbff0e,transparent 46%,#7dd4e106),var(--glass-surface); backdrop-filter: blur(22px) saturate(145%); }
+.auth-orbit { width: 100vw; height: 100dvh; right: auto; bottom: auto; }
+.auth-orbit-scrim { background: radial-gradient(ellipse 350px 450px at 50% 48%,#10141533,transparent 90%),linear-gradient(180deg,#10141570,transparent 18%,transparent 84%,#10141590); }
+.auth-confirm-reveal { overflow: hidden; }
+.auth-shell .auth-field input { background: #0b181b40; border-color: var(--glass-line); box-shadow: inset 0 1px 5px #0001; }
+.auth-card .auth-intro,.auth-card .auth-form-footer button { color: #abc0c5; }
+.auth-card .auth-privacy { color: #96b1b8; }
+.auth-main { overflow-anchor: none; }
+
+/* All action families share hover, press, focus and disabled behavior. Image canvases stay optically neutral. */
+:is(button,.quiet-button,.primary-button,.guide-link,.agent-guide-link) { transition: background-color 160ms ease,border-color 160ms ease,color 160ms ease,box-shadow 160ms ease,transform var(--motion-press) var(--ease-out); }
+:is(.toolbar-button,.scene-chip,.prompt-library-button,.quiet-button,.icon-button,.history-refresh-button,.history-delete-button,.guide-link,.agent-guide-link,.agent-new,.account-usage-button,.account-logout-button,.auth-motion-toggle,.agent-composer-toolbar>button,.agent-question-options>button,.agent-starters>button) {
+  border: 1px solid var(--glass-line); background: var(--glass-control); box-shadow: inset 0 1px 0 #eeffff0b,0 2px 8px #0001;
+  backdrop-filter: blur(12px) saturate(125%); border-radius: 12px;
+}
+.composer .toolbar-button { border: 1px solid #d0f8ff14; background: #8cc9d20b; border-radius: 12px; }
+.agent-guide-link { padding: 11px 12px; margin-top: 8px; }
+.agent-sidebar>.agent-guide-link:first-of-type { margin-top: auto; }
+.agent-model-guide-link { margin-top: 8px; }
+.agent-composer-toolbar>button { padding: 7px 10px; }
+:is(.primary-button,.auth-submit,.composer .generate-button,.agent-send) {
+  background: linear-gradient(150deg,#ecffffd9,#b4f0f1b8 45%,#83d4dfb8);
+  color: #102f35; border: 1px solid #d3faff9c;
+  box-shadow: inset 0 1px 1px #ffffffa6,inset 0 -2px 4px #4db6c333,0 4px 18px #87e3ee12;
+  backdrop-filter: blur(12px) saturate(130%);
+}
+button:focus-visible,a:focus-visible { outline: 2px solid var(--glass-accent); outline-offset: 3px; }
+button:disabled { opacity: .43; box-shadow: none; }
+@media (hover:hover) and (pointer:fine) {
+  :is(.toolbar-button,.scene-chip,.prompt-library-button,.quiet-button,.icon-button,.history-refresh-button,.history-delete-button,.guide-link,.agent-guide-link,.agent-new,.account-usage-button,.account-logout-button,.auth-motion-toggle,.agent-composer-toolbar>button,.agent-question-options>button,.agent-starters>button):hover:not(:disabled) {
+    background: #b6edf21b; border-color: #d0f8ff4a; box-shadow: inset 0 1px 0 #f5ffff24,0 4px 20px #0002; transform: translateY(-1px);
+  }
+  :is(.primary-button,.auth-submit,.generate-button,.agent-send):hover:not(:disabled) { background-color: #d2faff; box-shadow: inset 0 1px 0 #fff9,0 5px 22px #96e9f026; }
+}
+button:active:not(:disabled):not(.artwork-open,.showcase-open,.reference-preview,.agent-result-image) { transform: scale(.97); }
+
+/* Shared lenses move between adjacent choices. Foreground content never gets refracted. */
+.glass-tabs { position: relative; isolation: isolate; background: #8dc9d10a; border: 1px solid #c7f4fa16; }
+.glass-tabs>button { position: relative; isolation: isolate; background: transparent; border-radius: inherit; }
+.glass-tabs>button>:not(.glass-tab-lens,.glass-tab-hover) { position: relative; z-index: 1; }
+.glass-tabs>button.selected,.glass-tabs>button.active,.glass-tabs>button:hover { background: transparent; box-shadow: none; }
+.glass-tab-lens,.glass-tab-hover { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1; }
+.glass-tab-lens {
+  background: linear-gradient(140deg,#d8fbff38,#a6e3ef14 55%,#a6e3ef2c); border: 1px solid #d8fbff44;
+  box-shadow: inset 0 1px 0 #f5ffff6b,inset 0 -1px 2px #07232624,0 3px 10px #0002;
+  backdrop-filter: blur(12px) saturate(160%);
+}
+.glass-tab-hover { background: #c7f8ff10; box-shadow: inset 0 1px 0 #eaffff14; }
+.glass-tab-lens.is-hovering { background:linear-gradient(135deg,#dafbff40,#b4e8f123); border-color:#e3fcff55; }
+.creation-tabs.glass-tabs { padding: 3px; gap: 4px; border-radius: 28px; }
+.creation-tabs.glass-tabs>button { border-radius: 24px; }
+.creation-tabs.glass-tabs>button.selected { color: #eefcfd; border-color: transparent; }
+.creation-tabs .glass-tab-lens { background: linear-gradient(130deg,#dbfaff66,#a7e8ef2e); }
+.workspace-mode-switch.glass-tabs { padding: 4px; gap: 3px; }
+.workspace-mode-switch.glass-tabs button.active { color: #c4f4f9; }
+.auth-tabs.glass-tabs { border-radius: 14px; padding: 4px; }
+.auth-tabs.glass-tabs button { border-radius: 10px; }
+.ratios.glass-tabs>button { border-radius: 12px; }
+.glass-tabs .ratio-shape { flex: none; }
+.agent-ratio-choices.glass-tabs>button.selected { border-color: transparent; }
+
+/* Reading surfaces use stronger blur to stay legible at the shared opacity. */
+:is(.modal,.popover,.agent-preferences,.agent-skill-picker) { background-color: var(--glass-reading); backdrop-filter:blur(32px) saturate(125%); }
+.popover:before { background: #243237; }
+:is(.popover,.agent-preferences,.agent-skill-picker) { animation: glass-popover var(--motion-popover) var(--ease-out) both; transform-origin: var(--pointer-left,24px) top; }
+.popover[data-motion-layer] { animation:none; }
+:is(.agent-preferences,.agent-skill-picker,.quote-popover) { transform-origin: 28px bottom; }
+.modal-backdrop { background: #050c1080; backdrop-filter: blur(8px); animation: glass-backdrop var(--motion-dialog) var(--ease-out) both; }
+.modal-backdrop>[role=dialog] { animation: glass-dialog var(--motion-dialog) var(--ease-out) both; }
+@keyframes glass-popover { from {opacity:0; transform:translateY(12px) scale(.94)} to {opacity:1; transform:translateY(0) scale(1)} }
+@keyframes glass-dialog { from {opacity:0; transform:translateY(24px) scale(.94)} to {opacity:1; transform:translateY(0) scale(1)} }
+@keyframes glass-backdrop { from {opacity:0} to {opacity:1} }
+.history-delete-button { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; font-size: 11px; color: #a9c3ca; }
+.history-admin-filters .history-audit-toggle { grid-column: 1 / -1; display: flex; flex-direction: row; gap: 8px; align-items: center; }
+.history-audit-toggle input { accent-color: #a7e8ef; width: 14px; height: 14px; }
+
+.document-backdrop { z-index: 80; padding: 24px; animation: none; }
+.document-backdrop>.document-reader { animation: none; }
+.document-reader { width: min(1440px,100%); height: min(92dvh,1100px); display:flex; flex-direction:column; overflow:hidden; border-radius:26px; padding:0; max-height:none; }
+.document-reader>header { flex:none; min-height:64px; padding:12px 20px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--glass-line); }
+.document-reader>header>div { display:flex; align-items:center; gap:12px; }
+.document-reader>header strong { font-size:15px; }
+.document-reader>header span { color:var(--glass-muted); font-size:11px; }
+.document-reader iframe { border:0; width:100%; flex:1; min-height:0; background:#101415; }
+.document-loading { position:absolute; inset:80px 0 auto; text-align:center; color:var(--glass-muted); font-size:12px; pointer-events:none; }
+@media(max-width:680px) {
+  .document-backdrop { padding:8px; }
+  .document-reader { height:96dvh; border-radius:19px; }
+  .document-reader>header { padding:10px 14px; min-height:54px; }
+  .document-reader>header span { display:none; }
+  .agent-composer-toolbar>button { padding:5px 6px; }
+  .glass-tabs { max-width:100%; }
+}
+@media(prefers-reduced-motion:reduce) {
+  :is(button,a,.modal,.popover,.agent-preferences,.agent-skill-picker,.modal-backdrop) { animation:none!important; transition-duration:0s!important; }
+  button:hover,button:active { transform:none!important; }
+}
+@supports not (backdrop-filter:blur(1px)) {
+  :is(.auth-card,.composer,.agent-composer,.modal,.popover,.agent-preferences,.agent-skill-picker) { background-color:#1e2a2e; }
+}

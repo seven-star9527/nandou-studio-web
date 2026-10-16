@@ -98,8 +98,9 @@ export default function AuthOrbit() {
     }
     wake.current = schedule;
     function layout() {
-      width = element!.clientWidth; height = element!.clientHeight;
-      if (!width || !height) return;
+      const nextWidth = window.innerWidth, nextHeight = window.innerHeight;
+      if (!nextWidth || !nextHeight || (nextWidth === width && nextHeight === height)) return;
+      width = nextWidth; height = nextHeight;
       renderer.setSize(width, height);
       camera.aspect = width / height;
       camera.position.z = height / (2 * Math.tan(THREE.MathUtils.degToRad(22.5)));

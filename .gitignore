@@ -4,6 +4,7 @@
 !/.gitattributes
 !/README.md
 !/AGENTS.md
+!/DESIGN.md
 !/frontend/
 !/gateway/
 !/integrations/

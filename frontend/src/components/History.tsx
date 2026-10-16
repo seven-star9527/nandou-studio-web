@@ -1,3 +1,4 @@
+import GlassTabs from './GlassTabs';
 import { useEffect, useRef, useState } from 'react';
 import type { Artwork, CloudTask, Job } from '../types';
 import { useModalDialog } from '../useModalDialog';
@@ -60,12 +61,13 @@ function GenerationStatus({ job, stop, remove }: { job: Job; stop: () => void; r
   </div>;
 }
 
-export default function History({ artworks, cloudTasks, job, loading, error, refresh, stop, reuse, hideTask, isAdmin = false }: {
+export default function History({ artworks, cloudTasks, job, loading, error, refresh, stop, reuse, hideTask, currentUserId, isAdmin = false }: {
   artworks: Artwork[]; job: Job | null; loading: boolean; error: string;
   cloudTasks: CloudTask[];
   refresh: () => void; stop: () => void; reuse: (artwork: Artwork) => void;
-  hideTask: (taskId: string) => Promise<void>; isAdmin?: boolean;
+  hideTask: (taskId: string) => Promise<void>; isAdmin?: boolean; currentUserId: string;
 }) {
+  const [showRemoved, setShowRemoved] = useState(false);
   const [filter, setFilter] = useState<HistoryScope>('all');
   const [filters, setFilters] = useState<HistoryFilters>(INITIAL_HISTORY_FILTERS);
   const [selected, setSelected] = useState<Artwork | null>(null);
@@ -77,15 +79,24 @@ export default function History({ artworks, cloudTasks, job, loading, error, ref
   useModalDialog(Boolean(selected), dialog, () => setSelected(null));
   useModalDialog(Boolean(removing), removeDialog, () => { if (!removeBusy) setRemoving(null); });
   const appliedFilters = isAdmin ? filters : INITIAL_HISTORY_FILTERS;
-  const visible = filterArtworks(artworks, filter, appliedFilters);
-  const attentionTasks = filterCloudTasks(cloudTasks, filter, job, appliedFilters).filter(task => task.request_id !== job?.id && (['uploading', 'submitting', 'submitted', 'pending', 'processing', 'outcome_unknown', 'failed', 'cancelled'].includes(task.status) || (task.status === 'completed' && !cloudDelivery(task).complete)));
+  const displayedArtworks = artworks.filter(item => showRemoved || item.ownerId !== currentUserId || !item.hiddenAt);
+  const displayedTasks = cloudTasks.filter(item => showRemoved || item.studio_owner_id !== currentUserId || !item.studio_hidden_at);
+  const visible = filterArtworks(displayedArtworks, filter, appliedFilters);
+  const attentionTasks = filterCloudTasks(displayedTasks, filter, job, appliedFilters).filter(task => task.request_id !== job?.id && (['uploading', 'submitting', 'submitted', 'pending', 'processing', 'outcome_unknown', 'failed', 'cancelled'].includes(task.status) || (task.status === 'completed' && !cloudDelivery(task).complete)));
   const hasFilters = Object.entries(appliedFilters).some(([key, value]) => value !== INITIAL_HISTORY_FILTERS[key as keyof HistoryFilters]);
   const empty = emptyHistoryState({ scope: filter, loading, error, job, allCount: artworks.length, visibleCount: visible.length, attentionCount: attentionTasks.length, filtered: hasFilters });
   const owners = new Map<string, string>();
   for (const item of artworks) if (item.ownerId) owners.set(item.ownerId, item.ownerEmail ?? item.ownerId);
   for (const task of cloudTasks) if (task.studio_owner_id) owners.set(task.studio_owner_id, task.studio_owner_email ?? task.studio_owner_id);
   const modelOptions = [...new Set([...artworks.map(item => item.model), ...cloudTasks.map(task => task.model)].filter((model): model is string => Boolean(model)))];
-  const canHide = (taskId: string | undefined) => Boolean(!isAdmin && taskId && !(job?.id === taskId && isActiveJob(job)));
+  const canHide = (taskId: string | undefined) => {
+    if (!taskId || (job?.id === taskId && isActiveJob(job))) return false;
+    const artwork = artworks.find(item => item.taskId === taskId);
+    const task = cloudTasks.find(item => (item.studio_task_id ?? item.request_id) === taskId);
+    if (task && !isTerminalTask(task)) return false;
+    const owner = artwork?.ownerId ?? task?.studio_owner_id;
+    return (!isAdmin || owner === currentUserId || (!owner && job?.id === taskId)) && !artwork?.hiddenAt && !task?.studio_hidden_at;
+  };
   const askRemove = (id: string) => {
     setSelected(null); setRemoveError('');
     setRemoving({ id, count: artworks.filter(item => item.taskId === id).length });
@@ -104,12 +115,12 @@ export default function History({ artworks, cloudTasks, job, loading, error, ref
   }, [artworks, selected]);
   return <section className="history-section" aria-labelledby="history-title">
     <div className="history-toolbar"><div className="history-heading"><h2 id="history-title">创作记录</h2><span className="history-count">{isAdmin ? '全部账号' : '仅自己可见'} · {visible.length} 张</span></div>
-    <div className="history-tabs segmented" role="tablist" aria-label="创作记录范围">
+    <GlassTabs className="history-tabs segmented" role="tablist" aria-label="创作记录范围">
       <button role="tab" aria-selected={filter === 'all'} className={filter === 'all' ? 'selected' : ''} onClick={() => setFilter('all')}>{isAdmin ? '全部作品' : '全部'}</button>
       <button role="tab" aria-selected={filter === 'current'} className={filter === 'current' ? 'selected' : ''} onClick={() => setFilter('current')} title="仅展示本页面打开后生成的作品">本次生成</button>
-    </div>
+    </GlassTabs>
     <button className="history-refresh-button" onClick={refresh} disabled={loading} aria-label="刷新创作记录" title="刷新创作记录"><Icon name="refresh" size={16} className={loading ? 'spinning' : ''} /><span>{loading ? '读取中' : '刷新'}</span></button></div>
-    {isAdmin ? <div className="history-admin-filters" aria-label="作品筛选">
+    {isAdmin ? <div className="history-admin-filters" aria-label="作品筛选"><label className="history-audit-toggle"><input type="checkbox" checked={showRemoved} onChange={e => setShowRemoved(e.target.checked)}/>显示我已删除的记录</label>
       <label>账号<select value={filters.owner} onChange={event => setFilters(previous => ({ ...previous, owner: event.target.value }))}><option value="">全部账号</option>{[...owners].map(([id, email]) => <option key={id} value={id}>{email}</option>)}</select></label>
       <label>模型<select value={filters.model} onChange={event => setFilters(previous => ({ ...previous, model: event.target.value }))}><option value="">全部模型</option>{modelOptions.map(model => <option key={model} value={model}>{model}</option>)}</select></label>
       <label>时间<select value={filters.days} onChange={event => setFilters(previous => ({ ...previous, days: Number(event.target.value) }))}><option value={0}>全部时间</option><option value={1}>最近 24 小时</option><option value={7}>最近 7 天</option><option value={30}>最近 30 天</option></select></label>
@@ -117,7 +128,7 @@ export default function History({ artworks, cloudTasks, job, loading, error, ref
       {hasFilters ? <button className="text-button" onClick={() => setFilters(INITIAL_HISTORY_FILTERS)}>清除筛选</button> : null}
     </div> : null}
     {job ? <GenerationStatus job={job} stop={stop} remove={canHide(job.id) ? () => askRemove(job.id) : undefined} /> : null}
-    {attentionTasks.length ? <div className="cloud-task-list">{attentionTasks.map(task => <div key={task.request_id}><span>{task.model}{isAdmin && task.studio_owner_email ? ` · ${task.studio_owner_email}` : ''}{isAdmin && task.studio_hidden_at ? ' · 用户已移除' : ''}</span><strong>{({ uploading: '上传参考图中', submitting: '提交结果待确认', submitted: '已提交', pending: '后台等待中', processing: '后台生成中', outcome_unknown: '结果待确认', failed: '历史任务失败', cancelled: '已取消', completed: '本地缓存未完整' } as Record<string, string>)[task.status]}</strong>{!isAdmin && isTerminalTask(task) ? <button onClick={() => askRemove(task.studio_task_id ?? task.request_id)}>移除记录</button> : <button onClick={refresh} disabled={loading}>刷新记录</button>}{task.error || task.poll_error || cloudDelivery(task).message ? <p>{task.error ?? cloudDelivery(task).message ?? task.poll_error}</p> : null}{isTerminalTask(task) ? <small>刷新不会重试生成。{taskCostLabel(task.credits_cost ?? undefined, true)}</small> : null}</div>)}</div> : null}
+    {attentionTasks.length ? <div className="cloud-task-list">{attentionTasks.map(task => <div key={task.request_id}><span>{task.model}{isAdmin && task.studio_owner_email ? ` · ${task.studio_owner_email}` : ''}{isAdmin && task.studio_hidden_at ? ' · 用户已移除' : ''}</span><strong>{({ uploading: '上传参考图中', submitting: '提交结果待确认', submitted: '已提交', pending: '后台等待中', processing: '后台生成中', outcome_unknown: '结果待确认', failed: '历史任务失败', cancelled: '已取消', completed: '本地缓存未完整' } as Record<string, string>)[task.status]}</strong>{canHide(task.studio_task_id ?? task.request_id) && isTerminalTask(task) ? <button onClick={() => askRemove(task.studio_task_id ?? task.request_id)}>移除记录</button> : <button onClick={refresh} disabled={loading}>刷新记录</button>}{task.error || task.poll_error || cloudDelivery(task).message ? <p>{task.error ?? cloudDelivery(task).message ?? task.poll_error}</p> : null}{isTerminalTask(task) ? <small>刷新不会重试生成。{taskCostLabel(task.credits_cost ?? undefined, true)}</small> : null}</div>)}</div> : null}
     {error ? <p className="history-error" role="alert">创作记录读取失败：{error}</p> : null}
     {visible.length ? <div className="artwork-grid">
       {visible.map(artwork => <article className="artwork" key={artwork.id}>
@@ -125,7 +136,7 @@ export default function History({ artworks, cloudTasks, job, loading, error, ref
           <ArtworkImage artwork={artwork} />
           <span className="artwork-expand"><Icon name="expand" size={20} /></span>
         </button>
-        <div className="artwork-info"><p>{artwork.prompt || '生成图像'}</p>{isAdmin ? <span className="artwork-owner">{artwork.ownerEmail ?? '历史管理员作品'}{artwork.hiddenAt ? <em>用户已移除</em> : null}</span> : null}<div><span>{artwork.width && artwork.height ? `${artwork.width} × ${artwork.height}` : '图像'}</span><span className="artwork-card-actions"><DownloadLink artwork={artwork} compact />{canHide(artwork.taskId) ? <button className="icon-button" onClick={() => askRemove(artwork.taskId!)} title="从我的记录中移除整个任务" aria-label="移除任务记录"><Icon name="trash" size={15} /></button> : null}</span></div>{artwork.source === 'cloud' ? <p className="task-cost">{taskCostLabel(artwork.taskCreditsCost, artwork.taskCostSettled)}</p> : null}{artwork.source === 'cloud' && artwork.locallySaved === false ? <p className="delivery-warning">{artwork.downloadError ?? '本地缓存未完成；远程原图可能到期，请及时保存。'}</p> : null}</div>
+        <div className="artwork-info"><p>{artwork.prompt || '生成图像'}</p>{isAdmin ? <span className="artwork-owner">{artwork.ownerEmail ?? '历史管理员作品'}{artwork.hiddenAt ? <em>用户已移除</em> : null}</span> : null}<div><span>{artwork.width && artwork.height ? `${artwork.width} × ${artwork.height}` : '图像'}</span><span className="artwork-card-actions"><DownloadLink artwork={artwork} compact />{canHide(artwork.taskId) ? <button onClick={() => askRemove(artwork.taskId!)} title="从我的记录中移除整个任务" aria-label="删除任务记录" className="history-delete-button"><Icon name="trash" size={15} /><span>删除</span></button> : null}</span></div>{artwork.source === 'cloud' ? <p className="task-cost">{taskCostLabel(artwork.taskCreditsCost, artwork.taskCostSettled)}</p> : null}{artwork.source === 'cloud' && artwork.locallySaved === false ? <p className="delivery-warning">{artwork.downloadError ?? '本地缓存未完成；远程原图可能到期，请及时保存。'}</p> : null}</div>
       </article>)}
     </div> : null}
     {empty ? <div className={`empty-history empty-${empty.kind}`} role="status"><div className="empty-history-art"><Icon name={empty.kind === 'loading' ? 'refresh' : empty.kind === 'active' ? 'spark' : 'emptyImage'} size={46} className={empty.kind === 'loading' ? 'spinning' : ''} /></div>
@@ -146,9 +157,9 @@ export default function History({ artworks, cloudTasks, job, loading, error, ref
       </section>
     </div></ModalPortal> : null}
     {removing ? <ModalPortal><div className="modal-backdrop" onClick={() => { if (!removeBusy) setRemoving(null); }}><section className="history-remove-dialog modal" ref={removeDialog} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="history-remove-title" onClick={event => event.stopPropagation()}>
-      <h2 id="history-remove-title">移除任务记录？</h2><p>仅从你的记录中移除，管理员仍可查看。{removing.count > 1 ? `此任务的 ${removing.count} 张图片会一并移除。` : ''}</p>
+      <h2 id="history-remove-title">删除我的任务记录？</h2><p>仅从你的常规记录中隐藏，图片文件与管理员审计记录仍保留。{removing.count > 1 ? `此任务的 ${removing.count} 张图片会一并移除。` : ''}</p>
       {removeError ? <p className="history-error" role="alert">{removeError}</p> : null}
-      <div><button className="quiet-button" data-autofocus onClick={() => setRemoving(null)} disabled={removeBusy}>取消</button><button className="primary-button" onClick={() => void confirmRemove()} disabled={removeBusy}>{removeBusy ? '正在移除' : '确认移除'}</button></div>
+      <div><button className="quiet-button" data-autofocus onClick={() => setRemoving(null)} disabled={removeBusy}>取消</button><button className="primary-button" onClick={() => void confirmRemove()} disabled={removeBusy}>{removeBusy ? '正在删除' : '确认删除'}</button></div>
     </section></div></ModalPortal> : null}
   </section>;
 }

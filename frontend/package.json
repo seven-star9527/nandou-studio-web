@@ -9,6 +9,7 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts"
   },
   "dependencies": {
+    "motion": "^14.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-markdown": "10.1.0",

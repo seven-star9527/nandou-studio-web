@@ -1,4 +1,10 @@
-import { lazy, Suspense, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { animate as springAnimate, type AnimationPlaybackControls } from 'motion';
+import GlassTabs from './components/GlassTabs';
+import GlassDefs from './components/GlassDefs';
+import DocumentReader from './components/DocumentReader';
+import { ThemeToggle } from './theme';
+import AgentWorkspace from './components/AgentWorkspace';
 import { flushSync } from 'react-dom';
 import Composer from './components/Composer';
 import History, { isBusy } from './components/History';
@@ -16,23 +22,20 @@ import AdminUsage from './components/AdminUsage';
 import './auth.css';
 import './components/agent-workspace.css';
 
-const loadAgent = () => import('./components/AgentWorkspace');
-const AgentWorkspace = lazy(loadAgent);
 
 export default function App() {
-  return <AuthGate>{workspace => <Studio {...workspace} />}</AuthGate>;
+  return <><GlassDefs/><AuthGate>{workspace => <DocumentReader><Studio {...workspace} /></DocumentReader>}</AuthGate></>;
 }
 
 function Studio({ user, adminEntry, logout }: AuthWorkspace) {
   const studio = useStudio();
   const [workspace, selectWorkspace] = useState<'studio' | 'agent'>(() => { try { return sessionStorage.getItem(`nandou-mode:${user.id}`) === 'agent' ? 'agent' : 'studio'; } catch { return 'studio'; } });
-  const motion = useRef<Animation[]>([]);
+  const motion = useRef<Array<Animation | AnimationPlaybackControls>>([]);
   const switchSequence = useRef(0);
-  const setWorkspace = async (value: 'studio' | 'agent', animate: boolean) => {
-    const sequence = ++switchSequence.current;
+  useEffect(() => () => { ++switchSequence.current; motion.current.forEach(animation => animation.cancel()); }, []);
+  const setWorkspace = (value: 'studio' | 'agent', animate: boolean) => {
     if (value === workspace) return;
-    if (value === 'agent') { try { await loadAgent(); } catch { return; } }
-    if (sequence !== switchSequence.current) return;
+    const sequence = ++switchSequence.current;
     const previous = document.querySelector('.agent-composer, .composer')?.getBoundingClientRect();
     motion.current.forEach(animation => animation.cancel());
     flushSync(() => selectWorkspace(value));
@@ -46,10 +49,9 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
       const next = composer.getBoundingClientRect();
       if (!next.width || !next.height) return true;
       // FLIP preserves the input's spatial origin and retargets from its current frame.
-      motion.current = [composer.animate([
-        {transform: `translate3d(${previous.left-next.left}px,${previous.top-next.top}px,0) scale(${previous.width/next.width},${previous.height/next.height})`, opacity: .8},
-        {transform: 'translate3d(0,0,0) scale(1)', opacity: 1},
-      ], {duration: 280, easing: 'cubic-bezier(.77,0,.175,1)'} )];
+      motion.current = [springAnimate(composer, {
+        transform: [`translate3d(${previous.left-next.left}px,${previous.top-next.top}px,0) scale(${previous.width/next.width},${previous.height/next.height})`, 'translate3d(0px,0px,0px) scale(1,1)'],
+      }, {type: 'spring', duration: .5, bounce: .2, onComplete: () => { if (sequence === switchSequence.current) composer.style.transform = ''; }})];
       const scene = document.querySelector(value === 'agent' ? '.agent-messages' : '.creation-section h1');
       if (scene) motion.current.push(scene.animate([{opacity: 0},{opacity: 1}], {duration: 200, easing: 'cubic-bezier(.23,1,.32,1)'}));
       return true;
@@ -70,10 +72,10 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
   const chooseCloud = (id: string) => { studio.selectCloudModel(id); setEditing(studio.cloudModels.find(model => model.id === id)?.preferredOperation === 'edit'); };
   return <div className="app-shell">
     <header className="app-header"><a className="brand" href="/studio/" aria-label="Nandou Studio 首页"><img className="brand-logo" src={`${import.meta.env.BASE_URL}brand/nandou-mark-on-dark.svg`} width="34" height="34" alt="" /><span>Nandou Studio</span></a>
-      <nav className="workspace-mode-switch" aria-label="创作模式"><button className={workspace === 'studio' ? 'active' : ''} onClick={event => void setWorkspace('studio', event.detail > 0)}>图片创作</button><button className={workspace === 'agent' ? 'active' : ''} onPointerEnter={() => void loadAgent().catch(() => undefined)} onClick={event => void setWorkspace('agent', event.detail > 0)}>Agent 创作</button></nav>
-      <div className="header-actions"><CloudCreditsAccount account={studio.cloudAccount} loading={studio.accountLoading} error={studio.accountError} refresh={() => void studio.refreshAccount()} /><button className={`connection ${studio.connected ? 'connected' : ''}`} onClick={() => { if (!busy) void studio.connect(); }} disabled={studio.connecting || busy} title="重新连接图像服务"><span className={`connection-dot ${studio.connecting ? 'spinning' : ''}`} />{connectedLabel}</button><div className="studio-account"><span className="studio-account-identity" title={user.email}><span>{user.email}</span>{user.is_admin ? <small>管理员</small> : null}</span>{user.is_admin && adminEntry ? <AdminUsage /> : null}<button className="account-logout-button" onClick={() => void logout()}>退出</button></div></div>
+      <GlassTabs className="workspace-mode-switch" role="navigation" aria-label="创作模式"><button className={workspace === 'studio' ? 'active' : ''} onClick={event => void setWorkspace('studio', event.detail > 0)}>图片创作</button><button className={workspace === 'agent' ? 'active' : ''} onClick={event => void setWorkspace('agent', event.detail > 0)}>Agent 创作</button></GlassTabs>
+      <div className="header-actions"><ThemeToggle/><CloudCreditsAccount account={studio.cloudAccount} loading={studio.accountLoading} error={studio.accountError} refresh={() => void studio.refreshAccount()} /><button className={`connection ${studio.connected ? 'connected' : ''}`} onClick={() => { if (!busy) void studio.connect(); }} disabled={studio.connecting || busy} title="重新连接图像服务"><span className={`connection-dot ${studio.connecting ? 'spinning' : ''}`} />{connectedLabel}</button><div className="studio-account"><span className="studio-account-identity" title={user.email}><span>{user.email}</span>{user.is_admin ? <small>管理员</small> : null}</span>{user.is_admin && adminEntry ? <AdminUsage /> : null}<button className="account-logout-button" onClick={() => void logout()}>退出</button></div></div>
     </header>
-    {workspace === 'agent' ? <Suspense fallback={<div className="service-notice">正在打开创作空间…</div>}><AgentWorkspace user={user} client={studio.client} refreshAccount={studio.refreshAccount} /></Suspense> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <main>
+    {workspace === 'agent' ? <AgentWorkspace user={user} client={studio.client} refreshAccount={studio.refreshAccount} /> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <main>
       <section className="creation-section" aria-labelledby="creation-title">
         {studio.draftError ? <div className="service-notice" role="status">{studio.draftError}</div> : null}
         <div className="title-pattern" aria-hidden="true" />
@@ -97,7 +99,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         if (studio.references.length >= limit) throw new Error(`最多添加${limit}张参考图，请先移除一张。`);
         changeEditing(true); await studio.addReferences([file]);
       }} />
-      <History isAdmin={user.is_admin || user.role === 'admin'} hideTask={studio.hideTask} artworks={studio.history} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError} refresh={() => void studio.refreshHistory()} stop={() => void studio.stop()} reuse={artwork => { const operation = studio.reuse(artwork); if (operation) setEditing(operation === 'edit'); }} />
+      <History isAdmin={user.is_admin || user.role === 'admin'} hideTask={id => studio.hideTask(id, user.is_admin)} currentUserId={user.id} artworks={studio.history} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError} refresh={() => void studio.refreshHistory()} stop={() => void studio.stop()} reuse={artwork => { const operation = studio.reuse(artwork); if (operation) setEditing(operation === 'edit'); }} />
     </main>}
   </div>;
 }

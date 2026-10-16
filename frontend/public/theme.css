@@ -1,0 +1,75 @@
+/* Shared by the application and both guides; see DESIGN.md. */
+.theme-toggle { width:38px; height:38px; flex:none; pointer-events:auto; }
+.theme-symbol g,.theme-symbol path.theme-moon { transform-origin:12px 12px; transition:opacity .28s ease,transform .45s cubic-bezier(.22,1,.36,1); }
+.theme-symbol.dark .theme-sun { opacity:1; transform:rotate(0deg) scale(1); }
+.theme-symbol.dark .theme-moon { opacity:0; transform:rotate(-65deg) scale(.5); }
+.theme-symbol.light .theme-sun { opacity:0; transform:rotate(90deg) scale(.5); }
+.theme-symbol.light .theme-moon { opacity:1; transform:rotate(0deg) scale(1); }
+::view-transition-old(root),::view-transition-new(root) { animation:none; mix-blend-mode:normal; }
+::view-transition-old(root) { z-index:1; }
+::view-transition-new(root) { z-index:2; }
+html[data-theme=light] {
+  color-scheme:light; color:#17283e; background:#f5f6f7;
+  --bg:#f5f6f7; --surface:#ffffff80; --panel:#ffffff80; --control:#e4eaf080; --raised:#e8eef3;
+  --text:#17283e; --muted:#607287; --line:#213e5824; --cyan:#31516e; --accent:#31516e; --amber:#9c6931;
+  --glass-surface:rgb(255 255 255 / .50); --glass-control:rgb(255 255 255 / .50); --glass-reading:rgb(255 255 255 / .50);
+  --glass-line:rgb(41 65 89 / .16); --glass-rim:rgb(255 255 255 / .90); --glass-accent:#31516e; --glass-ink:#17283e; --glass-muted:#607287;
+  --glass-shadow:inset 0 1px 0 #fffc,inset 0 -1px 0 #8093a31a,0 12px 36px #1b365010;
+  --guide-accent:#8c4b3e;
+}
+html[data-theme=light] body { background:radial-gradient(ellipse at 50% 0,#e2ebf1,transparent 700px),#f5f6f7; color:var(--text); }
+html[data-theme=light] :is(.app-shell,.auth-shell) { color:var(--text); background:radial-gradient(ellipse 800px 500px at 50% 0,#dce8ef99,transparent 85%),#f5f6f7; }
+html[data-theme=light] :is(.brand-logo,.brand img) { content:url('/studio/brand/nandou-mark-on-light.svg'); }
+html[data-theme=light] .title-pattern { opacity:.28; }
+html[data-theme=light] :is(.composer,.agent-composer,.auth-shell .auth-card,.modal,.popover,.agent-preferences,.agent-skill-picker) { color:var(--text); background:linear-gradient(135deg,#fff3,transparent 60%),var(--glass-surface); border-color:var(--glass-line); box-shadow:var(--glass-shadow); }
+html[data-theme=light] :is(.popover,.modal,.agent-preferences,.agent-skill-picker) { background-color:var(--glass-reading); }
+html[data-theme=light] :is(.glass-tabs,.creation-tabs,.history-tabs,.workspace-mode-switch,.auth-tabs) { background:#dce5ec66; border-color:var(--glass-line); }
+html[data-theme=light] .glass-tab-lens { background:linear-gradient(135deg,#fff9,#c6dce766); border-color:#ffffffd9; box-shadow:inset 0 1px 0 #fff,0 3px 12px #213e5821; }
+html[data-theme=light] .glass-tab-lens.is-hovering { background:linear-gradient(135deg,#fff9,#d1e1eb99); }
+html[data-theme=light] :is(.glass-tabs>button,.workspace-mode-switch.glass-tabs button.active,.creation-tabs.glass-tabs>button.selected,.history-tabs button.selected) { color:#31516e; }
+html[data-theme=light] :is(.toolbar-button,.composer .toolbar-button,.scene-chip,.prompt-library-button,.icon-button,.quiet-button,.history-refresh-button,.history-delete-button,.guide-link,.agent-guide-link,.agent-new,.account-usage-button,.account-logout-button,.auth-motion-toggle,.agent-composer-toolbar>button,.agent-question-options>button,.agent-starters>button,.polish-control .polish-entry,.quote-button,.credit-account-button) { color:#31516e; border-color:var(--glass-line); background-color:#ffffff80; box-shadow:inset 0 1px 0 #fff9,0 3px 12px #1e3a5010; }
+html[data-theme=light] :is(.toolbar-button svg,.scene-chip svg,.quote-button svg,.reference-add,.connection,.studio-account,.credit-account) { color:#4c657c; }
+html[data-theme=light] :is(.account-credits,.studio-account-identity,.studio-account-identity small) { color:#52677c; border-color:#314b6820; background:#ffffff50; }
+html[data-theme=light] :is(.agent-assistant-message,.agent-assistant-message p,.agent-user-message,.agent-user-message>div,.agent-markdown,.agent-plan-message,.agent-plan-message summary,.agent-generation-label,.agent-result figcaption,.agent-skill-event) { color:#263d53; }
+html[data-theme=light] :is(.agent-user-message>div,.agent-plan-message,.usage-summary>div,.usage-controls input,.usage-table-wrap) { background:#ffffff80; border-color:#314b6824; }
+html[data-theme=light] :is(.usage-summary strong,.usage-table strong,.usage-table td,.usage-table th) { color:#263d53; }
+html[data-theme=light] :is(.usage-summary span,.usage-table small,.usage-table span,.usage-note,.usage-empty,.admin-usage-heading p) { color:#607287; }
+html[data-theme=light] :is(.primary-button,.auth-submit,.composer .generation-actions .generate-button,.agent-send) { background:linear-gradient(145deg,#39536ed9,#172b43cc); color:#fff; border-color:#566d8080; box-shadow:inset 0 1px 1px #ffffff50,0 5px 18px #17283e20; }
+html[data-theme=light] :is(.primary-button,.auth-submit,.composer .generate-button,.agent-send):hover:not(:disabled) { background-color:#365875; }
+html[data-theme=light] :is(input,textarea,select) { color:#17283e; caret-color:#31516e; }
+html[data-theme=light] :is(input,textarea)::placeholder { color:#758596; }
+html[data-theme=light] :is(.auth-field input,.advanced-fields input,.dimensions label,.agent-preferences select,.agent-preferences textarea,.history-admin-filters select,.library-search input,.library-detail textarea,.showcase-prompt-label textarea,.polish-modal textarea,.scene-modal input,.scene-modal textarea) { background:#ffffff80; border-color:#314b6829; color:#17283e; }
+html[data-theme=light] :is(.auth-field,.auth-intro,.auth-card .auth-intro,.auth-card .auth-form-footer button,.auth-card .auth-privacy,.auth-footnote,.auth-eyebrow,.panel-note,.popover-heading,.parameter-panel legend,.advanced-fields label,.dimensions,.model-option small,.control-dot,.document-reader>header span,.showcase-heading p,.showcase-caption p,.showcase-footnote,.artwork-owner,.artwork-info>div,.task-cost,.history-count,.empty-history,.empty-history p,.scene-add,.agent-preference-note,.agent-preferences label,.agent-preferences legend,.agent-preference-type small,.agent-memory small,.agent-skill-list small,.agent-composer-hint,.agent-welcome>p,.agent-eyebrow,.agent-conversation-heading small,.agent-conversation-heading,.agent-history-heading,.agent-chat-item small,.agent-chat-item span,.agent-guide-link,.agent-starters span,.agent-sidebar-label,.agent-message-footer,.agent-tool-event,.agent-stage,.agent-context-summary,.agent-preferences header) { color:#607287; }
+html[data-theme=light] :is(.model-option strong,.showcase-caption h3,.artwork-info>p,.artwork-info h3,.showcase-detail h2,.agent-welcome h1,.agent-starters strong,.agent-skill-list strong,.agent-message,.agent-message p,.agent-preferences strong,.agent-plan,.agent-plan strong,.library-detail h3,.library-template strong,.history-heading h2) { color:#17283e; }
+html[data-theme=light] :is(.showcase-card,.artwork,.history-admin-filters,.generation-status,.library-template,.library-detail,.polish-context,.agent-plan,.agent-tool-event,.agent-stage,.agent-context-summary,.agent-preference-type,.agent-preferences header,.agent-user-bubble) { background:#ffffff80; border-color:#314b6820; }
+html[data-theme=light] :is(.showcase-open,.artwork-open,.reference-item,.reference-preview-stage,.agent-image-stage,.artwork-full,.showcase-full) { background:#e8ecef; }
+html[data-theme=light] :is(.showcase-detail,.artwork-detail) { background:#f5f7f980; color:#17283e; }
+html[data-theme=light] :is(.showcase-detail>p,.showcase-detail dl,.artwork-detail p,.artwork-detail dl,.showcase-caption button,.library-template span,.library-count,.library-note) { color:#526d83; }
+html[data-theme=light] .modal-backdrop { background:#1c304c29; }
+html[data-theme=light] .popover:before { background:#edf2f6; border-color:#314b6829; }
+html[data-theme=light] .reference-add { background:#cfdce4; border-color:#b6c6d1; }
+html[data-theme=light] .agent-workspace { background:#f5f6f7; color:#17283e; border-color:#314b6814; }
+html[data-theme=light] .agent-sidebar { background:#edf1f480; border-color:#314b6814; }
+html[data-theme=light] .agent-conversation { background:radial-gradient(ellipse at 50% 20%,#dce8ef66,transparent 65%); }
+html[data-theme=light] :is(.agent-chat-item.selected,.model-option.selected,.model-option:hover,.library-category.selected) { background:#cddce780; }
+html[data-theme=light] .agent-preference-type { border-color:#314b6820; }
+html[data-theme=light] .agent-message-user { color:#17283e; }
+html[data-theme=light] .auth-orbit { background:radial-gradient(ellipse at 50% 45%,#e1eaf0,#f5f6f7 70%); }
+html[data-theme=light] .auth-orbit-scrim { background:radial-gradient(ellipse 400px 500px at 50% 48%,#f5f6f780 18%,#f5f6f730 60%,transparent),linear-gradient(180deg,#f5f6f760,transparent 25%,transparent 80%,#f5f6f760); }
+html[data-theme=light] .auth-card-mark { color:#31516e; background:#ffffff80; border-color:#314b6820; }
+html[data-theme=light] .auth-header .theme-toggle { pointer-events:auto; }
+html[data-theme=light] .document-reader iframe { background:#f5f6f7; }
+/* Standalone guides use the same palette without altering their content. */
+html[data-theme=light] :is(.topbar,.chapter-mobile) { background:#f5f6f7e8; border-color:var(--line); }
+html[data-theme=light] :is(.toc,.guide-example,.guide-card,.local-sources,.chapter-percent) { background:#ffffff80; border-color:var(--line); }
+html[data-theme=light] :is(#guide-content p,main>p,.guide-card p,.guide-note,.guide-example,td,ol,.chapter-link,.chapter-mobile select) { color:#52677c; }
+html[data-theme=light] :is(th,code) { background:#e2eaf0; color:#31516e; }
+html[data-theme=light] tbody tr:nth-child(even) { background:#edf2f5; }
+html[data-theme=light] tbody tr:hover { background:#e3edf3; }
+html[data-theme=light] :is(.chapter-tick-label,.chapter-map-summary,.chapter-mobile-label) { color:#687f94; }
+html[data-theme=light] .chapter-shade { background:linear-gradient(90deg,transparent,#f5f6f7e8 48%,#f5f6f7fa); }
+html[data-theme=light] .chapter-ruler { background:linear-gradient(90deg,transparent,#f5f6f7b8 70%); }
+html[data-theme=light] .chapter-link:hover .chapter-letter { color:#31516e!important; }
+html[data-theme=light] :is(.agent-mode-label,.agent-welcome>svg) { color:#31516e; }
+html[data-theme=light] :is(a.back,a:hover) { color:#31516e; }
+@media(prefers-reduced-motion:reduce) { .theme-symbol g,.theme-symbol path.theme-moon { transition:none; } }

@@ -277,8 +277,13 @@ export function useStudio() {
     catch (e) { setError(`停止请求未确认：${errorText(e)}`); }
   };
 
-  const hideTask = async (taskId: string) => {
+  const hideTask = async (taskId: string, retainForAudit = false) => {
     await client.hideTask(taskId);
+    if (retainForAudit) {
+      if (activeJob.current?.id === taskId) { activeJob.current = null; setJob(null); }
+      await refreshHistory();
+      return;
+    }
     hiddenTasks.current.add(taskId);
     setHistory(previous => previous.filter(item => item.taskId !== taskId));
     cloud.dismissTask(taskId);

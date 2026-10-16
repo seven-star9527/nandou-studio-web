@@ -1,3 +1,5 @@
+import GlassTabs from './GlassTabs';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useId, useLayoutEffect, useRef, useState } from 'react';
 import { useDismissibleLayer } from '../useDismissibleLayer';
 import { availableModes } from '../generation-contract';
@@ -31,6 +33,8 @@ export default function Composer({ settings, config, params, models, prompt, ref
   polisher: ReactNode;
 }) {
   const [panel, setPanel] = useState<'size' | 'mode' | 'model' | null>(null);
+  const reduced = useReducedMotion();
+  const panelMotion = {initial: {opacity: 0, y: 12, scale: .94}, animate: {opacity: 1, y: 0, scale: 1}, exit: {opacity: 0, y: 8, scale: .97}, transition: {duration: reduced ? 0 : .32, ease: [.22,1,.36,1] as [number,number,number,number]}};
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const composer = useRef<HTMLDivElement>(null);
@@ -63,10 +67,10 @@ export default function Composer({ settings, config, params, models, prompt, ref
   const submit = () => { setPanel(null); generate(); };
 
   return <>
-    <div className="creation-tabs segmented" role="tablist" aria-label="创作方式">
+    <GlassTabs className="creation-tabs segmented" role="tablist" aria-label="创作方式">
       <button role="tab" aria-selected={!editing} disabled={Boolean(cloudModel && !cloudModel.operations.includes('generate'))} className={!editing ? 'selected' : ''} onClick={() => setEditing(false)}>图片生成</button>
       <button role="tab" aria-selected={editing} disabled={Boolean(cloudModel && !cloudModel.operations.includes('edit'))} className={editing ? 'selected' : ''} onClick={() => setEditing(true)}>参考图编辑</button>
-    </div>
+    </GlassTabs>
     <div className={`composer ${dragging ? 'is-dragging' : ''}`} ref={composer}
       onDragOver={event => { event.preventDefault(); setDragging(true); }}
       onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
@@ -86,7 +90,7 @@ export default function Composer({ settings, config, params, models, prompt, ref
             <button className={`toolbar-button ${panel === 'model' ? 'active' : ''}`} aria-expanded={panel === 'model'} data-layer-trigger onClick={() => setPanel(panel === 'model' ? null : 'model')} title={modelDescriptions[cloudModel?.id ?? mode?.id ?? ''] ?? '选择图像模型'}>
               <Icon name="cube" size={18} /><span className="model-name">{cloudModel?.label ?? `Qwen-Image-2.1 · ${mode?.label ?? '本地'}`}</span><Icon name="chevron" size={13} />
             </button>
-            {panel === 'model' ? <div className="model-panel popover" role="dialog" aria-label="选择模型">
+            <AnimatePresence>{panel === 'model' ? <motion.div key="model" {...panelMotion} data-motion-layer className="model-panel popover" role="dialog" aria-label="选择模型">
               <p className="popover-heading">选择模型</p>
               {!modes.length ? <button className={`model-option ${!cloudModel ? 'selected' : ''}`} onClick={() => { selectLocal(); setPanel(null); }}><span><strong>Qwen-Image-2.1 · 本地</strong><small>模型准备中</small></span>{!cloudModel ? <Icon name="check" size={17} /> : null}</button> : null}
               {modes.length ? modes.map(item => <button key={item.id} className={`model-option ${!cloudModel && item.model === settings.model ? 'selected' : ''}`} onClick={() => { selectModel(item.model); setPanel(null); }}>
@@ -94,16 +98,16 @@ export default function Composer({ settings, config, params, models, prompt, ref
               </button>) : <p className="panel-note">服务尚未发现 Qwen-Image-2.1 模型。</p>}
               {cloudModels.map(item => <button key={item.id} className={`model-option ${item.id === cloudModel?.id ? 'selected' : ''}`} onClick={() => { selectCloud(item.id); setPanel(null); }}><span><strong>{item.label}</strong><small>{modelDescriptions[item.id] ?? '图像生成与参考图编辑'}{cloudConfigured ? '' : ' · 待配置'}</small></span>{item.id === cloudModel?.id ? <Icon name="check" size={17} /> : null}</button>)}
               {cloudCapabilityError ? <p className="panel-note">云模型能力读取失败，请刷新连接。</p> : null}
-            </div> : null}
+            </motion.div> : null}</AnimatePresence>
           </div>
           <div className="control-anchor">
             <button className={`toolbar-button ${panel === 'mode' ? 'active' : ''}`} aria-expanded={panel === 'mode'} data-layer-trigger onClick={() => setPanel(panel === 'mode' ? null : 'mode')}>
               <Icon name="settings" size={18} /><span>{cloudModel ? '图像质量' : mode?.label ?? '标准'}</span><Icon name="chevron" size={13} />
             </button>
-            {panel === 'mode' ? <div className="mode-panel popover" role="dialog" aria-label="生成模式">
-              {cloudModel ? <><p className="popover-heading">图像质量</p>{cloudModel.qualities.length ? <div className="segmented mode-options">{cloudModel.qualities.map(quality => <button key={quality} className={settings.quality === quality ? 'selected' : ''} onClick={() => update({ quality })}>{({ auto: '自动', low: '低', medium: '中', high: '高' } as Record<string, string>)[quality] ?? quality}</button>)}</div> : <p className="panel-note">当前模型未提供可选质量参数。</p>}{cloudModel.id.startsWith('gpt-image-2.5-') ? <p className="panel-note">默认中档（medium）；高与 xhigh 需手动选择，分辨率变化不会提高档位。</p> : null}<p className="panel-note">参考图：{cloudModel.maxReferences == null ? `服务未声明固定上限，界面上限 ${maxReferences} 张` : `最多 ${maxReferences} 张`}。</p></> : <>
+            <AnimatePresence>{panel === 'mode' ? <motion.div key="mode" {...panelMotion} data-motion-layer className="mode-panel popover" role="dialog" aria-label="生成模式">
+              {cloudModel ? <><p className="popover-heading">图像质量</p>{cloudModel.qualities.length ? <GlassTabs className="segmented mode-options">{cloudModel.qualities.map(quality => <button key={quality} className={settings.quality === quality ? 'selected' : ''} onClick={() => update({ quality })}>{({ auto: '自动', low: '低', medium: '中', high: '高' } as Record<string, string>)[quality] ?? quality}</button>)}</GlassTabs> : <p className="panel-note">当前模型未提供可选质量参数。</p>}{cloudModel.id.startsWith('gpt-image-2.5-') ? <p className="panel-note">默认中档（medium）；高与 xhigh 需手动选择，分辨率变化不会提高档位。</p> : null}<p className="panel-note">参考图：{cloudModel.maxReferences == null ? `服务未声明固定上限，界面上限 ${maxReferences} 张` : `最多 ${maxReferences} 张`}。</p></> : <>
               <p className="popover-heading">生成模式</p>
-              <div className="segmented mode-options">{modes.map(item => <button key={item.id} className={item.model === settings.model ? 'selected' : ''} onClick={() => selectModel(item.model)}>{item.label}</button>)}</div>
+              <GlassTabs className="segmented mode-options">{modes.map(item => <button key={item.id} className={item.model === settings.model ? 'selected' : ''} onClick={() => selectModel(item.model)}>{item.label}</button>)}</GlassTabs>
               {mode?.detail ? <p className="panel-note">{mode.detail}</p> : null}
               <div className="advanced-fields">
                 <label>采样步数<input type="number" min={steps?.min ?? 1} max={steps?.max ?? 200} value={settings.steps} onChange={event => update({ steps: Number(event.target.value) })} /></label>
@@ -112,13 +116,13 @@ export default function Composer({ settings, config, params, models, prompt, ref
               </div>
               <p className="panel-note">种子 -1 为随机；固定种子便于比较。</p>
               </>}
-            </div> : null}
+            </motion.div> : null}</AnimatePresence>
           </div>
           <div className="control-anchor size-anchor">
             <button className={`toolbar-button size-button ${panel === 'size' ? 'active' : ''}`} aria-expanded={panel === 'size'} data-layer-trigger onClick={() => setPanel(panel === 'size' ? null : 'size')}>
               <Icon name="expand" size={17} /><span>{ratioLabel}<span className="control-dot">·</span>{settings.resolution}<span className="control-dot">·</span>{settings.count} 张</span><Icon name="chevron" size={13} />
             </button>
-            {panel === 'size' ? <ParameterPanel settings={settings} config={config} cloudModel={cloudModel} update={update} setGeometry={setGeometry} close={closePanel} /> : null}
+            <AnimatePresence>{panel === 'size' ? <ParameterPanel key="size" settings={settings} config={config} cloudModel={cloudModel} update={update} setGeometry={setGeometry} close={closePanel} /> : null}</AnimatePresence>
           </div>
         </div>
         <div className="generation-actions"><GenerationQuote local={!cloudModel} quote={creditQuote.quote} loading={creditQuote.loading} error={creditQuote.error} descriptionId={quoteDescriptionId} />

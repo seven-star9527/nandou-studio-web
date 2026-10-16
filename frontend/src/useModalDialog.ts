@@ -4,7 +4,7 @@ const dialogs: HTMLElement[] = [];
 const originalInert = new Map<HTMLElement, boolean>();
 let originalBodyStyle: { overflow: string; paddingRight: string } | undefined;
 let observer: MutationObserver | undefined;
-const focusSelector = 'button:not([disabled]),a[href],input:not([disabled]),textarea:not([disabled]),select:not([disabled]),summary,[contenteditable="true"],[tabindex]:not([tabindex="-1"])';
+const focusSelector = 'button:not([disabled]),a[href],input:not([disabled]),textarea:not([disabled]),select:not([disabled]),iframe,summary,[contenteditable="true"],[tabindex]:not([tabindex="-1"])';
 const focusable = (dialog: HTMLElement) => Array.from(dialog.querySelectorAll<HTMLElement>(focusSelector))
   .filter(item => item.getClientRects().length > 0 && !item.closest('[inert]'));
 
