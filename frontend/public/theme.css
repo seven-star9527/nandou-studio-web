@@ -38,7 +38,7 @@ html[data-theme=light] :is(.primary-button,.auth-submit,.composer .generation-ac
 html[data-theme=light] :is(.primary-button,.auth-submit,.composer .generate-button,.agent-send):hover:not(:disabled) { background-color:#365875; }
 html[data-theme=light] :is(input,textarea,select) { color:#17283e; caret-color:#31516e; }
 html[data-theme=light] :is(input,textarea)::placeholder { color:#758596; }
-html[data-theme=light] :is(.auth-field input,.advanced-fields input,.dimensions label,.agent-preferences select,.agent-preferences textarea,.history-admin-filters select,.library-search input,.library-detail textarea,.showcase-prompt-label textarea,.polish-modal textarea,.scene-modal input,.scene-modal textarea) { background:#ffffff80; border-color:#314b6829; color:#17283e; }
+html[data-theme=light] :is(.auth-field input,.advanced-fields input,.dimensions label,.agent-preferences select,.agent-preferences textarea,.history-admin-filters select,.library-search input,.library-search select,.commerce-selects select,.library-detail textarea,.showcase-prompt-label textarea,.polish-modal textarea,.form-field input,.form-field textarea) { background:#ffffff80; border-color:#314b6829; color:#17283e; }
 html[data-theme=light] :is(.auth-field,.auth-intro,.auth-card .auth-intro,.auth-card .auth-form-footer button,.auth-card .auth-privacy,.auth-footnote,.auth-eyebrow,.panel-note,.popover-heading,.parameter-panel legend,.advanced-fields label,.dimensions,.model-option small,.control-dot,.document-reader>header span,.showcase-heading p,.showcase-caption p,.showcase-footnote,.artwork-owner,.artwork-info>div,.task-cost,.history-count,.empty-history,.empty-history p,.scene-add,.agent-preference-note,.agent-preferences label,.agent-preferences legend,.agent-preference-type small,.agent-memory small,.agent-skill-list small,.agent-composer-hint,.agent-welcome>p,.agent-eyebrow,.agent-conversation-heading small,.agent-conversation-heading,.agent-history-heading,.agent-chat-item small,.agent-chat-item span,.agent-guide-link,.agent-starters span,.agent-sidebar-label,.agent-message-footer,.agent-tool-event,.agent-stage,.agent-context-summary,.agent-preferences header) { color:#607287; }
 html[data-theme=light] :is(.model-option strong,.showcase-caption h3,.artwork-info>p,.artwork-info h3,.showcase-detail h2,.agent-welcome h1,.agent-starters strong,.agent-skill-list strong,.agent-message,.agent-message p,.agent-preferences strong,.agent-plan,.agent-plan strong,.library-detail h3,.library-template strong,.history-heading h2) { color:#17283e; }
 html[data-theme=light] :is(.showcase-card,.artwork,.history-admin-filters,.generation-status,.library-template,.library-detail,.polish-context,.agent-plan,.agent-tool-event,.agent-stage,.agent-context-summary,.agent-preference-type,.agent-preferences header,.agent-user-bubble) { background:#ffffff80; border-color:#314b6820; }
@@ -76,7 +76,7 @@ html[data-theme=light] :is(a.back,a:hover) { color:#31516e; }
 
 /* Nested headers and information-only actions must inherit the surrounding surface. */
 html[data-theme=light] .agent-skill-picker { color-scheme:light; }
-html[data-theme=light] :is(.agent-skill-picker header,.agent-preferences header) { background:var(--glass-reading); backdrop-filter:blur(24px); border-color:var(--glass-line); }
+html[data-theme=light] .agent-preferences header { background:var(--glass-reading); backdrop-filter:blur(24px); border-color:var(--glass-line); }
 html[data-theme=light] :is(.agent-skill-picker header strong,.agent-markdown strong,.agent-live-plan summary) { color:var(--glass-ink); }
 html[data-theme=light] :is(.agent-skill-picker header p,.agent-skill-list>button,.agent-welcome-mark,.agent-memory-editor p,.agent-memory-editor summary small,.quote-popover p,.quote-popover>small) { color:var(--glass-muted); }
 html[data-theme=light] :is(.agent-image-dialog,.agent-live-plan,.agent-settings select) { background:var(--glass-reading); color:var(--glass-ink); border-color:var(--glass-line); }
@@ -85,3 +85,8 @@ html[data-theme=light] :is(.composer .quote-button,.polish-control .polish-entry
 html[data-theme=light] .composer .quote-button { padding:6px 8px; }
 html[data-theme=light] :is(.composer .quote-button,.polish-control .polish-entry):hover:not(:disabled) { background:#31516e0b; }
 html[data-theme=light] .history-admin-filters .history-audit-toggle { color:var(--glass-muted); }
+
+html[data-theme=light] :is(.form-field,.scene-manager>p) { color:var(--glass-muted); }
+html[data-theme=light] .scene-manager { border-color:var(--glass-line); }
+html[data-theme=light] .polish-comparison pre { background:var(--glass-control); color:var(--glass-muted); border-color:var(--glass-line); }
+html[data-theme=light] .agent-skill-picker>header { background:transparent; }
