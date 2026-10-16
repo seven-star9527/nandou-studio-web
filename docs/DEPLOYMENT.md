@@ -131,3 +131,25 @@ $studioRoot = (Get-Location).Path
 需备份的私有数据包括 `runtime/studio-accounts.sqlite3`、`runtime/agent-uploads`、SwarmUI输出、`Data/StudioCloudTasks`、`src/wwwroot/studio-results` 及私有引擎配置。数据库正在写入时使用 SQLite backup API 或停服快照，不只复制主文件而遗漏 WAL。
 
 测试、评测、备份、下载和启停脚本按项目发布范围仅保留本地。公开仓库没有这些文件，不应把旧本机脚本作为安装前提。
+
+
+## Agent 长上下文与视觉预算
+
+以下为可选服务端 `.env` 配置，重启网关生效；不向浏览器暴露密钥。非法值会拒绝启动并仅报告配置项名称。
+
+| 配置项 | 默认 | 允许范围 / 含义 |
+| --- | --- | --- |
+| `STUDIO_AGENT_MAX_CALLS` | 10 | 1–20；每次发送内的主循环模型调用次数，摘要调用另计 |
+| `STUDIO_AGENT_OUTPUT_TOKENS` | 32768 | 1024–393216；单次模型输出预算，包含思考消耗，不是目标回复长度 |
+| `STUDIO_AGENT_SUMMARY_TOKENS` | 5000 | 1024–16384；摘要输出预算，关闭思考 |
+| `STUDIO_AGENT_CONTEXT_BUDGET` | 262144 | 32768–1048576；应用预算，需大于输出预算 + 8192 |
+| `STUDIO_AGENT_TIMEOUT_SECONDS` | 300 | 30–1800；单次模型总超时，连接 15 秒、流空闲 90 秒 |
+| `STUDIO_AGENT_REASONING_EFFORT` | high | low / high；主循环开启思考，不保存内部推理 |
+
+官方 Flash 当前上下文为 1M、最大输出 384K。应用默认保留余量，而非每次要求输出满额。每次模型调用前，用 UTF-8 文本字节保守估计、每图预留 1280 单位，并加上工具 schema 和输出预算；这是安全预算，不是供应商精确 tokenizer。最终真实用量以响应 usage 为准。超预算明确停止，不静默截断输入或重发付费任务。
+
+视觉输入使用最长边 1280 的 JPEG 预览、high 细节参数；同图去重，最多保留最近 24 个不同预览，旧素材仍在账户内，按需使用 inspect_images。每轮最多 8 张上传/引用，生成最多 4 张。原上传数据沿用 2048 长边归一化的存储规则，理解预览不会覆盖这些素材。请求体限制为 40 MiB，低于供应商的 48 MiB。官方图像 token 按尺寸计算，每图上限 1024，不能把 base64 字节数当作文本 token。
+
+超过 40 条公开事件或 24,000 字符时整理较早对话，保留至少最近 4 个完整轮次与 12 条事件。摘要分批输入，不删除原记录；所有批次成功后才推进摘要游标。达到输出长度上限、缺失流结束标志或工具 JSON 不完整时，不执行本次工具指令，也不自动续写/重试付费动作。
+
+参考：[模型与价格](https://api-docs.deepseek.com/zh-cn/quick_start/pricing)、[Chat Completion 参数](https://api-docs.deepseek.com/zh-cn/api/create-chat-completion)、[图像理解](https://api-docs.deepseek.com/zh-cn/guides/vision)。核对日期：2026-10-16。

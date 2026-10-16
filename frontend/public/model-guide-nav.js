@@ -14,7 +14,7 @@
   const measure = document.createElement('canvas').getContext('2d');
   measure.font = '650 22px "Segoe UI", "Microsoft YaHei", sans-serif';
   const sections = headings.map((heading, index) => {
-    const label = shortLabels[index] ?? heading.textContent.trim().slice(0, 8);
+    const label = heading.dataset.navLabel ?? shortLabels[index] ?? heading.textContent.trim().slice(0, 8);
     const link = document.createElement('a'); link.href = '#' + encodeURIComponent(heading.id); link.className = 'chapter-link'; link.setAttribute('aria-label', '跳转至 ' + heading.textContent.trim()); link.title = heading.textContent.trim();
     const characters = [...label];
     const letters = characters.map(char => { const span = document.createElement('span'); span.className = 'chapter-letter'; span.textContent = char; span.setAttribute('aria-hidden', 'true'); link.append(span); return span; });

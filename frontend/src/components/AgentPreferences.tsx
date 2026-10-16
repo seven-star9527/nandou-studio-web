@@ -13,7 +13,7 @@ export default function AgentPreferences({ value, update, disabled, close }: {va
   const panel = useRef<HTMLDivElement>(null);
   const [availableHeight, setAvailableHeight] = useState(480);
   useLayoutEffect(() => {
-    const resize = () => setAvailableHeight(Math.max(160, (panel.current?.parentElement?.getBoundingClientRect().top ?? 504) - 24));
+    const resize = () => setAvailableHeight(Math.max(160, (panel.current?.parentElement?.getBoundingClientRect().top ?? 504) - (document.querySelector('.app-header')?.getBoundingClientRect().bottom ?? 70) - 24));
     resize(); window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
   }, []);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import { agentRequest, agentStatus, DEFAULT_AGENT_SETTINGS, type AgentAsset, type AgentChat, type AgentConfig, type AgentEvent, type AgentSettings, type AgentView } from '../agent-api';
 import type { SwarmClient } from '../api';
@@ -11,6 +11,7 @@ import './agent-workspace.css';
 import ReferenceDock from './ReferenceDock';
 import AgentPreferences from './AgentPreferences';
 import { useDraft } from '../useDraft';
+import { useDismissibleLayer } from '../useDismissibleLayer';
 import { accountStorageKey } from '../account-storage';
 
 const STARTERS = [
@@ -63,6 +64,13 @@ export default function AgentWorkspace({ user, client, refreshAccount }: { user:
   const [preview, setPreview] = useState<{ url: string; name: string } | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [clock, setClock] = useState(Date.now());
+  const form = useRef<HTMLFormElement>(null);
+  useDismissibleLayer(settingsOpen || skillsOpen, form, () => { setSettingsOpen(false); setSkillsOpen(false); });
+  useLayoutEffect(() => {
+    const resize = () => form.current?.style.setProperty('--agent-popover-space', `${Math.max(160, (form.current?.getBoundingClientRect().top ?? 444) - (document.querySelector('.app-header')?.getBoundingClientRect().bottom ?? 70) - 24)}px`);
+    resize(); window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, [skillsOpen, settingsOpen]);
   const fileInput = useRef<HTMLInputElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -183,7 +191,8 @@ export default function AgentWorkspace({ user, client, refreshAccount }: { user:
     <aside className="agent-sidebar"><div className="agent-sidebar-label">创意空间<span>AGENT</span></div><button className="agent-new" onClick={() => selectChat('')} disabled={sending}><Icon name="plus" size={17} />开启新创作</button>
       <div className="agent-history-heading">对话记录{user.is_admin ? <label><input type="checkbox" checked={all} onChange={e => setAll(e.target.checked)} />全部用户</label> : null}</div>
       <div className="agent-chat-list">{chats.length ? chats.map(c => <div key={c.id} className={`agent-chat-item ${cid === c.id ? 'selected' : ''}`}><button onClick={() => selectChat(c.id)} disabled={sending}><span>{c.title}</span><small>{all ? `${c.owner_email} · ` : ''}{agentStatus(c.status)}{c.hidden_at ? ' · 用户已删除' : ''}</small></button>{c.owner_id === user.id && !c.hidden_at ? <button className="agent-chat-delete" title="从我的记录中删除" aria-label={`删除对话 ${c.title}`} onClick={() => void hideChat(c)}><Icon name="trash" size={14} /></button> : null}</div>) : <p className="agent-sidebar-empty">每一个灵感，都在这里继续。</p>}</div>
-      <a className="agent-guide-link" href="/studio/model-guide.html" target="_blank" rel="noreferrer">模型怎么选 <Icon name="arrow" size={14} /></a>
+      <a className="agent-guide-link" href="/studio/agent-guide.html" target="_blank" rel="noreferrer">Agent 使用指南 <Icon name="arrow" size={14} /></a>
+      <a className="agent-guide-link agent-model-guide-link" href="/studio/model-guide.html" target="_blank" rel="noreferrer">模型怎么选 <Icon name="arrow" size={14} /></a>
     </aside>
     <section className="agent-conversation" aria-label="Agent 创作对话">
       <div className="agent-conversation-heading"><span>{view?.chat.title ?? '新的创作'}</span><small>{readOnly ? `查看 ${view?.chat.owner_email} 的创作` : latest ? agentStatus(latest.status) : '一起把灵感变成图像'}</small></div>
@@ -197,12 +206,12 @@ export default function AgentWorkspace({ user, client, refreshAccount }: { user:
         {draftError || optsError ? <p className="agent-note" role="status">{draftError || optsError}</p> : null}
         {error ? <div className="agent-error" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="关闭提示"><Icon name="close" size={14} /></button></div> : null}
         {config && !config.configured ? <p className="agent-note">创作助手尚未配置，请联系管理员。</p> : null}
-        <form className={`agent-composer ${readOnly ? 'readonly' : ''}`} onSubmit={e => { e.preventDefault(); void send(); }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (!active && !readOnly) void addFiles(e.dataTransfer.files); }}>
+        <form ref={form} className={`agent-composer ${readOnly ? 'readonly' : ''}`} onSubmit={e => { e.preventDefault(); void send(); }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (!active && !readOnly) void addFiles(e.dataTransfer.files); }}>
           <div className="agent-input-row"><ReferenceDock references={[...uploads.map(u=>({id:u.id,name:u.name,dataUrl:u.data_url,width:u.width,height:u.height})), ...refs.map(r=>({id:r.id,name:r.name,dataUrl:r.url,width:r.width??1024,height:r.height??1024}))]} add={()=>fileInput.current?.click()} remove={id=>{setUploads(items=>items.filter(x=>x.id!==id));setRefs(items=>items.filter(x=>x.id!==id));}} maxReferences={8} disabled={active || readOnly || uploading}/><textarea ref={composer} aria-label="Agent需求" value={text} maxLength={8000} disabled={readOnly || sending || !draftReady} rows={3} placeholder={readOnly ? '管理员仅查看其他用户的对话' : '描述你的想法，或上传产品图，让 Agent 帮你完成创作…'} onChange={e => { setText(e.target.value); setPendingId(null); }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} onPaste={e => { if (e.clipboardData.files.length && !active && !readOnly) { e.preventDefault(); void addFiles(e.clipboardData.files); } }} /></div>
           <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={e => { if (e.target.files) void addFiles(e.target.files); e.target.value = ''; }} />
-          <div className="agent-composer-toolbar"><span className="agent-mode-label"><Icon name="spark" size={17} />Agent 模式</span><button type="button" aria-label="生成偏好" onClick={() => { setSettingsOpen(!settingsOpen); setSkillsOpen(false); }} aria-expanded={settingsOpen}><Icon name="settings" size={16} /><span>生成偏好</span></button><button type="button" aria-label="技能" onClick={() => { setSkillsOpen(!skillsOpen); setSettingsOpen(false); }} aria-expanded={skillsOpen}><Icon name="brush" size={16} /><span>技能</span></button><div className="agent-send-area"><span>{uploading ? '读取图片中' : quote == null ? '出图时估算积分' : `约 ${Number(quote.toFixed(4))} 积分/张`}</span>{running ? <button type="button" className="agent-send" aria-label="停止 Agent" onClick={() => void agentRequest(`chats/${cid}/stop`, {}).catch(e => setError(e.message))}><Icon name="stop" size={17} /></button> : <button className="agent-send" type="submit" aria-label="发送需求" disabled={active || uploading || !text.trim() || readOnly || !config?.configured}><Icon name="arrow" size={22} /></button>}</div></div>
+          <div className="agent-composer-toolbar"><span className="agent-mode-label"><Icon name="spark" size={17} />Agent 模式</span><button type="button" data-layer-trigger aria-label="生成偏好" onClick={() => { setSettingsOpen(!settingsOpen); setSkillsOpen(false); }} aria-expanded={settingsOpen}><Icon name="settings" size={16} /><span>生成偏好</span></button><button type="button" data-layer-trigger aria-label="技能" onClick={() => { setSkillsOpen(!skillsOpen); setSettingsOpen(false); }} aria-expanded={skillsOpen}><Icon name="brush" size={16} /><span>技能</span></button><div className="agent-send-area"><span>{uploading ? '读取图片中' : quote == null ? '出图时估算积分' : `约 ${Number(quote.toFixed(4))} 积分/张`}</span>{running ? <button type="button" className="agent-send" aria-label="停止 Agent" onClick={() => void agentRequest(`chats/${cid}/stop`, {}).catch(e => setError(e.message))}><Icon name="stop" size={17} /></button> : <button className="agent-send" type="submit" aria-label="发送需求" disabled={active || uploading || !text.trim() || readOnly || !config?.configured}><Icon name="arrow" size={22} /></button>}</div></div>
           {settingsOpen ? <AgentPreferences value={opts} update={changes=>setOpts(s=>({...s,...changes}))} disabled={active || readOnly} close={()=>setSettingsOpen(false)}/> : null}
-          {skillsOpen ? <div className="agent-skill-picker">{config?.skills.map(s => <button type="button" disabled={active || readOnly} key={s.id} onClick={() => { setText(t => `${t}${t ? '\n' : ''}请使用「${s.title}」技能。`); setSkillsOpen(false); composer.current?.focus(); }}><strong>{s.title}</strong><span>{s.description}</span></button>)}</div> : null}
+          {skillsOpen ? <div className="agent-skill-picker" role="dialog" aria-label="创作技能"><header><div><strong>创作技能</strong><p>选择一个方向，Agent 会在创作时使用。</p></div><button type="button" className="icon-button" aria-label="关闭技能" onClick={() => setSkillsOpen(false)}><Icon name="close" size={16}/></button></header><div className="agent-skill-list">{config?.skills.map(s => <button type="button" disabled={active || readOnly} key={s.id} onClick={() => { setText(t => `${t}${t ? '\n' : ''}请使用「${s.title}」技能。`); setSkillsOpen(false); composer.current?.focus(); }}><Icon name="brush" size={18}/><span><strong>{s.title}</strong><small>{s.description}</small></span><Icon name="plus" size={16}/></button>)}</div></div> : null}
         </form><p className="agent-composer-hint">需求明确直接创作 · 保留产品细节 · 反馈后继续调整</p>
       </div>
     </section>{preview ? <ImagePreview image={preview} close={() => setPreview(null)} /> : null}

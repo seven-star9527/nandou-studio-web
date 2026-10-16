@@ -1,4 +1,5 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import Composer from './components/Composer';
 import History, { isBusy } from './components/History';
 import Icon from './components/Icon';
@@ -15,7 +16,8 @@ import AdminUsage from './components/AdminUsage';
 import './auth.css';
 import './components/agent-workspace.css';
 
-const AgentWorkspace = lazy(() => import('./components/AgentWorkspace'));
+const loadAgent = () => import('./components/AgentWorkspace');
+const AgentWorkspace = lazy(loadAgent);
 
 export default function App() {
   return <AuthGate>{workspace => <Studio {...workspace} />}</AuthGate>;
@@ -24,7 +26,40 @@ export default function App() {
 function Studio({ user, adminEntry, logout }: AuthWorkspace) {
   const studio = useStudio();
   const [workspace, selectWorkspace] = useState<'studio' | 'agent'>(() => { try { return sessionStorage.getItem(`nandou-mode:${user.id}`) === 'agent' ? 'agent' : 'studio'; } catch { return 'studio'; } });
-  const setWorkspace = (value: 'studio' | 'agent') => { selectWorkspace(value); try { sessionStorage.setItem(`nandou-mode:${user.id}`, value); } catch { /* Optional tab preference. */ } };
+  const motion = useRef<Animation[]>([]);
+  const switchSequence = useRef(0);
+  const setWorkspace = async (value: 'studio' | 'agent', animate: boolean) => {
+    const sequence = ++switchSequence.current;
+    if (value === workspace) return;
+    if (value === 'agent') { try { await loadAgent(); } catch { return; } }
+    if (sequence !== switchSequence.current) return;
+    const previous = document.querySelector('.agent-composer, .composer')?.getBoundingClientRect();
+    motion.current.forEach(animation => animation.cancel());
+    flushSync(() => selectWorkspace(value));
+    try { sessionStorage.setItem(`nandou-mode:${user.id}`, value); } catch { /* Optional tab preference. */ }
+    if (!animate || !previous || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const selector = value === 'agent' ? '.agent-composer' : '.composer';
+    const move = () => {
+      if (sequence !== switchSequence.current) return true;
+      const composer = document.querySelector<HTMLElement>(selector);
+      if (!composer) return false;
+      const next = composer.getBoundingClientRect();
+      if (!next.width || !next.height) return true;
+      // FLIP preserves the input's spatial origin and retargets from its current frame.
+      motion.current = [composer.animate([
+        {transform: `translate3d(${previous.left-next.left}px,${previous.top-next.top}px,0) scale(${previous.width/next.width},${previous.height/next.height})`, opacity: .8},
+        {transform: 'translate3d(0,0,0) scale(1)', opacity: 1},
+      ], {duration: 280, easing: 'cubic-bezier(.77,0,.175,1)'} )];
+      const scene = document.querySelector(value === 'agent' ? '.agent-messages' : '.creation-section h1');
+      if (scene) motion.current.push(scene.animate([{opacity: 0},{opacity: 1}], {duration: 200, easing: 'cubic-bezier(.23,1,.32,1)'}));
+      return true;
+    };
+    if (!move()) {
+      const observer = new MutationObserver(() => { if (move()) observer.disconnect(); });
+      observer.observe(document.getElementById('root')!, {childList: true, subtree: true});
+      setTimeout(() => observer.disconnect(), 1000);
+    }
+  };
   const { editing, setEditing } = studio;
   const busy = isBusy(studio.job);
   const connectedLabel = studio.connecting ? '连接中' : studio.connected ? '已连接' : '未连接';
@@ -35,7 +70,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
   const chooseCloud = (id: string) => { studio.selectCloudModel(id); setEditing(studio.cloudModels.find(model => model.id === id)?.preferredOperation === 'edit'); };
   return <div className="app-shell">
     <header className="app-header"><a className="brand" href="/studio/" aria-label="Nandou Studio 首页"><img className="brand-logo" src={`${import.meta.env.BASE_URL}brand/nandou-mark-on-dark.svg`} width="34" height="34" alt="" /><span>Nandou Studio</span></a>
-      <nav className="workspace-mode-switch" aria-label="创作模式"><button className={workspace === 'studio' ? 'active' : ''} onClick={() => setWorkspace('studio')}>图片创作</button><button className={workspace === 'agent' ? 'active' : ''} onClick={() => setWorkspace('agent')}>Agent 创作</button></nav>
+      <nav className="workspace-mode-switch" aria-label="创作模式"><button className={workspace === 'studio' ? 'active' : ''} onClick={event => void setWorkspace('studio', event.detail > 0)}>图片创作</button><button className={workspace === 'agent' ? 'active' : ''} onPointerEnter={() => void loadAgent().catch(() => undefined)} onClick={event => void setWorkspace('agent', event.detail > 0)}>Agent 创作</button></nav>
       <div className="header-actions"><CloudCreditsAccount account={studio.cloudAccount} loading={studio.accountLoading} error={studio.accountError} refresh={() => void studio.refreshAccount()} /><button className={`connection ${studio.connected ? 'connected' : ''}`} onClick={() => { if (!busy) void studio.connect(); }} disabled={studio.connecting || busy} title="重新连接图像服务"><span className={`connection-dot ${studio.connecting ? 'spinning' : ''}`} />{connectedLabel}</button><div className="studio-account"><span className="studio-account-identity" title={user.email}><span>{user.email}</span>{user.is_admin ? <small>管理员</small> : null}</span>{user.is_admin && adminEntry ? <AdminUsage /> : null}<button className="account-logout-button" onClick={() => void logout()}>退出</button></div></div>
     </header>
     {workspace === 'agent' ? <Suspense fallback={<div className="service-notice">正在打开创作空间…</div>}><AgentWorkspace user={user} client={studio.client} refreshAccount={studio.refreshAccount} /></Suspense> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <main>

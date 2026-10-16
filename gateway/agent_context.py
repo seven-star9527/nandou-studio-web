@@ -26,9 +26,25 @@ async def context_messages(agent, cid, tid, user):
         if prefix:
             store.event(cid, tid, 'status', {'text': '正在整理长对话，保留商品事实与修改要求'})
             old = summary['summary'] if summary else ''
-            text = await agent.summarizer(old, [encoded(e) for e in prefix])
-            if not isinstance(text, str) or not text.strip() or len(text) > 12000:
-                raise ValueError('invalid context summary')
+            # Bound each summary request even when importing a very long history.
+            # Split text without dropping content; commit the cursor only after all batches succeed.
+            batches, batch, size = [], [], 0
+            for event in prefix:
+                record = encoded(event)
+                for offset in range(0, len(record), 12000):
+                    piece = record[offset:offset + 12000]
+                    if batch and size + len(piece) > 12000:
+                        batches.append(batch)
+                        batch, size = [], 0
+                    batch.append(piece)
+                    size += len(piece)
+            if batch:
+                batches.append(batch)
+            text = old
+            for batch in batches:
+                text = await agent.summarizer(text, batch)
+                if not isinstance(text, str) or not text.strip() or len(text) > 12000:
+                    raise ValueError('invalid context summary')
             summary = {'through_event_id': prefix[-1]['id'], 'summary': text.strip(), 'updated_at': time.time()}
             with store.db:
                 store.db.execute('INSERT INTO agent_summaries VALUES(?,?,?,?) ON CONFLICT(chat_id) DO UPDATE SET through_event_id=excluded.through_event_id,summary=excluded.summary,updated_at=excluded.updated_at',

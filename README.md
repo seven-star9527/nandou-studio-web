@@ -21,7 +21,7 @@
 - 需求明确时直接生成，信息不足时询问。采用 LangGraph 工具循环，支持流式回复和执行状态。
 - 默认出图为 **GPT Image 2.5 Flare / medium / 1K**。智能比例不会自动升级画质或分辨率。
 - 使用 DeepSeek，开启 `thinking` 和 `high` 推理强度；页面展示方案与执行状态，不展示内部推理原文。
-- 每次提交最多 10 次模型调用、4 张图片，单账号最多一个活动轮次；不是聊天轮数上限。
+- 默认每次提交最多 10 次模型调用、4 张图片，单账号最多一个活动轮次；不是聊天轮数上限。
 - 长对话自动整理摘要，保留原始记录；跨对话偏好由用户手动保存、修改或清空。
 
 ### 多用户与任务
@@ -117,3 +117,7 @@ pnpm --dir frontend build
 - 提示词方法：[OpenAI imagegen](https://github.com/openai/skills/tree/main/skills/.system/imagegen)、[Awesome GPT Image 2](https://github.com/freestylefly/awesome-gpt-image-2)、[Awesome Nano Banana Images](https://github.com/PicoTrex/Awesome-Nano-Banana-images)。模板来源保留在提示词库内。
 - 登录背景见 [图片来源清单](frontend/public/auth-gallery/credits.json)；官方评分图来源保留在模型指南中。
 - 本仓库未另行添加开源许可；第三方代码、模型、素材各自遵循其原始许可和使用条件。
+
+## 使用指南
+
+站内 [Agent 使用指南](frontend/public/agent-guide.html) 面向创作者介绍参考图、技能、生成偏好和连续修改；访问 `/studio/agent-guide.html` 查看。部署与配置仍见 [部署说明](docs/DEPLOYMENT.md)。

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useDismissibleLayer } from '../useDismissibleLayer';
 import { availableModes } from '../generation-contract';
 import { referenceLimit } from '../cloud-contract';
 import type { CloudModelCapability, CloudQuote, DeploymentConfig, GenerationSettings, Model, ParamSchema, RatioId, ReferenceImage, ResolutionId } from '../types';
@@ -56,13 +57,7 @@ export default function Composer({ settings, config, params, models, prompt, ref
     return () => window.removeEventListener('resize', resize);
   }, [prompt]);
 
-  useEffect(() => {
-    if (!panel) return;
-    const pointer = (event: PointerEvent) => { if (!composer.current?.contains(event.target as Node)) setPanel(null); };
-    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setPanel(null); };
-    document.addEventListener('pointerdown', pointer); document.addEventListener('keydown', key);
-    return () => { document.removeEventListener('pointerdown', pointer); document.removeEventListener('keydown', key); };
-  }, [panel]);
+  useDismissibleLayer(Boolean(panel), composer, closePanel);
 
   const chooseFiles = async (files: FileList | File[]) => { if (files.length) setEditing(true); await addReferences(files); };
   const submit = () => { setPanel(null); generate(); };
@@ -88,7 +83,7 @@ export default function Composer({ settings, config, params, models, prompt, ref
       <div className="composer-toolbar">
         <div className="toolbar-controls">
           <div className="control-anchor">
-            <button className={`toolbar-button ${panel === 'model' ? 'active' : ''}`} aria-expanded={panel === 'model'} onClick={() => setPanel(panel === 'model' ? null : 'model')} title={modelDescriptions[cloudModel?.id ?? mode?.id ?? ''] ?? '选择图像模型'}>
+            <button className={`toolbar-button ${panel === 'model' ? 'active' : ''}`} aria-expanded={panel === 'model'} data-layer-trigger onClick={() => setPanel(panel === 'model' ? null : 'model')} title={modelDescriptions[cloudModel?.id ?? mode?.id ?? ''] ?? '选择图像模型'}>
               <Icon name="cube" size={18} /><span className="model-name">{cloudModel?.label ?? `Qwen-Image-2.1 · ${mode?.label ?? '本地'}`}</span><Icon name="chevron" size={13} />
             </button>
             {panel === 'model' ? <div className="model-panel popover" role="dialog" aria-label="选择模型">
@@ -102,7 +97,7 @@ export default function Composer({ settings, config, params, models, prompt, ref
             </div> : null}
           </div>
           <div className="control-anchor">
-            <button className={`toolbar-button ${panel === 'mode' ? 'active' : ''}`} aria-expanded={panel === 'mode'} onClick={() => setPanel(panel === 'mode' ? null : 'mode')}>
+            <button className={`toolbar-button ${panel === 'mode' ? 'active' : ''}`} aria-expanded={panel === 'mode'} data-layer-trigger onClick={() => setPanel(panel === 'mode' ? null : 'mode')}>
               <Icon name="settings" size={18} /><span>{cloudModel ? '图像质量' : mode?.label ?? '标准'}</span><Icon name="chevron" size={13} />
             </button>
             {panel === 'mode' ? <div className="mode-panel popover" role="dialog" aria-label="生成模式">
@@ -120,7 +115,7 @@ export default function Composer({ settings, config, params, models, prompt, ref
             </div> : null}
           </div>
           <div className="control-anchor size-anchor">
-            <button className={`toolbar-button size-button ${panel === 'size' ? 'active' : ''}`} aria-expanded={panel === 'size'} onClick={() => setPanel(panel === 'size' ? null : 'size')}>
+            <button className={`toolbar-button size-button ${panel === 'size' ? 'active' : ''}`} aria-expanded={panel === 'size'} data-layer-trigger onClick={() => setPanel(panel === 'size' ? null : 'size')}>
               <Icon name="expand" size={17} /><span>{ratioLabel}<span className="control-dot">·</span>{settings.resolution}<span className="control-dot">·</span>{settings.count} 张</span><Icon name="chevron" size={13} />
             </button>
             {panel === 'size' ? <ParameterPanel settings={settings} config={config} cloudModel={cloudModel} update={update} setGeometry={setGeometry} close={closePanel} /> : null}
