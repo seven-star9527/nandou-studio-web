@@ -73,3 +73,15 @@ html[data-theme=light] .chapter-link:hover .chapter-letter { color:#31516e!impor
 html[data-theme=light] :is(.agent-mode-label,.agent-welcome>svg) { color:#31516e; }
 html[data-theme=light] :is(a.back,a:hover) { color:#31516e; }
 @media(prefers-reduced-motion:reduce) { .theme-symbol g,.theme-symbol path.theme-moon { transition:none; } }
+
+/* Nested headers and information-only actions must inherit the surrounding surface. */
+html[data-theme=light] .agent-skill-picker { color-scheme:light; }
+html[data-theme=light] :is(.agent-skill-picker header,.agent-preferences header) { background:var(--glass-reading); backdrop-filter:blur(24px); border-color:var(--glass-line); }
+html[data-theme=light] :is(.agent-skill-picker header strong,.agent-markdown strong,.agent-live-plan summary) { color:var(--glass-ink); }
+html[data-theme=light] :is(.agent-skill-picker header p,.agent-skill-list>button,.agent-welcome-mark,.agent-memory-editor p,.agent-memory-editor summary small,.quote-popover p,.quote-popover>small) { color:var(--glass-muted); }
+html[data-theme=light] :is(.agent-image-dialog,.agent-live-plan,.agent-settings select) { background:var(--glass-reading); color:var(--glass-ink); border-color:var(--glass-line); }
+html[data-theme=light] :is(.agent-image-dialog>a,.agent-image-dialog>.icon-button,.agent-memory-editor>div button) { color:var(--glass-accent); background:var(--glass-control); border-color:var(--glass-line); }
+html[data-theme=light] :is(.composer .quote-button,.polish-control .polish-entry) { background:transparent; box-shadow:none; border-color:transparent; border-radius:10px; }
+html[data-theme=light] .composer .quote-button { padding:6px 8px; }
+html[data-theme=light] :is(.composer .quote-button,.polish-control .polish-entry):hover:not(:disabled) { background:#31516e0b; }
+html[data-theme=light] .history-admin-filters .history-audit-toggle { color:var(--glass-muted); }

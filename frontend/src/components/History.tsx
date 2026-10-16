@@ -1,4 +1,5 @@
 import GlassTabs from './GlassTabs';
+import GlassSelect from './GlassSelect';
 import { useEffect, useRef, useState } from 'react';
 import type { Artwork, CloudTask, Job } from '../types';
 import { useModalDialog } from '../useModalDialog';
@@ -9,6 +10,12 @@ import { isCreditAmount, taskCostLabel } from '../credit-contract';
 import { emptyHistoryState, filterArtworks, filterCloudTasks, INITIAL_HISTORY_FILTERS, isActiveJob, isTerminalTask, type HistoryFilters, type HistoryScope } from '../history-view-contract';
 import '../history-refresh.css';
 import { queueEstimateLabel } from '../queue-contract';
+
+function historyModelLabel(model: string) {
+  if (model.startsWith('qwen_image_2.1_turbo')) return 'Qwen-Image-2.1 · Turbo';
+  if (model.startsWith('qwen_image_2.1')) return 'Qwen-Image-2.1 · 标准';
+  return ({'gpt-image-2.5-flare':'GPT Image 2.5 Flare','gpt-image-2.5-sunburst':'GPT Image 2.5 Sunburst','gemini-nano-banana-2.1':'Nano Banana 2.1'} as Record<string,string>)[model] ?? model;
+}
 
 const PHASES: Record<Job['phase'], string> = {
   connecting: '正在提交', queued: '等待生成', loading: '正在准备模型', generating: '正在生成', stopping: '正在停止', complete: '生成完成', error: '生成未完成', interrupted: '已停止', background: '已停止等待', unknown: '结果待确认', delivery_pending: '本地缓存未完整',
@@ -121,10 +128,10 @@ export default function History({ artworks, cloudTasks, job, loading, error, ref
     </GlassTabs>
     <button className="history-refresh-button" onClick={refresh} disabled={loading} aria-label="刷新创作记录" title="刷新创作记录"><Icon name="refresh" size={16} className={loading ? 'spinning' : ''} /><span>{loading ? '读取中' : '刷新'}</span></button></div>
     {isAdmin ? <div className="history-admin-filters" aria-label="作品筛选"><label className="history-audit-toggle"><input type="checkbox" checked={showRemoved} onChange={e => setShowRemoved(e.target.checked)}/>显示我已删除的记录</label>
-      <label>账号<select value={filters.owner} onChange={event => setFilters(previous => ({ ...previous, owner: event.target.value }))}><option value="">全部账号</option>{[...owners].map(([id, email]) => <option key={id} value={id}>{email}</option>)}</select></label>
-      <label>模型<select value={filters.model} onChange={event => setFilters(previous => ({ ...previous, model: event.target.value }))}><option value="">全部模型</option>{modelOptions.map(model => <option key={model} value={model}>{model}</option>)}</select></label>
-      <label>时间<select value={filters.days} onChange={event => setFilters(previous => ({ ...previous, days: Number(event.target.value) }))}><option value={0}>全部时间</option><option value={1}>最近 24 小时</option><option value={7}>最近 7 天</option><option value={30}>最近 30 天</option></select></label>
-      <label>状态<select value={filters.status} onChange={event => setFilters(previous => ({ ...previous, status: event.target.value as HistoryFilters['status'] }))}><option value="all">全部状态</option><option value="completed">已生成</option><option value="active">进行中 / 待确认</option><option value="failed">失败 / 已取消</option></select></label>
+      <GlassSelect label="账号" value={filters.owner} onChange={owner => setFilters(previous => ({...previous, owner}))} options={[{value:'',label:'全部账号'}, ...[...owners].map(([value,label]) => ({value,label}))]} />
+      <GlassSelect label="模型" value={filters.model} onChange={model => setFilters(previous => ({...previous, model}))} options={[{value:'',label:'全部模型'}, ...modelOptions.map(value => ({value,label:historyModelLabel(value)}))]} />
+      <GlassSelect label="时间" value={String(filters.days)} onChange={days => setFilters(previous => ({...previous, days:Number(days)}))} options={[{value:'0',label:'全部时间'},{value:'1',label:'最近 24 小时'},{value:'7',label:'最近 7 天'},{value:'30',label:'最近 30 天'}]} />
+      <GlassSelect label="状态" value={filters.status} onChange={status => setFilters(previous => ({...previous, status:status as HistoryFilters['status']}))} options={[{value:'all',label:'全部状态'},{value:'completed',label:'已生成'},{value:'active',label:'进行中 / 待确认'},{value:'failed',label:'失败 / 已取消'}]} />
       {hasFilters ? <button className="text-button" onClick={() => setFilters(INITIAL_HISTORY_FILTERS)}>清除筛选</button> : null}
     </div> : null}
     {job ? <GenerationStatus job={job} stop={stop} remove={canHide(job.id) ? () => askRemove(job.id) : undefined} /> : null}
