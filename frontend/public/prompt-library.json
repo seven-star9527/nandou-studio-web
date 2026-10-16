@@ -1,0 +1,1447 @@
+{
+  "version": 1,
+  "commerce": {
+    "platforms": [
+      {
+        "id": "amazon",
+        "label": "Amazon",
+        "rules": "真实呈现实际售卖SKU；主图与副图/A+分开设计。不要编造规格、配件、比较结果、认证或促销声明。 默认以干净、完好、新售商品状态展示，布景整洁；质感来自布光、真实材质与接触阴影。不擅加污渍、划痕、锈蚀、破损、泛黄、使用痕迹、残留颜料或做旧，除非用户明确要求。"
+      },
+      {
+        "id": "store",
+        "label": "独立站",
+        "rules": "真实商品身份优先，场景、品牌氛围和文案留白协调；主副图构成一致的产品叙事，不让氛围道具混淆售卖内容。 默认以干净、完好、新售商品状态展示，布景整洁；质感来自布光、真实材质与接触阴影。不擅加污渍、划痕、锈蚀、破损、泛黄、使用痕迹、残留颜料或做旧，除非用户明确要求。"
+      }
+    ],
+    "categories": [
+      {
+        "id": "watercolor_brush",
+        "label": "水彩画笔",
+        "rules": "强调已确认的笔头形状、尖锋、笔腹、金属箍与笔杆比例。毛料、型号、支数未知则不猜。可表现水彩纸与透明色层，不能替商品宣称吸水量。"
+      },
+      {
+        "id": "oil_brush",
+        "label": "油画画笔",
+        "rules": "注意硬毛/软毛以实物为准，完整展示笔锋、金属箍和长短杆；油画质感来自真实画布与有层次笔触，不改变实际毛束结构。"
+      },
+      {
+        "id": "acrylic_brush",
+        "label": "丙烯画笔",
+        "rules": "突出已确认的圆头/平头/榛形等轮廓；丙烯工作台、画布与颜料厚度克制自然，不添加不存在的双头结构或耐化学性能。"
+      },
+      {
+        "id": "paint",
+        "label": "颜料 / 水彩套装",
+        "rules": "保持实际色数、管装/半块/罐装形态和包装布局；色样可视化只能用已提供的真实色样，不编造成分、耐光等级、无毒或覆盖力比较。"
+      },
+      {
+        "id": "watercolor_paper",
+        "label": "水彩纸 / 画本",
+        "rules": "呈现纸面、纸边、装订和真实厚度；棉含量、克重、尺寸、热压/冷压/粗纹只依据已确认事实，不能把纹理图片当实验性能证明。"
+      },
+      {
+        "id": "travel_art",
+        "label": "旅行画具 / 细节画笔",
+        "rules": "保持笔帽、收纳袋和工具实际结构与售卖数量；旅行桌面、速写场景只作环境，不把道具变成随盒配件。"
+      },
+      {
+        "id": "toy_mop",
+        "label": "喷水 / 喷雾拖把玩具",
+        "rules": "保持水箱、喷口、握柄、拖布和连接处的实际位置；只有确认喷水功能才显示少量水雾，不新增电线、电池口、蒸汽或清洁消毒声明。"
+      },
+      {
+        "id": "toy_tablet",
+        "label": "可拆卸平板玩具",
+        "rules": "只按真实结构展示拆卸/组装，保留零件数量、接口、圆角和屏幕样式；不能把机械玩具改成真实电子平板，不加入电池、联网或学习软件。"
+      },
+      {
+        "id": "toy_kitchen",
+        "label": "儿童刀具 / 厨房玩具",
+        "rules": "保留实际玩具材质、圆角和刀片形态，不创造锋利金属刀刃；只有已确认的配件和食材可作为售卖内容；不猜食品级、适龄或安全认证。"
+      },
+      {
+        "id": "toy_learning",
+        "label": "低龄益智玩具",
+        "rules": "年龄、材料、部件和玩法以已确认商品事实为准；适龄未确认时只拍商品或成人手部，不自动认定0-3岁均适用，不宣称智力提升或医疗效果。"
+      },
+      {
+        "id": "other",
+        "label": "其他 / 自动理解文字",
+        "rules": "根据原始提示词理解产品，不把品类常识当该SKU事实；缺少实物信息时保留中性描述，并列出需要确认的关键项。"
+      }
+    ],
+    "scenes": [
+      {
+        "id": "main",
+        "label": "白底商品主图",
+        "rules": "纯白RGB255背景，实际售卖商品只出现一次，约占画面85%，完整不裁切；不要外加文字角标、水印、边框和未售卖道具。"
+      },
+      {
+        "id": "feature",
+        "label": "卖点副图",
+        "rules": "一个画面突出一个已确认卖点，主体清楚，预留简短文案区域；不编造量化数据，文字可后期排版。"
+      },
+      {
+        "id": "detail",
+        "label": "材质 / 结构特写",
+        "rules": "清晰展示一个真实关键部位，视角与尺度可理解；不要放大成不存在的结构或纹理，避免过强锐化和虚假微观效果。"
+      },
+      {
+        "id": "lifestyle",
+        "label": "使用场景图",
+        "rules": "产品是视觉中心，生活场景自然，动作与产品真实功能一致，道具不要遮挡主体；儿童演示必须有已确认适龄，不足则使用成人手部或无人场景。"
+      },
+      {
+        "id": "aplus",
+        "label": "A+ 横幅 / 品牌叙事",
+        "rules": "依所选模块构图，基础横幅970×300、Premium横幅1464×600仅作裁切参考，实际模块要求优先；主体放在安全区，留文案空间，不将参考尺寸冒充生成尺寸。"
+      },
+      {
+        "id": "comparison",
+        "label": "对比 / 规格信息图",
+        "rules": "只比较提供的真实规格或同品牌已确认款式，避免编造竞品弱点、认证或测试结果；信息与图像清楚分区，文字后期复核。"
+      },
+      {
+        "id": "store_hero",
+        "label": "独立站首屏 / 系列图",
+        "rules": "明确一个主视觉焦点，留出标题与按钮安全区；背景与商品颜色协调，桌面与手机裁切都不截掉关键产品部件，系列图保持光线和色调一致。"
+      }
+    ],
+    "sources": [
+      {
+        "title": "Fuumuui 官方品类",
+        "url": "https://fuumuui.com/"
+      },
+      {
+        "title": "Amazon 商品图片指南",
+        "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+      },
+      {
+        "title": "Amazon A+ 模块与技术要求",
+        "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+      }
+    ]
+  },
+  "templates": [
+    {
+      "id": "product-studio",
+      "title": "干净棚拍产品图",
+      "category": "产品摄影",
+      "description": "用明确的外形、材质和灯光描述，研究单个产品的展示效果。",
+      "prompt": "任务：生成一张单品摄影图。\n主体：【产品名称】，外形为【轮廓与关键部件】，主要材质为【材质】，颜色为【颜色】。\n摆放：主体位于画面中央偏下，完整露出，约占画面高度的三分之二；底部留出少量桌面。\n环境：连续的浅灰背景，柔光从左上方照入，右侧补光，保留与形状相符的接触阴影。\n细节：重点呈现【希望看清的细节】，材质纹理自然，边缘清楚。\n约束：只出现一个主体；不额外添加文字、标志、包装或装饰物。",
+      "tags": [
+        "单品",
+        "棚拍",
+        "材质",
+        "白底"
+      ],
+      "operations": [
+        "generate"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "3:4",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "GPT Image案例库：产品与电商的结构化描述",
+          "url": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/templates.md"
+        }
+      ],
+      "steps": [
+        "替换产品、外形、材质和颜色变量。",
+        "先生成一张检查部件和比例，再调整灯光。"
+      ]
+    },
+    {
+      "id": "reference-product-hero",
+      "title": "参考商品主视觉",
+      "category": "产品摄影",
+      "description": "以上传商品为主体，探索背景和灯光；适合比较商品细节是否保持。",
+      "prompt": "任务：以第一张参考图中的商品为主体，制作一张新的产品展示图。\n保持项：商品轮廓、关键部件的位置、原有颜色、表面图案与可见标记。\n调整项：将背景改为【背景颜色或材质】，光线改为【光线方向与软硬程度】，主体位置为【画面位置】。\n构图：商品完整出现，留出清楚的边界和适度空白，视角尽量接近参考图。\n约束：不增加商品数量，不重画不存在的接口、配件或文字；修改范围集中在背景、摆放和光线。",
+      "tags": [
+        "商品保持",
+        "参考图",
+        "主视觉"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "1:1",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "GPT Image案例库：商品主体与环境分离描述",
+          "url": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/templates.md"
+        }
+      ],
+      "steps": [
+        "上传一张主体清楚的商品图。",
+        "写明背景和光线，生成后逐项对照商品细节。"
+      ]
+    },
+    {
+      "id": "product-lifestyle",
+      "title": "商品生活方式场景",
+      "category": "产品摄影",
+      "description": "把参考商品放入日常使用环境，研究尺度、光影和场景关系。",
+      "prompt": "任务：将第一张参考图中的商品放进【生活场景】。\n主体：沿用参考商品的外观、颜色与可见细节，放在【具体位置】；商品应是画面的视觉重点。\n环境：加入【两到三件辅助物品】，辅助物品体积更小且不遮挡商品。\n光影：使用【时间或灯光条件】，商品与环境具有一致的光线方向和接触阴影。\n构图：镜头高度为【视点】，右侧留出约四分之一空白，暂不加入文案。\n约束：物体尺度合理；不新增参考图中没有的品牌标志或功能结构。",
+      "tags": [
+        "生活方式",
+        "商品保持",
+        "场景"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "16:9",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "GPT Image案例库：产品、场景与光影分层",
+          "url": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/templates.md"
+        }
+      ],
+      "steps": [
+        "先上传商品图，再填写摆放位置和场景。",
+        "检查商品尺度、遮挡和接触阴影。"
+      ]
+    },
+    {
+      "id": "chinese-event-poster",
+      "title": "中文活动海报",
+      "category": "中文海报",
+      "description": "用短标题、单个主视觉和清楚层级制作海报草稿。",
+      "prompt": "任务：设计一张【活动主题】中文海报。\n文字：主标题只写“【主标题，建议8字以内】”；副标题只写“【副标题，建议12字以内】”。\n布局：主标题位于上方，中央为【主视觉元素】，下方放副标题；三部分之间保留明显间隔。\n风格：【风格关键词】，主色为【主色】，辅助色为【辅助色】；标题使用清楚的中文印刷字。\n信息层级：主标题最大，主视觉次之，副标题较小。\n约束：严格使用给定文字，不额外生成日期、价格、标志或小字；主体不压住标题。",
+      "tags": [
+        "中文",
+        "海报",
+        "短文案",
+        "层级"
+      ],
+      "operations": [
+        "generate"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "3:4",
+        "resolution": "1.5K"
+      },
+      "sources": [
+        {
+          "title": "GPT Image案例库：海报与文字层级",
+          "url": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/templates.md"
+        }
+      ],
+      "steps": [
+        "将主副标题压缩为短句。",
+        "生成后逐字检查文字，再决定是否增加细节。"
+      ]
+    },
+    {
+      "id": "social-banner",
+      "title": "横版主题封面",
+      "category": "中文海报",
+      "description": "适合网页或社交内容的横版视觉草稿，留出清楚的标题区。",
+      "prompt": "任务：为【内容主题】制作一张横版封面。\n画面：左侧约六成区域呈现【核心视觉】，右侧约四成区域为干净的标题背景。\n标题：只写“【标题，建议12字以内】”，放在右侧中部，保持字形清楚；不加其它文字。\n色彩：以【主色】和【中性色】构成统一配色，标题与背景有明显明度差。\n质感：【摄影、纸艺或扁平插画三选一】，所有元素使用同一种表现方式。\n约束：保留四周安全边距，主视觉不侵入标题区，不做密集拼贴。",
+      "tags": [
+        "横版",
+        "封面",
+        "标题区",
+        "社交"
+      ],
+      "operations": [
+        "generate"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "16:9",
+        "resolution": "1.5K"
+      },
+      "sources": [
+        {
+          "title": "GPT Image案例库：版式与视觉主次",
+          "url": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/templates.md"
+        }
+      ],
+      "steps": [
+        "选择一种表现方式，避免同时堆叠多种风格。",
+        "检查标题区、边距和缩小后的可读性。"
+      ]
+    },
+    {
+      "id": "three-step-infographic",
+      "title": "三步流程信息图",
+      "category": "信息图",
+      "description": "把提供的流程整理成三个模块，不让模型补造数据。",
+      "prompt": "任务：绘制主题为【流程主题】的三步信息图。\n内容：第一步“【步骤一短标题】”，图标为【图标一】；第二步“【步骤二短标题】”，图标为【图标二】；第三步“【步骤三短标题】”，图标为【图标三】。\n布局：三个等宽模块从左到右排列，使用两根方向明确的箭头依次连接；上方只写“【总标题】”。\n风格：干净的平面图形、统一线宽、浅背景，以【强调色】区分图标和箭头。\n约束：只有三个步骤；只出现给定标题，不自行添加数据、排名或结论，箭头不交叉。",
+      "tags": [
+        "流程",
+        "三步",
+        "信息层级",
+        "中文"
+      ],
+      "operations": [
+        "generate"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "4:3",
+        "resolution": "1.5K"
+      },
+      "sources": [
+        {
+          "title": "Nano Banana案例14：文章信息图的精简信息思路",
+          "url": "https://github.com/PicoTrex/Awesome-Nano-Banana-images#例-14-文章信息图by-黄建同学"
+        }
+      ],
+      "steps": [
+        "先确认三个步骤的真实顺序和短标题。",
+        "生成后检查箭头方向及文字，勿把示意图当数据来源。"
+      ]
+    },
+    {
+      "id": "product-callout",
+      "title": "商品细节标注图",
+      "category": "信息图",
+      "description": "对参考商品的可见部位作简短说明，便于研究布局和指示线。",
+      "prompt": "任务：围绕第一张参考图的商品制作细节标注图。\n主体：商品在画面中央完整出现，保持可见外观，不改造部件。\n标注：左侧写“【部位A名称】”，指向【部位A的可见位置】；右上写“【部位B名称】”，指向【部位B位置】；右下写“【部位C名称】”，指向【部位C位置】。\n布局：三条细线互不交叉，文字与主体之间留出空隙，背景为浅灰。\n约束：只标注提供且能看见的部位，不绘制未知内部结构，不添加尺寸、性能、认证或功效数据。",
+      "tags": [
+        "标注",
+        "商品保持",
+        "细节",
+        "说明图"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "4:3",
+        "resolution": "1.5K"
+      },
+      "sources": [
+        {
+          "title": "GPT Image案例库：结构化说明图",
+          "url": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/templates.md"
+        }
+      ],
+      "steps": [
+        "上传商品图，仅填写实际可见的部位。",
+        "逐项核对指示线与标签，错误标注需修正。"
+      ]
+    },
+    {
+      "id": "original-brand-icon",
+      "title": "原创品牌图标方向",
+      "category": "品牌与包装",
+      "description": "研究一个简洁图形符号，输出为图像设计草稿。",
+      "prompt": "任务：为【业务类型】设计一个原创图形图标。\n概念：将【意象A】与【意象B】转化为一个连续、容易辨认的几何形状，表达【核心感受】。\n形式：图标居中，使用【主色】和【背景色】两种颜色，轮廓简洁，内部避免过细线条。\n构图：四周留白相等，只呈现一个主要方案。\n约束：不使用文字，不引用现有公司标志，不做实体包装样机；缩小后仍应能辨认基本轮廓。",
+      "tags": [
+        "原创图标",
+        "几何",
+        "品牌",
+        "设计草稿"
+      ],
+      "operations": [
+        "generate"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "1:1",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "GPT Image案例库：品牌图形和单一视觉意象",
+          "url": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/templates.md"
+        }
+      ],
+      "steps": [
+        "选两个有辨识度的意象和一种核心感受。",
+        "缩小查看轮廓；需要矢量文件时另做矢量绘制。"
+      ]
+    },
+    {
+      "id": "packaging-concept",
+      "title": "包装外观概念",
+      "category": "品牌与包装",
+      "description": "探索包装形态、材质与配色，作为外观讨论草稿。",
+      "prompt": "任务：生成【产品类别】的包装外观概念图。\n包装：采用【盒型或容器形态】，材质为【材质】，以【主色】为主、【辅助色】为点缀。\n文字：正面仅出现品牌名“【品牌名】”和品类名“【品类名】”；侧面保持简洁，不生成小字。\n展示：一个完整包装，以左前方四十五度视角放在浅色桌面上，柔和光线呈现折角与材质。\n图形：加入原创的【抽象图案】，图案不要覆盖品牌名。\n约束：不额外添加认证、成分、条码或功能宣传；这是外观概念，不呈现生产刀版。",
+      "tags": [
+        "包装",
+        "外观概念",
+        "材质",
+        "配色"
+      ],
+      "operations": [
+        "generate"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "3:4",
+        "resolution": "1.5K"
+      },
+      "sources": [
+        {
+          "title": "GPT Image案例库：包装与品牌触点",
+          "url": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/templates.md"
+        }
+      ],
+      "steps": [
+        "填写容器、材质和简短品牌文字。",
+        "检查折角、文字和外观；不要用于直接制造。"
+      ]
+    },
+    {
+      "id": "interior-concept",
+      "title": "室内空间气氛",
+      "category": "空间与场景",
+      "description": "从空间功能、门窗位置、材料与光线组织室内概念。",
+      "prompt": "任务：绘制一间用于【用途】的室内空间概念图。\n空间：近似【房间形状】，窗户位于【窗户位置】，入口位于【入口位置】，主家具为【主家具】。\n材料：地面为【地面材质】，墙面为【墙面材质】，家具使用【家具材质】。\n光线：【时间段】的自然光从窗户进入，局部以温和照明补光。\n视点：镜头位于【观察位置】，高度接近正常站立视线，空间透视统一。\n约束：保持通道可辨认，家具不穿插，装饰数量有限；不加入人物、文字或尺寸标注。",
+      "tags": [
+        "室内",
+        "材料",
+        "透视",
+        "空间概念"
+      ],
+      "operations": [
+        "generate"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "16:9",
+        "resolution": "1.5K"
+      },
+      "sources": [
+        {
+          "title": "GPT Image案例库：空间、透视与光线",
+          "url": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/templates.md"
+        }
+      ],
+      "steps": [
+        "先写清门窗和主家具的位置。",
+        "检查空间关系和透视，再细化材料。"
+      ]
+    },
+    {
+      "id": "interior-soft-refresh",
+      "title": "保留格局的软装研究",
+      "category": "空间与场景",
+      "description": "以原房间为参考，只研究家具、软装和配色变化。",
+      "prompt": "任务：基于第一张房间参考图，研究【软装风格】的更新方案。\n保持项：墙体、门窗位置、地面边界、镜头位置和房间的整体透视。\n修改项：将【家具或软装对象】改为【目标形态与颜色】，增加【一到两项装饰】，整体配色为【配色】。\n光线：沿用原图自然光的方向，新增对象的阴影与原场景一致。\n约束：不拆改墙体或新增门窗，不扩大房间，不让家具互相穿插；仅输出空间图，不添加设计说明文字。",
+      "tags": [
+        "参考空间",
+        "软装",
+        "格局保持",
+        "编辑"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "smart",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "Nano Banana案例库：参考场景的编辑思路",
+          "url": "https://github.com/PicoTrex/Awesome-Nano-Banana-images"
+        }
+      ],
+      "steps": [
+        "上传房间图，明确只修改哪些软装。",
+        "与原图对照门窗、边界和透视。"
+      ]
+    },
+    {
+      "id": "watercolor-scene",
+      "title": "水彩叙事插画",
+      "category": "插画与分镜",
+      "description": "用限定配色、笔触和一个明确故事瞬间组织插画。",
+      "prompt": "任务：创作表现【故事瞬间】的水彩插画。\n主体：【主角或物体】，正在【一个动作】，位于【场景】。\n画面：前景为【前景元素】，中景突出主体，远景逐渐淡化，保留局部纸面留白。\n色彩：以【两种主色】为主，只用少量【点缀色】引导视线。\n笔触：呈现透明水彩叠色、柔和渗边和自然纸纹，主体的关键轮廓仍可辨认。\n约束：不混入摄影材质，不添加标题和水印，画面只有一个主要叙事焦点。",
+      "tags": [
+        "水彩",
+        "插画",
+        "限定配色",
+        "叙事"
+      ],
+      "operations": [
+        "generate"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "3:4",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "GPT Image案例库：插画材质和场景层次",
+          "url": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/templates.md"
+        }
+      ],
+      "steps": [
+        "把故事压缩为一个动作和一个时刻。",
+        "检查视线焦点，再调整配色或留白。"
+      ]
+    },
+    {
+      "id": "four-panel-storyboard",
+      "title": "单张四格分镜",
+      "category": "插画与分镜",
+      "description": "在一张图中排列四个连续镜头，研究景别和故事节奏。",
+      "prompt": "任务：生成一张四格分镜板，四格按两行两列排列，格间保留白色间隔。\n角色设定：【主角外貌与服装】，四格沿用同一设定。\n镜头一：远景，【镜头一内容】。\n镜头二：中景，【镜头二内容】。\n镜头三：近景，【镜头三内容】。\n镜头四：远景或特写，【镜头四内容】。\n风格：【统一画风】，色彩与光线连续；每格只表达一个主要动作。\n约束：只有四格，不添加文字、对白或数字，不把单格拆成更多小格。",
+      "tags": [
+        "四格",
+        "分镜",
+        "连续性",
+        "叙事"
+      ],
+      "operations": [
+        "generate"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "16:9",
+        "resolution": "1.5K"
+      },
+      "sources": [
+        {
+          "title": "Nano Banana案例24：连续镜头叙事思路",
+          "url": "https://github.com/PicoTrex/Awesome-Nano-Banana-images#例-24-电影分镜by-geminiapp"
+        }
+      ],
+      "steps": [
+        "分别填写四个镜头，角色描述只写一套。",
+        "生成数量选1：四格指图内布局，不是四张输出。"
+      ]
+    },
+    {
+      "id": "background-replace",
+      "title": "主体保留与背景替换",
+      "category": "参考图编辑",
+      "description": "明确保持主体与修改环境，研究边缘和光线衔接。",
+      "prompt": "任务：修改第一张参考图的背景。\n保持项：前景【主体描述】的外形、姿态、服装或商品细节，以及主体在画面中的位置。\n目标背景：【背景场景】，主要颜色为【颜色】，背景层次为【近景与远景关系】。\n衔接：使主体与新背景的光线方向相近，接触阴影自然，边缘不出现明显光圈。\n约束：只调整背景和必要的环境光色，不增加主体，不遮挡脸部或商品关键部件；不添加文字。",
+      "tags": [
+        "背景替换",
+        "主体保持",
+        "边缘",
+        "编辑"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "smart",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "Nano Banana案例库：主体与场景分开编辑",
+          "url": "https://github.com/PicoTrex/Awesome-Nano-Banana-images"
+        }
+      ],
+      "steps": [
+        "上传主体边缘清楚的图片，写明保持项。",
+        "放大检查头发、轮廓和接触阴影。"
+      ]
+    },
+    {
+      "id": "portrait-new-scene",
+      "title": "人物新场景研究",
+      "category": "参考图编辑",
+      "description": "围绕一张人物参考图探索场景变化，并对照人物特征。",
+      "prompt": "任务：将第一张参考图中的人物置于【新场景】。\n人物保持项：脸部特征、发型、表情、服装颜色与可见配饰，尽量沿用原图姿态。\n环境：人物位于【场景位置】，周围加入【少量环境元素】，背景比人物更简洁。\n光线：使用【光照条件】，肤色保持自然，人物与环境阴影一致。\n构图：人物完整或按照【明确裁切范围】出现，双手若出现则结构自然。\n约束：只出现原图中的人物数量，不添加陌生人物，不过度磨皮或改变年龄特征，不生成文字。",
+      "tags": [
+        "人物保持",
+        "场景",
+        "参考人像",
+        "编辑"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "3:4",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "Nano Banana案例5：人物特征与环境分别描述",
+          "url": "https://github.com/PicoTrex/Awesome-Nano-Banana-images#例-5-不同时代自己的照片by-amirmushich"
+        }
+      ],
+      "steps": [
+        "上传人物图，先保持姿态只改场景。",
+        "对照脸部、发型、服装和手部，不以缩略图判断保持效果。"
+      ]
+    },
+    {
+      "id": "two-reference-composition",
+      "title": "双参考主体与环境组合",
+      "category": "多参考组合",
+      "description": "清楚指定两张参考图的职责，研究主体融入环境的效果。",
+      "prompt": "任务：将两张参考图组合为一张自然的场景图。\n参考图一的职责：提供【主体】，沿用其轮廓、颜色、可见细节与主要材质。\n参考图二的职责：提供【环境】，沿用环境的空间关系、背景材料和光线方向；不要复制其中其它主体。\n摆放：将图一主体放在图二的【具体位置】，尺度为【相对环境的大小】，主体不被遮挡。\n衔接：补充自然接触阴影，使光色与图二一致。\n约束：不要互换参考图职责，不把两张图简单并排，不重复主体，不额外加入文字。",
+      "tags": [
+        "双参考",
+        "参考职责",
+        "合成",
+        "主体保持"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 2,
+      "recommended": {
+        "ratio": "smart",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "Nano Banana案例6：多对象参考的明确分工",
+          "url": "https://github.com/PicoTrex/Awesome-Nano-Banana-images#例-6-多参考图像生成by-mrdavids1"
+        }
+      ],
+      "steps": [
+        "先上传主体图，再上传环境图。",
+        "写明摆放位置与尺度，核对两张图的职责是否混淆。"
+      ]
+    },
+    {
+      "id": "palette-transfer",
+      "title": "色卡控制局部配色",
+      "category": "多参考组合",
+      "description": "第一张图提供主体，第二张图只提供颜色，避免把色卡画进结果。",
+      "prompt": "任务：依据第二张参考图的色卡，修改第一张参考图的局部配色。\n主体来源：只使用图一的【主体】，保持外形、部件位置、纹理和背景。\n颜色来源：从图二取【明确描述的色块位置】的颜色，替换图一的【待修改区域】。\n保持项：【不应变化的区域】继续使用原有颜色，不改变主体材质的光泽与明暗结构。\n约束：只改指定区域；不要把图二的色块、文字、边框或色卡背景放进结果，不添加新装饰。",
+      "tags": [
+        "色卡",
+        "局部配色",
+        "双参考",
+        "材质保持"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 2,
+      "recommended": {
+        "ratio": "smart",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "Nano Banana案例13：色卡与主体分开提供",
+          "url": "https://github.com/PicoTrex/Awesome-Nano-Banana-images#例-13-色卡线稿上色by-zho_zho_zho"
+        }
+      ],
+      "steps": [
+        "按顺序上传主体图和色卡。",
+        "描述色块的行列或位置，生成后核对修改范围。"
+      ]
+    },
+    {
+      "id": "transparent-asset",
+      "title": "透明背景单体素材",
+      "category": "透明素材",
+      "description": "研究带真实alpha通道的单体图像，适合后续排版组合。",
+      "prompt": "This is an RGBA image with transparency.\n任务：生成一个独立的【主体】，风格为【表现风格】，颜色为【主色与点缀色】。\n构图：主体居中且完整，四周留出空隙，细长部位不触碰边界，轮廓清楚。\n约束：只出现一个主体；没有地面、背景图案、投影、文字、边框或棋盘格。\nThe image has alpha channel and the background is transparent.",
+      "tags": [
+        "透明",
+        "RGBA",
+        "单体",
+        "PNG"
+      ],
+      "operations": [
+        "generate"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "1:1",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "SwarmUI：Qwen-Image-2.1透明提示格式",
+          "url": "https://github.com/mcmonkeyprojects/SwarmUI/blob/master/docs/Model%20Support.md#qwen-image-21"
+        }
+      ],
+      "steps": [
+        "保留英文RGBA前后句，替换主体与风格。",
+        "保存PNG并检查alpha；画出的棋盘格不是真透明。"
+      ]
+    },
+    {
+      "id": "product-angle-study",
+      "title": "商品角度与细节板",
+      "category": "参考图编辑",
+      "description": "在单张排布图中研究参考商品的正面、斜角和局部细节。",
+      "prompt": "任务：以第一张参考商品图制作一张三栏展示板。\n左栏：接近原参考的正面或主视角，完整展示商品。\n中栏：同一商品的左前方斜角视图，沿用颜色、部件关系与主要材质。\n右栏：放大展示参考图中已经可见的【具体局部】。\n版式：三栏等宽，浅灰背景，间距一致，光线方向统一。\n约束：不写文字或尺寸，不虚构不可见的精密结构或背面标志；只展示一个商品的不同观察方式，不混入另一型号。",
+      "tags": [
+        "角度研究",
+        "细节",
+        "三栏",
+        "商品保持"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "16:9",
+        "resolution": "1.5K"
+      },
+      "sources": [
+        {
+          "title": "Nano Banana案例23：多视角排列思路",
+          "url": "https://github.com/PicoTrex/Awesome-Nano-Banana-images#例-23-多视图结果生成by-error_http_404"
+        }
+      ],
+      "steps": [
+        "上传商品图，指定一个实际可见的局部。",
+        "生成数量选1，逐栏对照主体；角度研究不等于精确三维重建。"
+      ]
+    },
+    {
+      "id": "seasonal-atmosphere",
+      "title": "同一场景的季节气氛",
+      "category": "空间与场景",
+      "description": "保留场景的主要布局，研究季节、天气和色彩气氛。",
+      "prompt": "任务：将第一张参考场景改为【季节与天气】的氛围。\n保持项：主要建筑或物体的位置、道路走向、视角与画面布局。\n改变项：植被改为【植被状态】，天空为【天空状态】，地面呈现【符合天气的表面状态】。\n光线：采用【时间段】，整体色彩偏向【色彩倾向】，主体依然清楚。\n约束：不要新增建筑、道路或人物；不要遮住主要主体，不加入标题和文字。环境变化集中在季节、天气与光色。",
+      "tags": [
+        "季节",
+        "气氛",
+        "场景保持",
+        "天气"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "smart",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "Nano Banana案例库：同场景气氛与季节变化",
+          "url": "https://github.com/PicoTrex/Awesome-Nano-Banana-images"
+        }
+      ],
+      "steps": [
+        "上传场景图，先只选择一个季节和天气条件。",
+        "核对建筑、道路和主体位置，再调光色。"
+      ]
+    },
+    {
+      "id": "commerce-amazon-art-main",
+      "title": "亚马逊 · 艺术用品白底主图",
+      "category": "亚马逊主图",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "以参考图中的实际艺术用品SKU为唯一商品，保持产品型号、数量、颜色、笔头、金属箍、笔杆、包装原有标识与实物一致。纯白背景RGB255，完整展示商品与实际随附配件，画面中只展示一次售卖内容，主体约占85%，边缘自然清楚。柔和均匀棚拍光，真实接触阴影，不加文字角标、道具、促销标识或额外笔支。",
+      "tags": [
+        "电商",
+        "商品保持",
+        "1:1"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "1:1",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-amazon-toy-main",
+      "title": "亚马逊 · 玩具套装主图",
+      "category": "亚马逊主图",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "以参考图中实际售卖玩具为唯一主体，逐件保持实际数量、配色、连接处、功能部件与包装标识，不添加儿童或场景道具。纯白RGB255背景，商品约占85%，关键部件全部在画面内，无水印、角标与促销文案。材质、圆角和阴影自然，不臆造小零件或电子功能。",
+      "tags": [
+        "电商",
+        "商品保持",
+        "1:1"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "1:1",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-brush-tip-macro",
+      "title": "画笔 · 笔锋与金属箍特写",
+      "category": "艺术用品细节",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "以参考商品的笔头与金属箍为视觉焦点，保持真实笔头形状、毛束颜色和长度比例；柔和侧逆光呈现清晰而自然的纤维层次，金属反射克制，背景浅灰虚化。不能把未知毛料指定为天然毛，不补造型号字样。保留笔锋完整，旁边留少量后期文案空间。",
+      "tags": [
+        "电商",
+        "艺术用品",
+        "4:3"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "4:3",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-watercolor-use",
+      "title": "水彩画笔 · 画室使用场景",
+      "category": "艺术用品场景",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "以参考画笔为主体，在清爽自然光的画室桌面上，由成人手部按合理握姿在水彩纸上作画。笔头、笔杆、金属箍、颜色和可见标识保持实物一致，水痕与透明色层自然，不夸张表现未验证吸水性能。画笔尖锋清楚，环境道具少且不遮挡商品，不暗示道具随盒附赠。",
+      "tags": [
+        "电商",
+        "艺术用品",
+        "4:3"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "4:3",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-oil-acrylic-use",
+      "title": "油画 / 丙烯 · 工作台场景",
+      "category": "艺术用品场景",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "保持参考画笔真实笔头、笔杆、金属箍与配色，在有自然侧光的绘画工作台上展示。画布上只有少量与实际绘画媒介相符的笔触，画笔主体清晰、完整，厚涂层次克制。媒介、毛料、支数仅按已确认产品事实，不加入未经确认的性能宣称。",
+      "tags": [
+        "电商",
+        "艺术用品",
+        "4:3"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "4:3",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-paper-surface",
+      "title": "水彩纸 · 纸面与装订细节",
+      "category": "艺术用品细节",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "以参考图实际画本或纸张为主体，斜侧柔光呈现真实纸面纹理、裁切边缘与装订方式。纸张边界和层次清楚，不凭空增加页数、厚度或棉纹。颜色中性，白色不偏紫，背景简洁；克重、棉含量、冷压/热压只保留已确认信息，未知项不添加文字。",
+      "tags": [
+        "电商",
+        "艺术用品",
+        "4:3"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "4:3",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-paint-swatch",
+      "title": "颜料 · 包装与真实色样",
+      "category": "艺术用品细节",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "保持参考颜料的实际色数、容器形状、色盘布局和包装文字，以提供的真实色样作为颜色依据。近景棚拍中商品为中心，色样排列有间距，留出后期注释空间；没有真实色样则只拍包装与颜料本体，不编造色谱、耐光性或竞品比较。",
+      "tags": [
+        "电商",
+        "艺术用品",
+        "1:1"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "1:1",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-travel-kit",
+      "title": "旅行画具 · 便携速写",
+      "category": "艺术用品场景",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "以参考图的实际旅行画具为主体，在明亮户外速写桌面或窗边展示。保持笔帽、收纳袋、纸本和色盘实际结构及套装数量。工具完整、桌面层次清楚，自然光与轻微景深；额外风景和道具仅作环境，不改变实际售卖内容，不添加虚构品牌文案。",
+      "tags": [
+        "电商",
+        "艺术用品",
+        "16:9"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "16:9",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-art-kit-layout",
+      "title": "艺术用品 · 套装平铺清单",
+      "category": "电商副图",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "依据参考图和已确认清单平铺展示实际随盒内容，保留每件物品数量、相对尺寸、配色和标识。俯拍，部件有清晰间隔，避免重叠，背景中性，画面边缘留出安全区。不重复商品，不增加配件；缺少清单时以参考图可见内容为限。",
+      "tags": [
+        "电商",
+        "商品保持",
+        "1:1"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "1:1",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-toy-mop-lifestyle",
+      "title": "拖把玩具 · 温暖家庭场景",
+      "category": "儿童玩具场景",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "以参考拖把玩具为主体，在明亮干净的家庭地面呈现合理使用场景，保持水箱、喷口、拖布、握柄和配色。只有已确认喷水或喷雾功能才呈现少量细水雾，不添加蒸汽、电气部件或消毒效果。未确认适龄时采用成人手部或无人摆拍；确认适龄后再安排自然互动，不让动作遮挡产品。",
+      "tags": [
+        "电商",
+        "商品保持",
+        "4:3"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "4:3",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-toy-tablet-assembly",
+      "title": "平板玩具 · 真实拆装结构",
+      "category": "儿童玩具细节",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "以参考图实际可拆装平板玩具及已确认部件为准，展示清楚的组装前后关系；所有零件一一对应、有间距，接口与轮廓准确。不把机械玩具改造成电子设备，不虚构联网、屏幕软件、电池或不存在的配件。背景浅色，结构说明区域留白，文字后期添加。",
+      "tags": [
+        "电商",
+        "商品保持",
+        "4:3"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "4:3",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-toy-kitchen-use",
+      "title": "厨房玩具 · 手部操作示意",
+      "category": "儿童玩具场景",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "按参考商品真实材质、圆角、刀片和握柄形状，拍摄厨房玩具的合理手部操作示意。未确认适龄时只用成人手部，不改变玩具为锋利金属刀具；食材与道具只作情境且不混入售卖内容。光线温暖、动作清楚，商品在画面中心，不编造食品级、无毒或认证标志。",
+      "tags": [
+        "电商",
+        "商品保持",
+        "4:3"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "4:3",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-toy-learning-detail",
+      "title": "益智玩具 · 玩法细节",
+      "category": "儿童玩具细节",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "以参考玩具的真实部件和已确认玩法为依据，一张画面仅展示一个动作或功能关系。清楚的间距、真实尺度、自然触感，不增添不存在的小零件。适用年龄未确认则不安排儿童，不展示智力提升、治疗效果或认证声明；功能说明留到后期排版。",
+      "tags": [
+        "电商",
+        "商品保持",
+        "1:1"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "1:1",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-aplus-art-banner",
+      "title": "A+ · 艺术用品品牌横幅",
+      "category": "A+与品牌叙事",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "以参考商品为主体，创作温暖自然的艺术工作台横幅，实际产品与关键部件放在中心安全区，右侧留出克制的标题空间。保持实物配色、毛束、纸面与包装标识，不新增认证或性能承诺。背景道具少且层次清楚。按所选A+模块裁切；970×300仅作基础横幅参考，不写进画面。",
+      "tags": [
+        "电商",
+        "商品保持",
+        "21:9"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "21:9",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-aplus-toy-story",
+      "title": "A+ · 玩具家庭叙事",
+      "category": "A+与品牌叙事",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "保持参考玩具真实结构和配色，设计明亮、整洁、温暖的家庭场景横幅，商品始终是视觉中心。适龄未确认时展示成人手部或无人场景；不增加未经确认的玩具功能或配件。文案留白与主体分开，保留适合桌面和手机裁切的安全区，不加虚假认证或教育效果。",
+      "tags": [
+        "电商",
+        "商品保持",
+        "21:9"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "21:9",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-product-comparison",
+      "title": "电商 · 真实规格对比",
+      "category": "电商副图",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "仅根据已提供的两款或多款实际商品参考图及确认参数，等比例并排展示，统一视角、灯光和背景。版面分区清楚，产品各出现一次，规格栏只留白供后期加入确认信息。不捏造竞品、尺寸、认证、排名、耐久试验或效果比较，未知参数不填数字。",
+      "tags": [
+        "电商",
+        "商品保持",
+        "16:9"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "16:9",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-store-art-hero",
+      "title": "独立站 · 艺术用品首屏",
+      "category": "独立站主视觉",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "保持参考商品的实际结构、套装内容、配色和标识，创作温暖、自然、有材质层次的艺术桌面首屏。商品聚焦在画面一侧，另一侧留出标题与按钮安全区；光线柔和，背景克制，有生活感但不杂乱。手机中心裁切时仍能保留关键产品，不将场景道具当作赠品。",
+      "tags": [
+        "电商",
+        "商品保持",
+        "16:9"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "16:9",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    },
+    {
+      "id": "commerce-store-series-consistency",
+      "title": "独立站 · 系列商品统一风格",
+      "category": "独立站主视觉",
+      "description": "面向实际商品与已确认事实的电商画面技能；编辑后应用，不自动改变模型或尺寸。",
+      "prompt": "以参考SKU为主体，使用统一中性色背景、相同光线方向、相近机位与主体占比，制作系列商品图。严格保持本SKU的形状、颜色、数量和包装字样；只统一摄影风格，不把不同款式的零件混用。不新增商标或卖点文字，主体完整，边缘干净，阴影自然。",
+      "tags": [
+        "电商",
+        "商品保持",
+        "1:1"
+      ],
+      "operations": [
+        "edit"
+      ],
+      "minReferences": 1,
+      "recommended": {
+        "ratio": "1:1",
+        "resolution": "2K"
+      },
+      "sources": [
+        {
+          "title": "Fuumuui 官方品类",
+          "url": "https://fuumuui.com/"
+        },
+        {
+          "title": "Amazon 商品图片指南",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?locale=en_us"
+        },
+        {
+          "title": "Amazon A+ 模块与技术要求",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GLG4RQK2Y2RJADU4"
+        }
+      ],
+      "steps": [
+        "上传实物参考图，并确认售卖数量与配件。",
+        "补充已确认事实；未知材质、年龄和认证不猜。",
+        "选择对应平台/用途，润色预览后应用；检查主体、颜色和文字。"
+      ]
+    }
+  ]
+}

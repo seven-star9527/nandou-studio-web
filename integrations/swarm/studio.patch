@@ -1,0 +1,32 @@
+diff --git a/src/Core/WebServer.cs b/src/Core/WebServer.cs
+index f1a9acd..18e74b5 100644
+--- a/src/Core/WebServer.cs
++++ b/src/Core/WebServer.cs
+@@ -225,6 +225,15 @@ public class WebServer
+         }
+         WebApp.Lifetime.ApplicationStopping.Register(() => Program.Shutdown());
+         timer.Check("[Web] StartStop handler");
++        // The project frontend uses an absolute /studio/ asset base.
++        WebApp.Use(async (context, next) =>
++        {
++            if (context.Request.Path == "/studio" || context.Request.Path == "/studio/")
++            {
++                context.Request.Path = "/studio/index.html";
++            }
++            await next();
++        });
+         WebApp.UseStaticFiles(new StaticFileOptions());
+         timer.Check("[Web] static files");
+         static string fixRoute(HttpRequest request)
+diff --git a/src/WebAPI/BasicAPIFeatures.cs b/src/WebAPI/BasicAPIFeatures.cs
+index c86dd43..838c7b6 100644
+--- a/src/WebAPI/BasicAPIFeatures.cs
++++ b/src/WebAPI/BasicAPIFeatures.cs
+@@ -55,6 +55,7 @@ public static class BasicAPIFeatures
+         BackendAPI.Register();
+         AdminAPI.Register();
+         UtilAPI.Register();
++        StudioCloudAPI.Register();
+     }
+ 
+     /// <summary>Rate limiter for <see cref="Login(HttpContext, string, string)"/> to prevent spamming it, limited by IP address.</summary>

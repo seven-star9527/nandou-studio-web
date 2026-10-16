@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title description">
+<title id="title">南斗深色背景品牌徽记</title>
+<desc id="description">保留南斗原始设计及红金配色，仅提亮星环以适配深色背景。</desc>
+<g transform="translate(0 0) scale(1.00000000)" shape-rendering="geometricPrecision"><circle cx="128" cy="128" r="106" fill="none" stroke="#E8EDF5" stroke-width="15" stroke-linecap="round" stroke-dasharray="135 31" transform="rotate(-11 128 128)"/><path d="M68 118 96 88 133 97 142 134 68 118 M142 134 174 149 196 122" fill="none" stroke="#A8322D" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/><circle cx="68" cy="118" r="7.5" fill="#C99A3D"/><circle cx="96" cy="88" r="8.5" fill="#C99A3D"/><circle cx="133" cy="97" r="7.5" fill="#C99A3D"/><circle cx="174" cy="149" r="7.5" fill="#C99A3D"/><circle cx="196" cy="122" r="8.5" fill="#C99A3D"/><circle cx="142" cy="134" r="12" fill="#C99A3D"/><circle cx="142" cy="134" r="4.5" fill="#A8322D"/><path d="M128 231 118 214h20Z" fill="#A8322D"/></g>
+</svg>

@@ -1,0 +1,32 @@
+{
+  "maxReferences": 10,
+  "maxDimension": 4096,
+  "defaults": {
+    "qwenmodel": "qwen3vl_8b_int8_convrot.safetensors",
+    "vae": "qwen_image_2.1_vae_bf16.safetensors",
+    "automaticvae": false,
+    "sampler": "euler",
+    "textencodedimage": "auto"
+  },
+  "modes": [
+    {
+      "id": "original",
+      "label": "标准",
+      "model": "qwen_image_2.1_int8_convrot.safetensors",
+      "defaults": { "steps": 40, "cfgscale": 1, "scheduler": "simple" },
+      "detail": "原版40步；本机1K热运行约26秒。标准与Turbo均支持参考图编辑，效果请先试图。"
+    },
+    {
+      "id": "official_turbo",
+      "label": "Turbo",
+      "model": "qwen_image_2.1_turbo_int8_convrot.safetensors",
+      "defaults": { "steps": 8, "cfgscale": 1, "scheduler": "qwen_image_21_turbo_official" },
+      "detail": "官方Turbo权重与专用8步序列；推荐先用1K快速试图。多张任务在本机依次生成。"
+    }
+  ],
+  "resolutions": {
+    "1K": { "status": "available", "detail": "标准/Turbo均完成8种比例实测；推荐日常试图，耗时受排队和其他GPU程序影响。" },
+    "1.5K": { "status": "available", "detail": "标准/Turbo均完成8种比例实测；竖构图可能裁切主体，请检查结果。" },
+    "2K": { "status": "available", "detail": "标准/Turbo均完成8种比例实测；标准单图约2.4分钟，高分辨率不保证细节或构图更好。" }
+  }
+}

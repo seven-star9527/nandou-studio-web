@@ -1,0 +1,35 @@
+.app-shell .history-section{width:100%;max-width:1460px;margin:34px auto 0;padding:28px 36px 0;border-top:1px solid #d4eff20c}
+.history-section .history-toolbar{display:flex;align-items:center;gap:18px;min-height:42px}
+.history-section .history-heading{justify-content:flex-start;gap:14px;margin-right:auto;min-width:0}
+.history-section .history-heading h2{font-size:20px;white-space:nowrap}
+.history-section .history-count{font-size:11px;color:#7e959f;white-space:nowrap}
+.history-section .history-tabs{width:184px;margin:0;flex:none}
+.history-refresh-button{display:flex;align-items:center;justify-content:center;gap:7px;padding:9px 10px;color:#99b2bc;border-radius:9px;font-size:12px;white-space:nowrap}
+.history-refresh-button:hover{background:#a2dfe80b;color:#c6eaf1}
+.history-section .generation-status{max-width:none;margin:18px 0}
+.history-section .artwork-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:20px;align-items:start}
+.history-section .artwork{border-radius:16px;contain-intrinsic-size:300px 380px}
+.history-section .artwork-info>div{gap:10px}
+.history-section .artwork-card-actions{display:flex;align-items:center;gap:2px}
+.history-section .artwork-owner{display:flex;align-items:center;gap:6px;color:#819ea9;font-size:10px;margin-top:7px;overflow-wrap:anywhere}
+.history-section .artwork-owner em{font-style:normal;font-size:9px;color:#ccb793;border:1px solid #ccb79330;border-radius:4px;padding:1px 4px;white-space:nowrap}
+.history-section .empty-history{max-width:none;width:100%;min-height:214px;padding:27px 22px;margin:18px 0 0;border:1px dashed #a1bdc51b;border-radius:16px;background:#17202539;text-align:center}
+.history-section .empty-history-art{width:64px;height:60px;margin-bottom:12px;color:#65818b}
+.history-section .empty-history h3{font-size:16px;line-height:1.6;font-weight:500}
+.history-section .empty-history p{font-size:12px;line-height:1.8;max-width:440px;margin-top:6px}
+.history-section .empty-history .quiet-button{margin-top:16px;padding:8px 13px}
+.history-section .cloud-task-list{margin-top:18px}
+.history-section .cloud-task-list>div{max-width:none;border:1px solid #a2bac51c;border-radius:12px;background:#18212699;padding:14px 16px;gap:9px 15px}
+.history-section .history-error{margin-top:14px;overflow-wrap:anywhere}
+.history-admin-filters{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-top:18px;padding:13px;border:1px solid #a6c5cf15;border-radius:12px;background:#17202466}
+.history-admin-filters label{display:flex;flex-direction:column;gap:5px;font-size:10px;color:#8da5af;min-width:115px;max-width:280px;flex:1}
+.history-admin-filters select{width:100%;color:#c8d9e1;background:#202c32;border:1px solid #8fa8b62a;border-radius:7px;padding:7px 9px;font:inherit;font-size:11px;min-height:33px}
+.history-admin-filters .text-button{padding:8px 4px;white-space:nowrap}
+.history-remove-dialog{width:min(430px,100%);padding:26px}
+.history-remove-dialog h2{font-size:19px;font-weight:550}
+.history-remove-dialog>p{font-size:13px;line-height:1.9;color:#9fb4bf;margin-top:14px}
+.history-remove-dialog>div{display:flex;justify-content:flex-end;gap:9px;margin-top:24px}
+@media(max-width:1050px){.app-shell .history-section{padding:24px 25px 0;margin-top:30px}.history-section .artwork-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.history-section .history-count{display:none}}
+@media(max-width:760px){.history-section .artwork-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.history-section .history-toolbar{gap:8px;flex-wrap:wrap}.history-section .history-heading{flex:1}.history-section .history-heading h2{font-size:18px}.history-section .history-tabs{width:165px}.history-refresh-button{padding:8px}.history-section .artwork-info{padding:11px 11px 8px}}
+@media(max-width:680px){.app-shell .history-section{padding:22px 20px 0;margin-top:25px}.history-section .history-toolbar{gap:12px}.history-section .history-heading{flex:1 1 calc(100% - 70px);order:0}.history-section .history-tabs{order:2;width:178px}.history-section .history-refresh-button{order:1}.history-section .empty-history{min-height:202px;padding:24px 17px}.history-section .empty-history h3{font-size:15px}.history-section .empty-history p{font-size:11px}.history-admin-filters{gap:9px}.history-admin-filters label{min-width:calc(50% - 9px);max-width:100%}.history-section .cloud-task-list>div{padding:12px}.history-section .cloud-task-list>div>span{overflow-wrap:anywhere}}
+@media(max-width:420px){.history-section .artwork-grid{grid-template-columns:1fr}.history-section .artwork-open{aspect-ratio:4/3}}

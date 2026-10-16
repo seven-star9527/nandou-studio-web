@@ -1,0 +1,70 @@
+{
+  "version": 3,
+  "items": [
+    {
+      "id": "flare-clean-watercolor-box",
+      "title": "固体水彩 · 新品色彩",
+      "category": "水彩颜料 / 新品摄影",
+      "description": "全新水彩套装，洁净白色金属盒、细腻颜料表面与自然侧光。",
+      "model": "GPT Image 2.5 Flare",
+      "mode": "generate",
+      "prompt": "Photograph a BRAND-NEW artist watercolor set for a real ecommerce store. A pristine open white enamel metal watercolor tin with neatly seated pans in a varied professional color range, shown completely in frame at a natural three-quarter angle on a clean light-grey photography surface. Solid dry paint cakes have fine matte pigment texture and clean sharp edges; the brand-new white lid and metal body are spotless. A single NEW dark wooden watercolor brush lies neatly beside it on clean finely woven natural linen. Product fills most of the composition. Soft broad window side light plus gentle white bounce, natural contact shadows, accurate whites, rich but credible pigment colors, crisp high-quality physical detail and believable optical depth of field, 70mm product photography at f/8. A refined commercial photograph of new retail products, not a render. Everything is new, clean and intact. Do not add dirt, paint residue, rust, scratches, stains, distressing, patina, wear, old objects, or deliberate imperfections. No people, letters, branding or watermark. Fictional product concept, landscape 3:2.",
+      "url": "/studio/showcase/flare-clean-watercolor-box.webp",
+      "width": 2048,
+      "height": 1360,
+      "seconds": 18.859,
+      "concept": true,
+      "credits": 0.45004,
+      "apiModel": "gpt-image-2.5-flare"
+    },
+    {
+      "id": "nano-toy-kitchen",
+      "title": "切切乐工具 · 真实厨房场景",
+      "category": "儿童玩具 / 使用场景",
+      "description": "三件圆头塑料玩具工具，表现新品磨砂材质、自然接触阴影与整洁厨房场景。",
+      "model": "Nano Banana 2.1",
+      "mode": "generate",
+      "prompt": "真实儿童厨房玩具品牌的商业场景照片，横向3:2。一套虚构的圆头塑料切切乐工具整齐但自然地放在浅灰厨房工作台上，三把大小略有差别的玩具刀，奶油黄、低饱和鼠尾草绿与雾蓝色手柄，圆润刀头、没有金属刀刃，塑料为真实细磨砂注塑表面，边缘有自然轻微高光，旁边一块小竹砧板和一段切开的香蕉，砧板保留真实竹纹、少量香蕉纤维和接触阴影。背景只看到真实家用厨房的一小角、米白瓷砖和轻微虚化的亚麻擦手布，不要宽阔空荡客厅，不要人物和手，不表现任何使用年龄或认证。三把工具都完整入镜，在画面前中景成为清晰主体，摄影视角从桌面上方约35度拍摄，45mm镜头f/8，左侧柔和自然日光，有方向但不过曝，白平衡准确，真实商业摄影的克制色彩与材料层次。不要渲染感、泛光、塑料被画成陶瓷、悬浮、额外刀刃、文字、品牌、水印。只作为概念产品摄影。",
+      "url": "/studio/showcase/nano-toy-kitchen.webp",
+      "width": 2528,
+      "height": 1696,
+      "seconds": 28.968,
+      "concept": true,
+      "credits": 0.56608,
+      "apiModel": "gemini-nano-banana-2.1"
+    },
+    {
+      "id": "sunburst-straight-brush-studio",
+      "title": "水彩画笔 · 新品参考摄影",
+      "category": "水彩画笔 / 新品参考编辑",
+      "description": "保留参考图的三支画笔，以洁净纸纹、亚麻和柔和侧光展示全新商品。",
+      "model": "GPT Image 2.5 Sunburst",
+      "mode": "edit",
+      "prompt": "Edit only the background and lighting of this reference product photograph. Keep EXACTLY the same THREE watercolor brushes as separate rigid physical objects. Preserve their horizontal parallel orientation, straight smooth black wooden shafts, size order, silver ferrules, brown pointed bristles, spacing and complete silhouettes. Each brush must have ONE continuous perfectly straight longitudinal centerline from bristle tip through ferrule to handle end; ferrule and handle must be coaxial with no kink, bow, wobble, bend, joint offset or twisted perspective. Do not rotate or restyle the brushes. All three full tips and handle ends must remain in frame with generous margins, no overlap and no added brushes. Replace the plain white background with clean ivory cold-pressed watercolor paper on a spotless pale grey studio table. In the far upper left only, include a small part of a pristine white ceramic palette and a neatly folded clean light natural linen cloth, separated well away from the brushes. Natural broad window side light with subtle fill, clean accurate whites, fine genuine paper grain, natural metal reflections, delicate realistic contact shadows, crisp professional ecommerce product photography, refined restrained colors. New retail products, clean and intact; no paint residue, dirt, scratches, distressed props, rust, wear, text, branding, watermark or people. Keep the original product geometry as the highest priority. Landscape 3:2, flat lay with no lens distortion.",
+      "url": "/studio/showcase/sunburst-straight-brush-studio.webp",
+      "width": 2048,
+      "height": 1360,
+      "seconds": 28.296,
+      "concept": true,
+      "credits": 0.18774,
+      "apiModel": "gpt-image-2.5-sunburst",
+      "referenceImageUrl": "/studio/showcase/turbo-brush-main-v3.webp"
+    },
+    {
+      "id": "turbo-brush-main-v3",
+      "title": "水彩画笔 · 白底主图",
+      "category": "艺术用品 / 主图",
+      "description": "三支画笔白底排布，学习简洁主图构图。概念产品，实际商品请上传参考图后调整。",
+      "model": "Qwen-Image-2.1 Turbo",
+      "mode": "generate",
+      "prompt": "三支完整的短柄水彩画笔产品摄影概念图，小号、中号、大号各一支。黑色亮漆短笔杆，银色金属笔箍，棕色圆尖笔毛。三支短画笔水平横向整齐平铺在画面正中央，笔头向左，笔杆尾端向右，彼此清晰分开。俯视全景，完整的笔尖和笔杆尾端全部入镜，整组画笔只占画面中间约60%，四边留出宽阔纯白边距。无缝纯白背景，真实细腻毛尖和银色金属反光，微弱自然接触阴影。只有三支画笔，没有道具，没有包装，没有文字，没有水印。",
+      "url": "/studio/showcase/turbo-brush-main-v3.webp",
+      "width": 1024,
+      "height": 1024,
+      "seconds": 20.828,
+      "concept": true,
+      "credits": 0,
+      "localMode": "official_turbo"
+    }
+  ]
+}
