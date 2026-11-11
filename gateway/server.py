@@ -21,6 +21,8 @@ from aiohttp import ClientError, ClientSession, ClientTimeout, WSMsgType, web
 from .store import Store, TERMINAL, password_hash, password_valid
 from .local_queue import LocalQueue
 from .agent import CreativeAgent
+from .image_uploads import ImageUploadError, check_upload_batch, generation_references
+from .task_references import reference_directory, save_task_references, task_references
 
 
 COOKIE = "nandou_session"
@@ -57,9 +59,10 @@ def http_parts(request):
 
 
 def inline_references(values, limit):
-    return isinstance(values, list) and len(values) <= limit and all(
-        isinstance(value, str) and re.fullmatch(r"data:image/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=\r\n]+", value)
-        for value in values)
+    if not isinstance(values, list) or len(values) > limit:
+        return False
+    check_upload_batch(values)
+    return True
 
 
 def local_entry(request):
@@ -115,6 +118,8 @@ class Gateway:
             self.store.touch(user, request.remote or "unknown")
         try:
             response = await handler(request)
+        except ImageUploadError as exc:
+            response = error(str(exc), 400, exc.code)
         except (ValueError, json.JSONDecodeError):
             response = error("请求参数无效。")
         except (asyncio.TimeoutError, ConnectionError, ClientError):
@@ -177,6 +182,19 @@ class Gateway:
             return error("请先登录。", 401, "authentication_required")
         if path.startswith("/studio-agent/"):
             return await self.agent.route(request, user)
+        if path.startswith('/studio-references/') and request.method in {'GET', 'HEAD'}:
+            parts = http_parts(request)
+            if len(parts) != 3 or not self.store.task_visible(self.store.task(parts[1]), user):
+                raise web.HTTPNotFound()
+            entries = task_references(self.root, parts[1])
+            if not any(entry['url'] == '/' + '/'.join(parts) for entry in entries):
+                raise web.HTTPNotFound()
+            target = reference_directory(self.root, parts[1]) / parts[2]
+            if not target.is_file():
+                raise web.HTTPNotFound()
+            response = web.FileResponse(target)
+            response.headers['Cache-Control'] = 'private, no-store'
+            return response
         if path == "/API/GenerateText2ImageWS" and request.method == "GET":
             return await self.generate(request, user)
         if path.startswith("/API/") and request.method == "POST":
@@ -202,6 +220,13 @@ class Gateway:
         if request.method != "POST":
             raise web.HTTPNotFound()
         data = await self.body(request)
+        if action == 'tasks/references':
+            if not user:
+                return error('请先登录。', 401)
+            task_id = str(data.get('task_id', ''))
+            if not self.store.task_visible(self.store.task(task_id), user):
+                return error('记录不可见。', 404)
+            return web.json_response({'references': task_references(self.root, task_id)})
         if action == "tasks/hide":
             if not user:
                 return error("请先登录。", 401)
@@ -322,9 +347,12 @@ class Gateway:
             if data.get("path", "") != "" or int(data.get("depth", 10)) not in range(0, 21):
                 return error("只允许读取当前作品目录。")
             await self.synchronize(user, include_local=True)
-            rows = self.store.all("SELECT a.*,u.email owner_email,v.hidden_at,t.started_at FROM artifacts a JOIN users u ON u.id=a.owner_id JOIN tasks t ON t.id=a.task_id LEFT JOIN task_visibility v ON v.task_id=t.id AND v.viewer_id=t.owner_id WHERE t.kind='local' ORDER BY a.created_at DESC")
+            rows = self.store.all("SELECT a.*,u.email owner_email,v.hidden_at,t.started_at,t.ended_at,t.seconds FROM artifacts a JOIN users u ON u.id=a.owner_id JOIN tasks t ON t.id=a.task_id LEFT JOIN task_visibility v ON v.task_id=t.id AND v.viewer_id=t.owner_id WHERE t.kind='local' ORDER BY a.created_at DESC")
             files = [{"src": row["url"].lstrip("/"), "metadata": row["metadata"], "studio_task_id": row["task_id"], "studio_owner_id": row["owner_id"], "studio_owner_email": row["owner_email"], "studio_hidden_at": row["hidden_at"],
-                      "studio_created_utc": datetime.fromtimestamp(row["started_at"], timezone.utc).isoformat()}
+                      # Legacy imports only know the image file's modification time, not submission time.
+                      "studio_created_utc": None if row["task_id"].startswith("legacy_") else datetime.fromtimestamp(row["started_at"], timezone.utc).isoformat(),
+                      "studio_completed_utc": datetime.fromtimestamp(row["ended_at"], timezone.utc).isoformat() if row["ended_at"] else None,
+                      "studio_duration_seconds": row["seconds"]}
                      for row in rows if user["role"] == "admin" or row["owner_id"] == user["id"] and not row["hidden_at"]]
             return web.json_response({"files": files, "folders": []})
         if endpoint == "SubmitStudioCloudImage":
@@ -365,6 +393,8 @@ class Gateway:
         if tid != data.get("request_id"):
             raise ValueError("canonical UUID required")
         fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+        references = await asyncio.to_thread(generation_references, data.get('reference_images', []))
+        upstream_data = {**data, 'reference_images': references}
         if not self.store.claim(tid, user["id"], "cloud", data.get("model"), data.get("n"), fingerprint):
             old = self.store.task(tid)
             if old["owner_id"] != user["id"] or old["fingerprint"] != fingerprint or old.get("hidden_at"):
@@ -374,9 +404,14 @@ class Gateway:
             if not record.get("request_id"):
                 record = {"request_id": tid, "status": "outcome_unknown", "model": old["model"], "prompt": data.get("prompt", ""), "images": [], "error": "提交结果待核对，不会重复提交。"}
             return web.json_response(self.store.public_task(record, old))
+        try:
+            await asyncio.to_thread(save_task_references, self.root, tid, data.get('reference_images', []))
+        except (OSError, ValueError):
+            self.store.update_task(tid, status='failed', ended_at=time.time(), credits=0)
+            return error('参考图保存失败，未提交生成。', 503, 'reference_save_failed')
         self.store.update_task(tid, status="submitting", record_json=json.dumps({"request_id": tid, "model": data.get("model"), "prompt": data.get("prompt", ""), "status": "submitting", "images": []}, ensure_ascii=False))
         try:
-            result = await self.upstream_api(user, "SubmitStudioCloudImage", data, False)
+            result = await self.upstream_api(user, "SubmitStudioCloudImage", upstream_data, False)
             if result.get("request_id"):
                 self.save_cloud(user, result)
                 return web.json_response(self.store.public_task(result, self.store.task(tid)))
@@ -558,6 +593,9 @@ class Gateway:
             references = data.get("promptimages", [])
             if not inline_references(references, 10):
                 raise ValueError("references must be inline images")
+            # Qwen 2.1's upstream reference-latent branch skips its usual input-size
+            # normalization. Bound only this inference copy; archive the full original.
+            data['promptimages'] = await asyncio.to_thread(generation_references, references, max_pixels=1024 ** 2)
             count = int(data.get("images", 1))
             if not 1 <= count <= 4:
                 raise ValueError("生成数量超出范围")
@@ -566,15 +604,41 @@ class Gateway:
                 raise ValueError("invalid metadata")
             if not self.store.claim(tid, user["id"], "local", data.get("model"), count):
                 raise ValueError("任务编号已使用，不会重复生成")
+            try:
+                await asyncio.to_thread(save_task_references, self.root, tid, references)
+            except (OSError, ValueError):
+                self.store.update_task(tid, status='failed', ended_at=time.time(), credits=0)
+                raise ValueError('参考图保存失败，未提交生成')
             data["session_id"] = sid
             # Server-owned marker lets saved local output recover the correct task after restart.
             data["extra_metadata"] = {**metadata, "studio_task_id": tid}
             job = self.local_queue.enqueue(user, tid, data, socket)
             await self.local_queue.emit(job, {"studio_task_id": tid, "studio_queue": self.local_queue.snapshot(tid)})
             await asyncio.shield(job["done"])
-        except (ValueError, KeyError, asyncio.TimeoutError):
+        except ImageUploadError as exc:
             if not socket.closed:
-                await socket.send_json({"error": "生成请求无效或登录已失效，请刷新连接。", "socket_intention": "close"})
+                await socket.send_json({"error": str(exc), "error_id": exc.code, "socket_intention": "close"})
+        except (ValueError, KeyError) as exc:
+            messages = {
+                '会话不属于当前账号': ('图像会话无效，请重新连接图像服务。', 'invalid_session_id'),
+                '登录已失效': ('登录已失效，请重新登录。', 'authentication_required'),
+                'unsupported local model': ('当前本地模型不受支持，请重新选择模型。', 'unsupported_model'),
+                'unsupported generation parameter': ('生成请求包含不支持的参数，请刷新页面后重试。', 'unsupported_parameter'),
+                'invalid dimensions': ('图像宽高须为 64 至 4096 像素，且为 32 的倍数。', 'invalid_dimensions'),
+                'invalid steps': ('生成步数须为 1 至 100。', 'invalid_steps'),
+                'references must be inline images': ('请上传图片文件，最多 10 张参考图。', 'invalid_references'),
+                '生成数量超出范围': ('生成数量须为 1 至 4 张。', 'invalid_image_count'),
+                '任务编号已使用，不会重复生成': ('此任务编号已提交，请刷新创作记录核对，不会重复生成。', 'duplicate_task'),
+                '参考图保存失败，未提交生成': ('参考图保存失败，未提交生成，请检查本机存储。', 'reference_save_failed'),
+            }
+            message, code = messages.get(str(exc), ('生成请求参数无效，请检查模型、尺寸和参考图。', 'invalid_generation_request'))
+            if not socket.closed:
+                await socket.send_json({"error": message, "error_id": code, "socket_intention": "close"})
+                if code == 'authentication_required':
+                    await socket.close(code=1008)
+        except asyncio.TimeoutError:
+            if not socket.closed:
+                await socket.send_json({"error": "接收生成请求超时，尚未提交生成，请重新连接后重试。", "error_id": "request_timeout", "socket_intention": "close"})
         finally:
             self.sockets[user["id"]].discard(socket)
             await socket.close()

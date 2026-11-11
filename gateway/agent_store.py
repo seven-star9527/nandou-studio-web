@@ -2,6 +2,7 @@
 import json
 import time
 import uuid
+from pathlib import Path
 from PIL import Image
 
 
@@ -78,14 +79,15 @@ class AgentStore:
 
     def public_assets(self, cid, user):
         rows = self.store.all("SELECT * FROM agent_assets WHERE chat_id=? ORDER BY created_at", (cid,))
-        return [{"id": r["id"], "name": r["name"], "url": "/studio-agent/assets/" + r["id"], "task_id": r["task_id"], **self.image_size(r['path'])}
+        return [{"id": r["id"], "name": r["name"], "url": "/studio-agent/assets/" + r["id"], "task_id": r["task_id"], 'kind':'file' if Path(r['path']).suffix.lower() in {'.pcraft','.psd'} else 'image', **self.image_size(r['path'])}
                 for r in rows if not r["task_id"] or self.store.task_visible(self.store.task(r["task_id"]), user)]
 
     def image_size(self, path):
         if path not in self.dimensions:
             try:
                 with Image.open(path) as image:
-                    self.dimensions[path] = {'width': image.width, 'height': image.height}
+                    rotated = image.getexif().get(274) in {5,6,7,8}
+                    self.dimensions[path] = {'width': image.height if rotated else image.width, 'height': image.width if rotated else image.height}
             except OSError:
                 return {'width': 1, 'height': 1}
         return self.dimensions[path]
@@ -100,11 +102,12 @@ class AgentStore:
         chat = self.chat(cid, user)
         if not chat:
             return None
-        turns = self.store.all("SELECT id,status,created_at,ended_at FROM agent_turns WHERE chat_id=? ORDER BY created_at", (cid,))
+        turns = self.store.all("SELECT id,status,created_at,ended_at,settings_json FROM agent_turns WHERE chat_id=? ORDER BY created_at", (cid,))
+        turns = [{**{k:v for k,v in t.items() if k!='settings_json'}, 'agent':json.loads(t['settings_json']).get('agent','generate')} for t in turns]
         events = self.events(cid)
         # A task hidden by its owner must also disappear from the conversation.
         for e in events:
             task_id = e["data"].get("request_id")
-            if task_id and not self.store.task_visible(self.store.task(task_id), user):
+            if task_id and not self.store.one('SELECT 1 FROM edit_jobs WHERE id=? AND chat_id=?',(task_id,cid)) and not self.store.task_visible(self.store.task(task_id), user):
                 e["data"] = {"hidden": True, "title": "此任务记录已删除"}
         return {"chat": chat, "turns": turns, "events": events, "assets": self.public_assets(cid, user), "context": self.summary(cid)}

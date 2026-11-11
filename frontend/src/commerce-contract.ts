@@ -1,7 +1,7 @@
 export interface CommerceOption { id: string; label: string; rules: string; }
 export interface CommerceCatalog { platforms: CommerceOption[]; categories: CommerceOption[]; scenes: CommerceOption[]; sources: { title: string; url: string }[]; }
-export interface PolishCapabilities { configured: boolean; model: string; commerce: CommerceCatalog; provider: 'deepseek'; image_upload: false; }
-export interface PolishInput { prompt: string; facts: string; platform: string; category: string; scene: string; reference_count: number; width: number; height: number; }
+export interface PolishCapabilities { configured: boolean; model: string; commerce: CommerceCatalog; provider: 'deepseek'; image_upload: false; scopes?: ('general' | 'commerce')[]; }
+export interface PolishInput { scope?: 'general' | 'commerce'; prompt: string; facts: string; platform: string; category: string; scene: string; reference_count: number; width: number; height: number; }
 export interface PolishResult { prompt: string; changes: string[]; missing_facts: string[]; warnings: string[]; model: string; provider_model?: string; usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }; }
 
 export function polishIdentity(input: PolishInput, model: string, referenceIds: string): string {

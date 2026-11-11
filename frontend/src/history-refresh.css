@@ -19,7 +19,14 @@
 .history-section .empty-history p{font-size:12px;line-height:1.8;max-width:440px;margin-top:6px}
 .history-section .empty-history .quiet-button{margin-top:16px;padding:8px 13px}
 .history-section .cloud-task-list{margin-top:18px}
-.history-section .cloud-task-list>div{max-width:none;border:1px solid #a2bac51c;border-radius:12px;background:#18212699;padding:14px 16px;gap:9px 15px}
+.history-section .cloud-task-list>div{max-width:none;border:1px solid var(--glass-line);border-radius:12px;background:var(--glass-surface);color:var(--glass-ink);padding:14px 16px;gap:9px 15px}
+.history-section .cloud-task-list>div>span,.history-section .cloud-task-list>div>strong,.history-section .cloud-task-list>div>button{color:var(--glass-ink)}
+.history-section .cloud-task-list>div>p{color:var(--glass-ink)}
+.history-section .cloud-task-list>div>small{color:var(--glass-muted)}
+.history-task-time{display:block;color:var(--glass-muted);font-size:11px;font-variant-numeric:tabular-nums;line-height:1.7;white-space:nowrap}
+.history-section .artwork-info>.history-task-time{margin-top:7px}
+.history-section .cloud-task-list>div>.history-task-time{flex-basis:100%;color:var(--glass-muted)}
+.artwork-detail .history-task-time{color:inherit;font-size:inherit;white-space:normal}
 .history-section .history-error{margin-top:14px;overflow-wrap:anywhere}
 .history-admin-filters{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-top:18px;padding:13px;border:1px solid #a6c5cf15;border-radius:12px;background:#17202466}
 .history-admin-filters label{display:flex;flex-direction:column;gap:5px;font-size:10px;color:#8da5af;min-width:115px;max-width:280px;flex:1}

@@ -2,15 +2,17 @@ import { AUTH_REQUIRED_EVENT } from './auth';
 
 export interface AgentSettings { model: string; quality: string; resolution: string; ratio: string; count: string; platform: string; scene: string; style: string; }
 export interface AgentChat { id: string; title: string; owner_id: string; owner_email: string; hidden_at?: number; status?: string; updated_at: number; }
-export interface AgentAsset { id: string; name: string; url: string; task_id?: string; width?: number; height?: number; }
+export interface AgentAsset { id: string; name: string; url: string; task_id?: string; width?: number; height?: number; kind?: 'image' | 'file'; }
 export interface AgentEvent { id: number; turn_id: string; kind: string; at: number; data: {
   text?: string; summary?: string; steps?: string[]; options?: string[]; title?: string; id?: string;
   ref_ids?: string[]; prompt?: string; ratio?: string; request_id?: string; status?: string;
-  images?: { ref_id: string; url: string }[]; credits?: number | null; hidden?: boolean; error?: string;
+  images?: { ref_id: string; url: string; name?: string }[]; credits?: number | null; hidden?: boolean; error?: string;
+  agent?: 'generate' | 'retouch'; tool?: string; source_id?: string;
+  operations?: {title: string; tool: string}[]; files?: {name: string; url: string}[];
   streaming?: boolean; seconds?: number; examples?: string[];
 }; }
-export interface AgentView { chat: AgentChat; turns: { id: string; status: string; created_at: number; ended_at?: number }[]; events: AgentEvent[]; assets: AgentAsset[]; context?: {summary: string; through_event_id: number; updated_at: number} | null; }
-export interface AgentConfig { configured: boolean; defaults: AgentSettings; skills: { id: string; title: string; description: string }[]; sources: { title: string; url: string }[]; }
+export interface AgentView { chat: AgentChat; turns: { id: string; status: string; created_at: number; ended_at?: number; agent?: 'generate' | 'retouch' }[]; events: AgentEvent[]; assets: AgentAsset[]; context?: {summary: string; through_event_id: number; updated_at: number} | null; }
+export interface AgentConfig { configured: boolean; defaults: AgentSettings; skills: { id: string; title: string; description: string }[]; retouch_skills?: { id: string; title: string; description: string }[]; editing?: {python: boolean; mcp_configured: boolean; desktop_configured: boolean}; sources: { title: string; url: string }[]; }
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = { model: 'gpt-image-2.5-flare', quality: 'medium', resolution: '1K', ratio: 'auto', count: 'auto', platform: 'auto', scene: 'auto', style: 'natural' };
 
 export async function agentRequest<T>(path: string, data?: object, signal?: AbortSignal): Promise<T> {

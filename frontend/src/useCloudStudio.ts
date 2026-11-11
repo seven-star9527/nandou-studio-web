@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { SwarmClient } from './api';
+import { SwarmError, type SwarmClient } from './api';
 import { cloudJobUpdate, cloudTaskNeedsReadback, taskArtworks } from './cloud-contract';
 import { mergeJobProgress } from './job-progress';
 import type { Artwork, CloudAccount, CloudCapabilities, CloudRequest, CloudTask, Job } from './types';
@@ -85,6 +85,15 @@ export function useCloudStudio(client: SwarmClient, receiveArtwork: (artwork: Ar
     };
     try { await client.submitCloud(request); }
     catch (error) {
+      // Explicit validation rejection occurs before submission; there is no task to poll.
+      if (error instanceof SwarmError && [400, 413, 422].includes(error.status ?? 0)) {
+        waiting.current = false;
+        if (mounted.current && active.current?.id === request.request_id) {
+          active.current = { ...active.current, phase: 'error', error: error.message };
+          setJob(active.current);
+        }
+        return;
+      }
       if (mounted.current && active.current?.id === request.request_id) {
         active.current = { ...active.current, phase: 'unknown', error: `提交未确认，将按请求编号读取结果：${error instanceof Error ? error.message : String(error)}` };
         setJob(active.current);

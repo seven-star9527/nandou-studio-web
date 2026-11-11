@@ -6,6 +6,7 @@ import DocumentReader from './components/DocumentReader';
 import { ThemeToggle } from './theme';
 import AgentWorkspace from './components/AgentWorkspace';
 import { flushSync } from 'react-dom';
+import { IMAGE_UPLOAD_HINT } from './image-upload-limits';
 import Composer from './components/Composer';
 import History, { isBusy } from './components/History';
 import Icon from './components/Icon';
@@ -87,6 +88,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
           creditQuote={studio.creditQuote}
           polisher={<PromptPolisher client={studio.client} prompt={studio.prompt} setPrompt={studio.setPrompt} width={studio.settings.width} height={studio.settings.height} model={studio.cloudModel?.id ?? studio.settings.model} referenceCount={editing ? studio.references.length : 0} referenceIds={editing ? studio.references.map(reference => reference.id).join(',') : ''} busy={busy} />}
           generate={() => studio.generate(editing)} busy={busy} ready={studio.ready} />
+        {editing && studio.references.length > 0 ? <p className="edit-notice">{IMAGE_UPLOAD_HINT}。较大原图会另建缩图作为生图参考；原尺寸精修请使用修图 Agent。</p> : null}
         {studio.error ? <div className="error-banner" role="alert"><span>{studio.error}</span><button className="icon-button" onClick={() => studio.setError('')} aria-label="关闭错误提示"><Icon name="close" size={15} /></button></div> : null}
         {!studio.cloudModel && studio.connected && !studio.settings.model ? <div className="service-notice" role="status">服务已连接，正在等待 Qwen-Image-2.1 模型就绪。<button onClick={() => void studio.connect()}>刷新模型</button></div> : null}
         {!studio.cloudModel && studio.connected && studio.settings.model && (studio.configurationError || !studio.backendReady || !studio.localReady) ? <div className="service-notice" role="status"><span>{studio.configurationError || (!studio.localReady ? '模型组件正在下载或尚未就绪，请稍后刷新连接。' : '图像服务尚未就绪，请稍后刷新连接。')}</span><button onClick={() => void studio.connect()}>刷新连接</button></div> : null}
@@ -99,7 +101,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         if (studio.references.length >= limit) throw new Error(`最多添加${limit}张参考图，请先移除一张。`);
         changeEditing(true); await studio.addReferences([file]);
       }} />
-      <History isAdmin={user.is_admin || user.role === 'admin'} hideTask={id => studio.hideTask(id, user.is_admin)} currentUserId={user.id} artworks={studio.history} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError} refresh={() => void studio.refreshHistory()} stop={() => void studio.stop()} reuse={artwork => { const operation = studio.reuse(artwork); if (operation) setEditing(operation === 'edit'); }} />
+      <History isAdmin={user.is_admin || user.role === 'admin'} hideTask={id => studio.hideTask(id, user.is_admin)} currentUserId={user.id} artworks={studio.history} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError} refresh={() => void studio.refreshHistory()} stop={() => void studio.stop()} reuse={studio.reuse} />
     </main>}
   </div>;
 }

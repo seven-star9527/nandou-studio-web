@@ -2,7 +2,8 @@ import type { Artwork, BackendStatus, CloudAccount, CloudCapabilities, CloudQuot
 
 export class SwarmError extends Error {
   readonly code?: string;
-  constructor(message: string, code?: string) { super(message); this.name = 'SwarmError'; this.code = code; }
+  readonly status?: number;
+  constructor(message: string, code?: string, status?: number) { super(message); this.name = 'SwarmError'; this.code = code; this.status = status; }
 }
 
 export function imageUrl(path: string, user: string, appendUser = true): string {
@@ -36,7 +37,11 @@ export class SwarmClient {
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
     });
     if (response.status === 401 && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('nandou-auth-required'));
-    if (!response.ok) throw new SwarmError(`服务请求失败（HTTP ${response.status}）`);
+    if (!response.ok) {
+      const details = await response.json().catch(() => null);
+      throw new SwarmError(typeof details?.error === 'string' ? details.error : `服务请求失败（HTTP ${response.status}）`,
+        typeof details?.error_id === 'string' ? details.error_id : undefined, response.status);
+    }
     const value = await response.json();
     const isCloudTaskRecord = ['GetStudioCloudTask', 'SubmitStudioCloudImage'].includes(endpoint) && value.request_id && value.status;
     const isAccountRecord = endpoint === 'GetStudioCloudAccount' && typeof value.configured === 'boolean' && value.state;
@@ -72,13 +77,14 @@ export class SwarmClient {
   }
   status() { return this.request<BackendStatus>('GetCurrentStatus'); }
   async history() {
-    const result = await this.request<{ files: { src: string; metadata?: string; studio_task_id?: string; studio_owner_id?: string; studio_owner_email?: string; studio_hidden_at?: string; studio_created_utc?: string }[] }>('ListImages', {
+    const result = await this.request<{ files: { src: string; metadata?: string; studio_task_id?: string; studio_owner_id?: string; studio_owner_email?: string; studio_hidden_at?: string; studio_created_utc?: string | null; studio_completed_utc?: string | null; studio_duration_seconds?: number | null }[] }>('ListImages', {
       path: '', depth: 10, sortBy: 'Date', sortReverse: false,
     });
     return result.files.filter(f => /\.(?:png|jpe?g|webp)$/i.test(f.src))
       .slice(0, 100).map(f => ({ ...parseArtwork(f.src, f.metadata, this.user, this.appendUser), source: 'local' as const,
         taskId: f.studio_task_id, ownerId: f.studio_owner_id, ownerEmail: f.studio_owner_email, hiddenAt: f.studio_hidden_at,
-        generatedAt: f.studio_created_utc }));
+        generatedAt: f.studio_created_utc ?? undefined, completedAt: f.studio_completed_utc ?? undefined,
+        duration: typeof f.studio_duration_seconds === 'number' && Number.isFinite(f.studio_duration_seconds) && f.studio_duration_seconds >= 0 ? f.studio_duration_seconds : undefined }));
   }
   async hideTask(taskId: string) {
     const response = await fetch('/studio-auth/tasks/hide', { method: 'POST', credentials: 'same-origin',

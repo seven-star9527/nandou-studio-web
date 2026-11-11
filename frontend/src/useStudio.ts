@@ -1,4 +1,6 @@
 import { createId } from './id';
+import { readReferenceImage, restoreTaskReferences } from './task-references';
+import { checkImageBatch } from './image-upload-limits';
 import { useDraft } from './useDraft';
 import { accountStorageKey } from './account-storage';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -141,19 +143,9 @@ export function useStudio() {
     try {
       const max = cloudModel ? referenceLimit(cloudModel) : config.maxReferences ?? 3;
       if (files.length + references.length > max) throw new Error(`最多添加 ${max} 张参考图。`);
-      const additions = await Promise.all(Array.from(files).map(file => new Promise<ReferenceImage>((resolve, reject) => {
-        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) { reject(new Error('参考图支持 PNG、JPEG 和 WebP。')); return; }
-        if (file.size > 15 * 1024 * 1024) { reject(new Error('单张参考图需小于15MB。')); return; }
-        const reader = new FileReader();
-        reader.onerror = () => reject(new Error(`读取 ${file.name} 失败。`));
-        reader.onload = () => {
-          const image = new Image();
-          image.onerror = () => reject(new Error(`${file.name} 不是可读取的图像。`));
-          image.onload = () => resolve({ id: createId(), name: file.name, dataUrl: String(reader.result), width: image.naturalWidth, height: image.naturalHeight });
-          image.src = String(reader.result);
-        };
-        reader.readAsDataURL(file);
-      })));
+      checkImageBatch(Array.from(files), references.map(reference => reference.dataUrl));
+      const additions: ReferenceImage[] = [];
+      for (const file of Array.from(files)) additions.push(await readReferenceImage(file));
       setReferences(previous => [...previous, ...additions]);
       const first = references[0] ?? additions[0];
       if (!cloudModel && settings.ratio === 'smart') setSettings(previous => ({ ...previous, ...dimensions('smart', previous.resolution, first) }));
@@ -241,7 +233,8 @@ export function useStudio() {
           artwork.ownerId = message.studio_owner_id; artwork.ownerEmail = message.studio_owner_email;
           artwork.prompt ||= prompt; artwork.width ??= settings.width; artwork.height ??= settings.height;
           artwork.model ??= settings.model; artwork.steps ??= settings.steps;
-          artwork.generatedAt = new Date().toISOString(); artwork.duration = (Date.now() - newJob.started) / 1000;
+          artwork.generatedAt = new Date(newJob.started).toISOString();
+          artwork.duration = (Date.now() - newJob.started) / 1000;
           setHistory(previous => [artwork, ...previous.filter(item => item.url !== artwork.url)]);
           updateJob({ completed: completedIndices.size, percent: Math.min(.98, completedIndices.size / newJob.requested * .98) });
         }
@@ -290,24 +283,37 @@ export function useStudio() {
     if (activeJob.current?.id === taskId) { activeJob.current = null; setJob(null); }
   };
 
-  const reuse = (artwork: Artwork) => {
-    setPrompt(artwork.prompt);
+  const reuse = async (artwork: Artwork, signal: AbortSignal) => {
     const cloudChoice = cloud.capabilities?.models.find(model => model.id === artwork.model);
-    if (cloudChoice) {
-      setCloudModelId(cloudChoice.id);
-      setSettings(previous => cloudArtworkSettings(artwork, cloudChoice, previous).settings);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return cloudArtworkSettings(artwork, cloudChoice, settings).operation;
+    if ((artwork.source === 'cloud' && !cloudChoice) ||
+        (!cloudChoice && artwork.model && !models.some(model => model.name === artwork.model))) {
+      throw new Error('原任务模型暂不可用，请刷新连接后重试。');
     }
-    else if (models.some(model => model.name === artwork.model)) setCloudModelId(null);
-    setSettings(previous => ({ ...previous,
-      ...(!cloudChoice && artwork.width && artwork.height ? { width: artwork.width, height: artwork.height, ratio: 'custom' as const } : {}),
-      ...(artwork.seed != null ? { seed: artwork.seed } : {}),
-      ...(artwork.steps != null ? { steps: artwork.steps } : {}),
-      ...(models.some(model => model.name === artwork.model) ? { model: artwork.model! } : {}),
-    }));
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    return undefined;
+    const restored = artwork.taskId ? await restoreTaskReferences(artwork.taskId, signal) : [];
+    if (signal.aborted || !mounted.current) return;
+    let expected = 0;
+    let local: Record<string, unknown> = {}, extra: Record<string, unknown> = {};
+    try {
+      const meta = JSON.parse(artwork.metadata ?? '{}');
+      local = meta.sui_image_params ?? {};
+      extra = meta.sui_extra_data ?? {};
+      expected = meta.studio_cloud?.reference_count ?? JSON.parse(String(extra.studio_reference_dimensions ?? '[]')).length;
+    } catch { /* Legacy images may lack generation metadata. */ }
+    if (restored.length && expected > restored.length) throw new Error('任务参考原图不完整，请检查原图记录后再试。');
+    const cloudDraft = cloudChoice && cloudArtworkSettings(artwork, cloudChoice, settings);
+    const editing = restored.length > 0 || expected > 0 || cloudDraft?.operation === 'edit';
+    setDraft({ prompt: artwork.prompt, references: restored, editing });
+    setError(editing && !restored.length ? '此任务未保存参考原图，请重新添加后提交。' : '');
+    setCloudModelId(cloudChoice?.id ?? null);
+    setSettings(cloudDraft?.settings ?? {
+      ...settings, model: artwork.model ?? settings.model,
+      ratio: typeof extra.studio_requested_ratio === 'string' ? extra.studio_requested_ratio : 'custom',
+      resolution: typeof extra.studio_requested_resolution === 'string' ? extra.studio_requested_resolution : '1K',
+      width: artwork.width ?? settings.width, height: artwork.height ?? settings.height,
+      seed: artwork.seed ?? '-1', steps: artwork.steps ?? settings.steps,
+      cfg: typeof local.cfgscale === 'number' ? local.cfgscale : Number(modelDefaults(artwork.model ?? settings.model, config).cfgscale ?? 7),
+      count: typeof local.images === 'number' ? local.images : 1,
+    });
   };
 
   return { client, connected, connecting, error, setError, historyError, status, params, models, config, configurationError, backendReady, localReady,

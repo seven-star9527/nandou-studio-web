@@ -51,7 +51,7 @@ export interface GenerationMessage extends BackendStatus {
 export interface Artwork {
   id: string; url: string; prompt: string; width?: number; height?: number;
   seed?: string; model?: string; steps?: number; metadata?: string;
-  generatedAt?: string; duration?: number; current?: boolean; batchIndex?: number;
+  generatedAt?: string; completedAt?: string; duration?: number; current?: boolean; batchIndex?: number;
   source?: 'local' | 'cloud';
   locallySaved?: boolean; downloadError?: string; mimeType?: string;
   taskCreditsCost?: number; taskCostSettled?: boolean;
@@ -98,6 +98,7 @@ export interface CloudTask {
   operation?: CloudOperation; reference_count?: number;
   poll_error?: string; result_warning?: string;
   error?: string; model: string; prompt: string; parameters: Record<string, unknown>; cost?: unknown; credits_cost?: number | null; created_utc: string;
+  completed_utc?: string; actual_time?: number;
   studio_task_id?: string; studio_owner_id?: string; studio_owner_email?: string; studio_hidden_at?: string;
 }
 export interface PromptTemplate {

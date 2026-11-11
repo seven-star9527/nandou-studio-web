@@ -3,6 +3,7 @@ import type { ReferenceImage } from '../types';
 import Icon from './Icon';
 import ModalPortal from './ModalPortal';
 import { useModalDialog } from '../useModalDialog';
+import { IMAGE_UPLOAD_HINT } from '../image-upload-limits';
 
 export default function ReferenceDock({ references, add, remove, maxReferences, disabled = false }: {
   references: ReferenceImage[]; add: () => void; remove: (id: string) => void; maxReferences: number; disabled?: boolean;
@@ -56,7 +57,7 @@ export default function ReferenceDock({ references, add, remove, maxReferences, 
           </button>
           <button type="button" disabled={disabled} className="reference-card-remove" aria-label={`移除参考图${index + 1}`} title="移除参考图" onClick={() => { setHover(null); remove(reference.id); }}><Icon name="close" size={11} /></button>
         </div>)}
-        <button type="button" className="reference-add" onClick={add} aria-label="上传参考图" disabled={disabled || references.length >= maxReferences} title={`添加参考图，最多${maxReferences}张`}><Icon name="plus" size={22} /></button>
+        <button type="button" className="reference-add" onClick={add} aria-label="上传参考图" disabled={disabled || references.length >= maxReferences} title={`添加参考图，最多${maxReferences}张；${IMAGE_UPLOAD_HINT}`}><Icon name="plus" size={22} /></button>
       </div>
       {references.length > 1 ? <span className="reference-count" aria-hidden="true">{references.length} 张</span> : null}
     </div>

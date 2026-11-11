@@ -5,7 +5,7 @@ import Icon from './Icon';
 type Option = {value: string; label: string};
 
 /** Desktop select: keep focus on the trigger while navigating the list. */
-export default function GlassSelect({label, value, options, onChange}: {label: string; value: string; options: Option[]; onChange: (value: string) => void}) {
+export default function GlassSelect({label, value, options, onChange, disabled = false}: {label: string; value: string; options: Option[]; onChange: (value: string) => void; disabled?: boolean}) {
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -24,7 +24,7 @@ export default function GlassSelect({label, value, options, onChange}: {label: s
   useEffect(() => { if (open) document.getElementById(`${id}-${active}`)?.scrollIntoView({block:'nearest'}); }, [active, id, open]);
   return <div ref={root} className={`glass-select ${open ? 'is-open' : ''}`} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
     <span id={`${id}-label`} className="glass-select-label">{label}</span>
-    <button ref={trigger} type="button" className="glass-select-trigger" role="combobox" aria-labelledby={`${id}-label`} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? `${id}-list` : undefined} aria-activedescendant={open ? `${id}-${active}` : undefined}
+    <button ref={trigger} type="button" disabled={disabled} className="glass-select-trigger" role="combobox" aria-labelledby={`${id}-label`} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? `${id}-list` : undefined} aria-activedescendant={open ? `${id}-${active}` : undefined}
       onClick={() => open ? setOpen(false) : reveal()} onKeyDown={event => {
         if (event.key === 'Escape') { event.preventDefault(); setOpen(false); return; }
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); if (!open) reveal(); else setActive(index => Math.max(0, Math.min(options.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))); }

@@ -7,6 +7,16 @@ export const INITIAL_HISTORY_FILTERS: HistoryFilters = { owner: '', model: '', d
 export const isActiveJob = (job: Job | null) => Boolean(job && ['connecting', 'queued', 'loading', 'generating', 'stopping', 'background', 'unknown', 'delivery_pending'].includes(job.phase));
 export const isTerminalTask = (task: CloudTask) => ['completed', 'failed', 'cancelled'].includes(task.status);
 
+const historyDateFormat = new Intl.DateTimeFormat('zh-CN', {
+  year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+});
+export function historyTimestamp(value: string | undefined) {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return null;
+  return { iso: new Date(timestamp).toISOString(), label: historyDateFormat.format(timestamp) };
+}
+
 function matches(owner: string | undefined, model: string | undefined, created: string | undefined, status: Exclude<HistoryStatus, 'all'>, filters: HistoryFilters, now: number) {
   return (!filters.owner || owner === filters.owner) && (!filters.model || model === filters.model)
     && (!filters.days || Boolean(created && Date.parse(created) >= now - filters.days * 86400000))
