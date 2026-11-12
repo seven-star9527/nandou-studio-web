@@ -104,5 +104,5 @@ export interface CloudTask {
 export interface PromptTemplate {
   id: string; title: string; category: string; description: string; prompt: string; tags: string[];
   operations: CloudOperation[]; minReferences: number; recommended: { ratio: string; resolution: string; model?: string };
-  sources: { title: string; url: string }[]; steps?: string[];
+  sources: { title: string; url: string }[]; steps?: string[]; preview?: string;
 }

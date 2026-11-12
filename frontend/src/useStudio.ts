@@ -152,6 +152,11 @@ export function useStudio() {
     } catch (e) { setError(errorText(e)); }
   }, [config.maxReferences, references, settings.ratio, cloudModel]);
 
+  const appendReference = (reference: ReferenceImage) => {
+    setReferences(previous => [...previous, reference]);
+    if (!cloudModel && settings.ratio === 'smart' && !references.length) setSettings(previous => ({...previous, ...dimensions('smart', previous.resolution, reference)}));
+  };
+
   const removeReference = (id: string) => {
     const next = references.filter(image => image.id !== id);
     setReferences(next);
@@ -322,7 +327,7 @@ export function useStudio() {
     settings, setSettings, references, prompt, setPrompt, minReferences, setTemplate, draftReady, draftError, history, job: displayJob, loadingHistory,
     cloudModel, cloudModels: cloud.capabilities?.models ?? [], cloudConfigured: Boolean(cloud.capabilities?.configured), cloudCapabilityError: cloud.capabilityError, cloudTasks: cloud.tasks,
     cloudAccount: cloud.account, accountLoading: cloud.accountLoading, accountError: cloud.accountError, refreshAccount: cloud.loadAccount, creditQuote,
-    connect, refreshHistory, hideTask, setGeometry, addReferences, removeReference, selectModel, selectCloudModel, selectLocal, generate, stop, reuse,
+    connect, refreshHistory, hideTask, setGeometry, addReferences, appendReference, removeReference, selectModel, selectCloudModel, selectLocal, generate, stop, reuse,
     modes: availableModes(models, config),
   };
 }

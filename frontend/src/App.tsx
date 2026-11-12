@@ -21,6 +21,10 @@ import { useStudio } from './useStudio';
 import CloudCreditsAccount from './components/CloudCreditsAccount';
 import PromptPolisher from './components/PromptPolisher';
 import ShowcaseGallery from './components/ShowcaseGallery';
+import { loadStudioImage } from './task-references';
+import { checkImageBatch } from './image-upload-limits';
+import { RATIOS } from './resolution-policy';
+import type { ChooseTemplate } from './components/TemplateActions';
 import { referenceLimit } from './cloud-contract';
 import AuthGate, { type AuthWorkspace } from './components/AuthGate';
 import AdminUsage from './components/AdminUsage';
@@ -81,8 +85,10 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
   const openBoard = (initial?:WorkImage) => { setQuick(null); void refreshEdits(); setBoard({initial});selectWorkspace('studio');setSurface('canvas');setProject(null);window.scrollTo(0,0); };
   const [quick, setQuick] = useState<{tool:QuickTool; source?:WorkImage} | null>(null);
   const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth >= 1150);
-  const [previousPrompt,setPreviousPrompt] = useState<{before:string;minimum:number;applied:string}|null>(null);
+  const [previousPrompt,setPreviousPrompt] = useState<{before:string;minimum:number;applied:string; added?:string; ratio?:string; appliedRatio?:string}|null>(null);
+  const [templateNotice,setTemplateNotice] = useState('');
   const applyTemplate = (text:string,minimum=0) => {
+    setTemplateNotice('');
     setPreviousPrompt({before:studio.prompt,minimum:studio.minReferences,applied:text});
     studio.setTemplate(text,minimum);
     requestAnimationFrame(()=>{
@@ -90,6 +96,31 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
       const slot=/【[^】]+】/.exec(text);
       field?.focus({preventScroll:true});
       if(slot)field?.setSelectionRange(slot.index,slot.index+slot[0].length);
+    });
+  };
+  const chooseTemplate: ChooseTemplate = async (choice, onlyImage, signal) => {
+    const reference = choice.image ? await loadStudioImage(choice.image, choice.title + ' · 样图') : undefined;
+    if (signal.aborted) return;
+    if (reference) {
+      const limit = studio.cloudModel ? referenceLimit(studio.cloudModel) : studio.config.maxReferences ?? 3;
+      if (studio.references.length >= limit) throw new Error(`当前最多使用 ${limit} 张参考图，请先移除一张。`);
+      checkImageBatch([], [...studio.references.map(r=>r.dataUrl), reference.dataUrl]);
+      studio.appendReference(reference);
+    }
+    let note = '已添加参考图';
+    if (!onlyImage) {
+      applyTemplate(choice.prompt,choice.minimum);
+      const supportsRatio = studio.cloudModel ? studio.cloudModel.ratios.includes(choice.ratio)
+        : RATIOS.some(r=>r.id===choice.ratio);
+      if (supportsRatio) studio.setGeometry(choice.ratio, studio.settings.resolution);
+      const ratio = supportsRatio ? choice.ratio : studio.settings.ratio;
+      setPreviousPrompt({before:studio.prompt, minimum:studio.minReferences, applied:choice.prompt, added:reference?.id, ratio:studio.settings.ratio, appliedRatio:ratio});
+      note = `已套用「${choice.title}」 · ${ratio}${supportsRatio?'':'（沿用当前比例）'}${reference?' · 已带入样图':''}`;
+    }
+    setTemplateNotice(note);
+    requestAnimationFrame(()=>{
+      const field=document.querySelector<HTMLTextAreaElement>('.composer textarea');
+      field?.focus({preventScroll:true});field?.scrollIntoView({block:'center',behavior:'instant'});
     });
   };
   const busy = isBusy(studio.job);
@@ -130,16 +161,13 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         {!studio.cloudModel && studio.connected && studio.settings.model && (studio.configurationError || !studio.backendReady || !studio.localReady) ? <div className="service-notice" role="status"><span>{studio.configurationError || (!studio.localReady ? '模型组件正在下载或尚未就绪，请稍后刷新连接。' : '图像服务尚未就绪，请稍后刷新连接。')}</span><button onClick={() => void studio.connect()}>刷新连接</button></div> : null}
         {studio.cloudModel && !studio.cloudConfigured ? <div className="service-notice" role="status"><span>APIMart 云模型待配置。请在服务端配置密钥后刷新连接。</span><button onClick={() => void studio.connect()}>刷新连接</button></div> : null}
         <ScenePresets currentPrompt={studio.prompt} apply={applyTemplate} />
-        <div className="library-entry"><PromptLibrary referenceCount={studio.references.length} apply={applyTemplate} /></div>
-        {previousPrompt && previousPrompt.applied===studio.prompt && <button className="scene-add" onClick={()=>{studio.setTemplate(previousPrompt.before,previousPrompt.minimum);setPreviousPrompt(null);}}>撤销套用</button>}</>}
+        <div className="library-entry"><PromptLibrary referenceCount={studio.references.length} apply={chooseTemplate} /></div>
+        {templateNotice && <p className="panel-note" role="status">{templateNotice}</p>}
+        {previousPrompt && previousPrompt.applied===studio.prompt && <button className="scene-add" onClick={()=>{studio.setTemplate(previousPrompt.before,previousPrompt.minimum);if(previousPrompt.added)studio.removeReference(previousPrompt.added);if(previousPrompt.ratio && previousPrompt.appliedRatio===studio.settings.ratio)studio.setGeometry(previousPrompt.ratio,studio.settings.resolution);setPreviousPrompt(null);setTemplateNotice('');}}>撤销套用</button>}</>}
       </section>
       {surface==='image' && <><section className="work-entry" aria-label="快捷修图"><div className="work-heading"><h2>快捷修图</h2></div><div className="work-tiles">{(Object.keys(toolNames) as QuickTool[]).map(tool =>
         <button className="quiet-button" key={tool} onClick={() => setQuick({tool})}><Icon name={tool==='cutout'?'image':tool==='retouch'?'brush':'expand'} />{toolNames[tool]}<Icon name="arrow" size={16}/></button>)}</div></section>
-      <ShowcaseGallery apply={(prompt,referenceEdit) => { studio.setTemplate(prompt,referenceEdit?1:0); window.scrollTo({ top: 0, behavior: 'smooth' }); }} addReference={async file => {
-        const limit = studio.cloudModel ? referenceLimit(studio.cloudModel) : studio.config.maxReferences ?? 3;
-        if (studio.references.length >= limit) throw new Error(`最多添加${limit}张参考图，请先移除一张。`);
-        await studio.addReferences([file]);
-      }} /></>}
+      <ShowcaseGallery apply={chooseTemplate} hasReferences={editing} /></>}
     </main></div>}
     {quick && <QuickEdit compare={openBoard} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => {setQuick(null);void refreshEdits();}} />}
     {project && <CompareBoard key={project.id} project={project} initial={board?.initial} close={() => {setProject(null);setBoard(null);}} />}

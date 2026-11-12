@@ -21,6 +21,8 @@
 !/frontend/vite.config.ts
 !/frontend/src/
 !/frontend/public/
+# Template preview media is distributed with the static asset bundle.
+/frontend/public/template-previews/
 # Rejected and test showcase assets remain local.
 /frontend/public/showcase/*
 !/frontend/public/showcase/flare-clean-watercolor-box.webp

@@ -34,6 +34,15 @@ export function readReferenceImage(file: File) {
   });
 }
 
+export async function loadStudioImage(url: string, name: string) {
+  const response = await fetch(url, { credentials: 'same-origin', mode: 'same-origin', redirect: 'error' });
+  if (!response.ok) throw new Error('图片读取失败，请重新打开后再试。');
+  const blob = await response.blob();
+  const file = new File([blob], name, { type: blob.type });
+  checkImageBatch([file], []);
+  return readReferenceImage(file);
+}
+
 export async function restoreTaskReferences(taskId: string, signal: AbortSignal) {
   const entries = await listTaskReferences(taskId, signal);
   const references: ReferenceImage[] = [];
