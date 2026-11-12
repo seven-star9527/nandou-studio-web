@@ -41,6 +41,7 @@ class Workbench:
         self.store = gateway.store
         self.root = gateway.root / 'runtime/workbench'
         self.root.mkdir(parents=True, exist_ok=True)
+        self.cutout_model = gateway.root / 'models/birefnet-general-lite.onnx'
         self.slots = asyncio.Semaphore(2)
         self.running = set()
         self.board = CompareBoard(self)
@@ -187,9 +188,9 @@ class Workbench:
                 if base is not None:
                     await asyncio.to_thread(correct_mask,source,base,temp,mask['strokes'])
                 elif tool == 'cutout':
-                    await cutout(self.g.agent.editing,source,temp)
+                    await cutout(self.cutout_model,source,temp)
                 elif tool == 'retouch':
-                    await product_retouch(self.g.agent.editing,source,temp,option)
+                    await product_retouch(self.cutout_model,source,temp,option)
                 else:
                     await asyncio.to_thread(retouch_or_enlarge,source,temp,tool,option)
                 w,h = dimensions(temp)

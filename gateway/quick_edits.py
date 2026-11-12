@@ -2,6 +2,9 @@
 import asyncio
 import tempfile
 from pathlib import Path
+from functools import lru_cache
+from threading import Lock
+import os
 
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 from .image_uploads import MAX_IMAGE_PIXELS
@@ -80,21 +83,7 @@ def correct_mask(source, base, output, strokes):
     original.save(output, format='PNG', icc_profile=original.info.get('icc_profile'))
 
 
-def protect_white_background_details(original, alpha):
-    # On nearly uniform white studio backgrounds, disconnected dark bristles and
-    # ferrules still provide foreground evidence even if the subject selector missed them.
-    sample = original.convert('RGB').resize((96,96),Image.Resampling.BOX)
-    edges = [(0,0,96,1),(0,95,96,96),(0,0,1,96),(95,0,96,96)]
-    white = sum(sum(min(pixel)>=248 for pixel in sample.crop(box).get_flattened_data()) for box in edges)
-    if white < 0.98 * 384:
-        return alpha
-    r,g,b = original.convert('RGB').split()
-    darkest = ImageChops.darker(r,ImageChops.darker(g,b))
-    evidence = darkest.point([max(0,min(255,(245-value)*5)) for value in range(256)])
-    return ImageChops.darker(original.getchannel('A'),ImageChops.lighter(alpha,evidence))
-
-
-async def product_retouch(editing, source, output, option):
+async def product_retouch(model_path, source, output, option):
     _, background, _ = retouch_settings(option)
     if background=='white':
         def has_cutout():
@@ -103,34 +92,52 @@ async def product_retouch(editing, source, output, option):
         if not await asyncio.to_thread(has_cutout):
             with tempfile.TemporaryDirectory(dir=output.parent) as folder:
                 transparent = Path(folder)/'subject.png'
-                await cutout(editing,source,transparent)
+                await cutout(model_path,source,transparent)
                 await asyncio.to_thread(retouch_or_enlarge,transparent,output,'retouch',option)
             return
     await asyncio.to_thread(retouch_or_enlarge,source,output,'retouch',option)
 
 
-async def cutout(editing, source, output):
-    with tempfile.TemporaryDirectory(dir=output.parent) as scratch:
-        folder = Path(scratch)
-        prepared, exported = folder / 'source.png', folder / 'result.png'
-        def prepare():
-            im = upright(source)
-            im.save(prepared, format='PNG')
-            return im.size
-        size = await asyncio.to_thread(prepare)
-        async with editing.connection(folder) as mcp:
-            await mcp.call('doc_open', path=str(prepared))
-            await mcp.call('command_run', id='layer.removeBackground', params={'refine': True})
-            await mcp.call('doc_save', path=str(exported))
-        def verify():
-            with Image.open(exported) as result:
-                if result.size != size or 'A' not in result.getbands():
-                    raise ValueError('未取得原尺寸透明图，请换一张背景更清楚的原图。')
-                low, high = result.getchannel('A').getextrema()
-                if low > 20 or high < 220:
-                    raise ValueError('未分离出完整主体与透明背景，请使用修图 Agent 调整蒙版。')
-                original = upright(source)
-                alpha = protect_white_background_details(original,result.getchannel('A'))
-                original.putalpha(ImageChops.darker(original.getchannel('A'),alpha))
-                original.save(output,format='PNG',icc_profile=original.info.get('icc_profile'))
-        await asyncio.to_thread(verify)
+# The desktop CPU session is shared across users. Only original pixels leave this function.
+_inference_lock = Lock()
+
+
+@lru_cache(maxsize=1)
+def subject_session(model_path):
+    if not model_path.is_file():
+        raise ValueError('缺少本机抠图模型 birefnet-general-lite.onnx，请配置后重试。')
+    import onnxruntime as ort
+    settings = ort.SessionOptions()
+    settings.intra_op_num_threads = min(8, os.cpu_count() or 1)
+    return ort.InferenceSession(str(model_path), settings, providers=['CPUExecutionProvider'])
+
+
+def segment_subject(model_path, source, output):
+    import numpy as np
+    original = upright(source)
+    source_alpha = original.getchannel('A')
+    # Use a neutral backdrop at inference time so hidden RGB cannot influence the subject.
+    visible = Image.alpha_composite(Image.new('RGBA', original.size, 'white'), original)
+    rgb = visible.convert('RGB').resize((1024, 1024), Image.Resampling.LANCZOS)
+    tensor = np.asarray(rgb, dtype=np.float32)
+    tensor /= max(float(tensor.max()), 1)
+    tensor -= np.array([.485, .456, .406], dtype=np.float32)
+    tensor /= np.array([.229, .224, .225], dtype=np.float32)
+    with _inference_lock:
+        session = subject_session(model_path)
+        logits = session.run([session.get_outputs()[0].name], {
+            session.get_inputs()[0].name: tensor.transpose(2, 0, 1)[None]
+        })[0].squeeze()
+    probability = 1 / (1 + np.exp(-np.clip(logits, -60, 60)))
+    if probability.max() < .85 or probability.min() > .15:
+        raise ValueError('未能可靠区分商品和背景，请换一张主体更清楚的图片。')
+    mask = Image.fromarray(np.rint(probability * 255).astype('uint8'))
+    alpha = ImageChops.darker(source_alpha, mask.resize(original.size, Image.Resampling.LANCZOS))
+    if alpha.getextrema()[1] < 128:
+        raise ValueError('未识别到可见商品。')
+    original.putalpha(alpha)
+    original.save(output, format='PNG', icc_profile=original.info.get('icc_profile'))
+
+
+async def cutout(model_path, source, output):
+    await asyncio.to_thread(segment_subject, model_path, source, output)
