@@ -50,7 +50,37 @@ class AgentStore:
     def listing(self, user, all_users=False):
         clause = "1=1" if all_users and user["role"] == "admin" else "c.owner_id=? AND c.hidden_at IS NULL"
         args = () if all_users and user["role"] == "admin" else (user["id"],)
-        return self.store.all("SELECT c.*,u.email owner_email,(SELECT status FROM agent_turns WHERE chat_id=c.id ORDER BY created_at DESC LIMIT 1) status FROM agent_chats c JOIN users u ON c.owner_id=u.id WHERE " + clause + " ORDER BY c.updated_at DESC LIMIT 100", args)
+        chats = self.store.all("SELECT c.*,u.email owner_email,(SELECT status FROM agent_turns WHERE chat_id=c.id ORDER BY created_at DESC LIMIT 1) status FROM agent_chats c JOIN users u ON c.owner_id=u.id WHERE " + clause + " ORDER BY c.updated_at DESC LIMIT 100", args)
+
+        if not chats:
+            return chats
+        # Read the actual turn inputs and delivered results in one batch for the visible conversations.
+        ids = json.dumps([chat['id'] for chat in chats])
+        candidates = self.store.all("""
+            WITH visible(id) AS (SELECT value FROM json_each(?)),
+            pictures(chat_id, aid, priority, at, position) AS (
+              SELECT t.chat_id, j.value, 0, t.created_at, j.key FROM agent_turns t
+              JOIN visible ON visible.id=t.chat_id JOIN json_each(t.refs_json) j
+              UNION ALL
+              SELECT e.chat_id, json_extract(j.value,'$.ref_id'), 1, e.at, j.key FROM agent_events e
+              JOIN visible ON visible.id=e.chat_id JOIN json_each(e.data_json,'$.images') j WHERE e.kind='result'
+            )
+            SELECT p.chat_id,p.aid,p.priority FROM pictures p JOIN agent_assets a
+              ON a.id=p.aid AND a.chat_id=p.chat_id JOIN agent_chats c ON c.id=p.chat_id
+            LEFT JOIN tasks t ON t.id=a.task_id
+            LEFT JOIN task_visibility h ON h.task_id=t.id AND h.viewer_id=t.owner_id
+            WHERE a.task_id IS NULL OR (t.id IS NOT NULL AND (? OR (t.owner_id=c.owner_id AND h.hidden_at IS NULL)))
+            ORDER BY p.priority,p.at,p.position
+        """, (ids, user['role']=='admin'))
+        grouped = {}
+        for item in candidates:
+            key = (item['chat_id'], item['priority'])
+            grouped.setdefault(key, {})[item['aid']] = None
+        for chat in chats:
+            covers = grouped.get((chat['id'], 0)) or grouped.get((chat['id'], 1)) or {}
+            chat['cover_id'] = next(iter(covers), None)
+            chat['picture_count'] = len(covers)
+        return chats
 
     def event(self, cid, tid, kind, data):
         with self.db:

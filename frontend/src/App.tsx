@@ -64,6 +64,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
     }
   };
   const { editing, setEditing } = studio;
+  const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth >= 1150);
   const busy = isBusy(studio.job);
   const connectedLabel = studio.connecting ? '连接中' : studio.connected ? '已连接' : '未连接';
   const changeEditing = (value: boolean) => {
@@ -76,8 +77,10 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
       <GlassTabs className="workspace-mode-switch" role="navigation" aria-label="创作模式"><button className={workspace === 'studio' ? 'active' : ''} onClick={event => void setWorkspace('studio', event.detail > 0)}>图片创作</button><button className={workspace === 'agent' ? 'active' : ''} onClick={event => void setWorkspace('agent', event.detail > 0)}>Agent 创作</button></GlassTabs>
       <div className="header-actions"><ThemeToggle/><CloudCreditsAccount account={studio.cloudAccount} loading={studio.accountLoading} error={studio.accountError} refresh={() => void studio.refreshAccount()} /><button className={`connection ${studio.connected ? 'connected' : ''}`} onClick={() => { if (!busy) void studio.connect(); }} disabled={studio.connecting || busy} title="重新连接图像服务"><span className={`connection-dot ${studio.connecting ? 'spinning' : ''}`} />{connectedLabel}</button><div className="studio-account"><span className="studio-account-identity" title={user.email}><span>{user.email}</span>{user.is_admin ? <small>管理员</small> : null}</span>{user.is_admin && adminEntry ? <AdminUsage /> : null}<button className="account-logout-button" onClick={() => void logout()}>退出</button></div></div>
     </header>
-    {workspace === 'agent' ? <AgentWorkspace user={user} client={studio.client} refreshAccount={studio.refreshAccount} /> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <main>
-      <section className="creation-section" aria-labelledby="creation-title">
+    {workspace === 'agent' ? <AgentWorkspace user={user} client={studio.client} refreshAccount={studio.refreshAccount} /> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <div className={`studio-layout ${historyOpen ? '' : 'rail-closed'}`}>
+      <aside className="creation-rail" aria-label="创作记录侧栏"><button className="quiet-button rail-toggle" aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)}>{historyOpen ? '收起记录' : '创作记录'}</button>
+      {historyOpen && <History isAdmin={user.is_admin || user.role === 'admin'} hideTask={id => studio.hideTask(id, user.is_admin)} currentUserId={user.id} artworks={studio.history} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError} refresh={() => void studio.refreshHistory()} stop={() => void studio.stop()} reuse={studio.reuse} />}</aside>
+      <main className="studio-content"><section className="creation-section" aria-labelledby="creation-title">
         {studio.draftError ? <div className="service-notice" role="status">{studio.draftError}</div> : null}
         <div className="title-pattern" aria-hidden="true" />
         <h1 id="creation-title">让想象，成为图像</h1>
@@ -101,7 +104,6 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         if (studio.references.length >= limit) throw new Error(`最多添加${limit}张参考图，请先移除一张。`);
         changeEditing(true); await studio.addReferences([file]);
       }} />
-      <History isAdmin={user.is_admin || user.role === 'admin'} hideTask={id => studio.hideTask(id, user.is_admin)} currentUserId={user.id} artworks={studio.history} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError} refresh={() => void studio.refreshHistory()} stop={() => void studio.stop()} reuse={studio.reuse} />
-    </main>}
+    </main></div>}
   </div>;
 }

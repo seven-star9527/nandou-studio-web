@@ -1,0 +1,27 @@
+.studio-layout { display:grid; grid-template-columns:clamp(245px,18vw,310px) minmax(0,1fr); align-items:start; }
+.studio-layout.rail-closed { grid-template-columns:80px minmax(0,1fr); }
+.studio-layout .studio-content { min-width:0; width:100%; }
+.creation-rail { position:sticky; top:0; max-height:100dvh; overflow:auto; scrollbar-width:thin; padding:14px 12px; border-right:1px solid var(--glass-line); color:var(--glass-ink); }
+.creation-rail .rail-toggle { display:block; margin-left:auto; font-size:11px; }
+.creation-rail .history-section { width:100%; margin:0; padding:6px 0; border:0; }
+.creation-rail .history-toolbar { flex-wrap:wrap; gap:8px; }
+.creation-rail .history-heading { width:100%; justify-content:space-between; }
+.creation-rail .history-tabs { width:auto; flex:1; }
+.creation-rail .rail-filters { margin:10px 0; color:var(--glass-muted); font-size:12px; }
+.rail-filters summary { cursor:pointer; }
+.creation-rail .history-admin-filters { margin:6px 0; }
+.creation-rail .artwork-grid { display:grid; grid-template-columns:1fr; gap:8px; margin-top:12px; }
+.creation-rail .artwork { display:grid; grid-template-columns:56px minmax(0,1fr); align-items:center; padding:8px; gap:8px; contain-intrinsic-size:auto; }
+.creation-rail .artwork-open { width:56px; height:56px; border-radius:8px; aspect-ratio:1; }
+.creation-rail .artwork-open img { object-fit:contain; }
+.creation-rail .artwork-info { padding:0; min-width:0; }
+.creation-rail .artwork-info p { margin:0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.creation-rail .artwork-info>div { flex-wrap:wrap; gap:4px; }
+.creation-rail .artwork-info>.history-task-time { margin:2px 0; }
+.creation-rail .history-admin-filters label { min-width:80px; }
+.creation-rail .cloud-task-list>div,.creation-rail .generation-status { flex-wrap:wrap; overflow-wrap:anywhere; }
+.agent-chat-item>button:first-child { flex-direction:row; align-items:center; gap:9px; }
+.agent-chat-item .task-cover { position:relative; display:grid; place-items:center; width:40px; height:40px; flex:none; border-radius:8px; background:var(--glass-control); }
+.task-cover img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:var(--glass-control); }
+.agent-chat-item .task-summary { display:grid; gap:3px; min-width:0; }
+.agent-chat-item .agent-chat-delete { opacity:1; }
