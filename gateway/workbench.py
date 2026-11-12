@@ -15,8 +15,8 @@ from .image_uploads import original_image_bytes, ImageUploadError
 from .image_preview import preview_path
 from .compare_board import CompareBoard
 from .board_video import upload_video, video_source
-from .quick_edits import RECIPES, correct_mask, cutout, product_retouch, retouch_or_enlarge, retouch_settings, upscale_size
-from .photocraft import PhotoCraftError
+from .quick_edits import RECIPES, correct_mask, cutout, heal_product_spots, product_retouch, retouch_or_enlarge, retouch_settings, upscale_size
+from .photocraft import PhotoCraftError, load_config
 from .agent_limits import AgentError
 
 MEDIA = '/studio-agent/workbench/media/'
@@ -139,10 +139,10 @@ class Workbench:
         encoded = None
         base = None
         if mask is not None:
-            if tool!='cutout' or not isinstance(mask,dict):
+            if tool not in ('cutout','retouch') or not isinstance(mask,dict):
                 raise ValueError('invalid mask')
             parent = self.job(user,identifier(mask.get('base')))
-            if parent['tool']!='cutout' or source!=parent['source'] or not parent['result']:
+            if parent['tool']!=tool or source!=parent['source'] or option!=parent['option'] or not parent['result']:
                 raise ValueError('invalid mask source')
             base = self.source(user,parent['result']['url'])
             strokes = mask.get('strokes')
@@ -150,7 +150,7 @@ class Workbench:
                 raise ValueError('invalid strokes')
             points_count = 0
             for stroke in strokes:
-                if not isinstance(stroke,dict) or stroke.get('mode') not in ('keep','erase'):
+                if not isinstance(stroke,dict) or stroke.get('mode') not in (('heal',) if tool=='retouch' else ('keep','erase')):
                     raise ValueError('invalid stroke')
                 radius, points = stroke.get('radius'), stroke.get('points')
                 if type(radius) not in (float,int) or not .001<=radius<=.15 or not isinstance(points,list) or not points:
@@ -188,7 +188,9 @@ class Workbench:
         temp, final = folder / (jid + '.part'), folder / (jid + '.png')
         try:
             async with self.slots:
-                if base is not None:
+                if base is not None and tool=='retouch':
+                    await heal_product_spots(load_config(self.g.root)['executable'],base,temp,mask['strokes'])
+                elif base is not None:
                     await asyncio.to_thread(correct_mask,source,base,temp,mask['strokes'])
                 elif tool == 'cutout':
                     await cutout(self.cutout_model,source,temp)

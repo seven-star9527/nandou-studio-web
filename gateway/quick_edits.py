@@ -1,13 +1,15 @@
 """Fixed, local product photo recipes. The source is never overwritten."""
 import asyncio
 import tempfile
+import shutil
 from pathlib import Path
 from functools import lru_cache
 from threading import Lock
 import os
 from math import isqrt
 
-from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
+from .photocraft import PhotoCraft
 from .image_uploads import MAX_IMAGE_PIXELS
 
 RECIPES = {'cutout': ('transparent',), 'retouch': ('brush', 'paint', 'toy'), 'upscale': ('2', '4', 'fit')}
@@ -52,9 +54,16 @@ def retouch_or_enlarge(source, output, tool, option):
         option,background,ev = retouch_settings(option)
         rgb = image.convert('RGB')
         brightness = rgb.convert('L')
-        adjusted = ImageEnhance.Contrast(brightness).enhance({'brush': 1.035, 'paint': 1.012, 'toy': 1.025}[option])
-        sharpen = {'brush': 70, 'paint': 30, 'toy': 45}[option]
-        adjusted = adjusted.filter(ImageFilter.UnsharpMask(radius=0.9, percent=sharpen, threshold=3))
+        # Anchor black and white and restrict local contrast around fine labels and nibs.
+        contrast, sharpness, limit = {'brush': (.12, 65, 4), 'paint': (.06, 35, 2),
+                                     'toy': (.10, 50, 3)}[option]
+        tone = brightness.point([round(v + contrast * (v - 127.5) * (1 - abs(v / 127.5 - 1)))
+                                 for v in range(256)])
+        detail = tone.filter(ImageFilter.UnsharpMask(radius=.85, percent=sharpness, threshold=3))
+        bounded = [min(i, limit) for i in range(256)]
+        plus = ImageChops.subtract(detail, tone).point(bounded)
+        minus = ImageChops.subtract(tone, detail).point(bounded)
+        adjusted = ImageChops.subtract(ImageChops.add(tone, plus), minus)
         if ev:
             # An exposure adjustment with fixed black/white endpoints protects highlights.
             gain = 2**ev
@@ -67,6 +76,50 @@ def retouch_or_enlarge(source, output, tool, option):
         if background == 'white':
             result = Image.alpha_composite(Image.new('RGBA',result.size,'white'),result).convert('RGB')
     result.save(output, format='PNG', icc_profile=image.info.get('icc_profile'))
+
+
+async def heal_product_spots(executable, base, output, strokes):
+    """Use the user's marks on the last retouched version, keeping other pixels exact."""
+    if not executable or not Path(executable).is_file():
+        raise ValueError('本机尚未配置 PhotoCraft，无法使用局部去瑕。')
+    with tempfile.TemporaryDirectory(dir=output.parent) as folder:
+        workspace = Path(folder)
+        local = workspace / 'base.png'
+        await asyncio.to_thread(shutil.copyfile, base, local)
+        with Image.open(local) as image:
+            w, h = image.size
+        steps = []
+        for stroke in strokes:
+            points = [[round(x*(w-1)), round(y*(h-1))] for x,y in stroke['points']]
+            steps.append({'id':'paint.spotHealing','params':{'points':points,
+                          'size':min(5000,max(1,round(2*stroke['radius']*min(w,h)))),
+                          'type':'proximityMatch'}})
+        async with PhotoCraft(executable,workspace,timeout=180) as engine:
+            await engine.call('doc_open',path=str(local))
+            for step in steps:
+                await engine.call('command_run',**step)
+            await engine.call('doc_save',path=str(workspace/'healed.png'))
+
+        def compose():
+            with Image.open(local) as original, Image.open(workspace/'healed.png') as rendered:
+                if rendered.size != original.size:
+                    raise ValueError('修复尺寸与原图不一致。')
+                mask = Image.new('L',(w,h))
+                draw = ImageDraw.Draw(mask)
+                for step in steps:
+                    points = [tuple(p) for p in step['params']['points']]
+                    diameter = step['params']['size']
+                    if len(points)>1:
+                        draw.line(points,fill=255,width=diameter,joint='curve')
+                    for x,y in (points[0],points[-1]):
+                        radius=diameter/2
+                        draw.ellipse((x-radius,y-radius,x+radius,y+radius),fill=255)
+                result = original.copy()
+                result.paste(rendered.convert(original.mode),mask=mask)
+                if 'A' in original.getbands():
+                    result.putalpha(original.getchannel('A'))
+                result.save(output,format='PNG',icc_profile=original.info.get('icc_profile'))
+        await asyncio.to_thread(compose)
 
 
 def correct_mask(source, base, output, strokes):
@@ -121,6 +174,45 @@ def subject_session(model_path):
     return ort.InferenceSession(str(model_path), settings, providers=['CPUExecutionProvider'])
 
 
+def refine_edges(original, coarse):
+    """Fit the soft mask to full-resolution luminance locally, with overlapping tiles."""
+    import numpy as np
+    guide = original.convert('L')
+    result = coarse.copy()
+    radius = max(2, min(12,round(max(original.size)/700)))
+    kernel = 2*radius+1
+
+    def mean(values):
+        for axis in (0,1):
+            pad = [(0,0),(0,0)]
+            pad[axis] = (radius+1,radius)
+            sums = np.pad(values,pad,mode='edge').cumsum(axis=axis,dtype=np.float64)
+            values = ((sums[kernel:]-sums[:-kernel]) if axis==0 else
+                      (sums[:,kernel:]-sums[:,:-kernel])) / kernel
+        return values
+
+    for y in range(0,guide.height,640):
+        for x in range(0,guide.width,640):
+            right, bottom = min(x+640,guide.width), min(y+640,guide.height)
+            box = (max(0,x-2*radius),max(0,y-2*radius),
+                   min(guide.width,right+2*radius),min(guide.height,bottom+2*radius))
+            tile = coarse.crop(box)
+            if tile.getextrema() in ((0,0),(255,255)):
+                continue
+            luma = np.asarray(guide.crop(box),dtype=np.float32)/255
+            alpha = np.asarray(tile,dtype=np.float32)/255
+            light, opacity = mean(luma),mean(alpha)
+            variance = np.maximum(0,mean(luma*luma)-light*light)
+            slope = (mean(luma*alpha)-light*opacity)/(variance+.0016)
+            refined = mean(slope)*luma + mean(opacity-slope*light)
+            # A low-contrast surface gives little edge evidence; keep the existing matte there.
+            weight = variance/(variance+.0016)
+            pixels = np.uint8(np.rint(np.clip(alpha+weight*(refined-alpha),0,1)*255))
+            dx,dy = x-box[0],y-box[1]
+            result.paste(Image.fromarray(pixels[dy:dy+bottom-y,dx:dx+right-x]),(x,y))
+    return result
+
+
 def segment_subject(model_path, source, output):
     import numpy as np
     original = upright(source)
@@ -141,7 +233,8 @@ def segment_subject(model_path, source, output):
     if probability.max() < .85 or probability.min() > .15:
         raise ValueError('未能可靠区分商品和背景，请换一张主体更清楚的图片。')
     mask = Image.fromarray(np.rint(probability * 255).astype('uint8'))
-    alpha = ImageChops.darker(source_alpha, mask.resize(original.size, Image.Resampling.LANCZOS))
+    coarse = mask.resize(original.size, Image.Resampling.LANCZOS)
+    alpha = ImageChops.darker(source_alpha, refine_edges(original, coarse))
     if alpha.getextrema()[1] < 128:
         raise ValueError('未识别到可见商品。')
     original.putalpha(alpha)
