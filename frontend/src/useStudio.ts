@@ -35,11 +35,11 @@ export function useStudio() {
   const [models, setModels] = useState<Model[]>([]);
   const [config, setConfig] = useState<DeploymentConfig>({});
   const [settings, setSettings] = useState<GenerationSettings>(INITIAL);
-  const [draft, setDraft, draftReady, draftError] = useDraft(accountStorageKey('draft:studio'), { prompt: '', references: [] as ReferenceImage[], editing: false });
-  const {prompt, references, editing} = draft;
-  const setPrompt = useCallback((prompt: string) => setDraft(d => ({...d, prompt})), [setDraft]);
+  const [draft, setDraft, draftReady, draftError] = useDraft(accountStorageKey('draft:studio'), { prompt: '', references: [] as ReferenceImage[], minReferences: 0 });
+  const {prompt, references, minReferences} = draft;
+  const setPrompt = useCallback((prompt: string) => setDraft(d => ({...d, prompt, minReferences:prompt.trim()?d.minReferences:0})), [setDraft]);
   const setReferences = useCallback((action: ReferenceImage[] | ((old: ReferenceImage[]) => ReferenceImage[])) => setDraft(d => ({...d, references: typeof action === 'function' ? action(d.references) : action})), [setDraft]);
-  const setEditing = useCallback((editing: boolean) => setDraft(d => ({...d, editing})), [setDraft]);
+  const setTemplate = useCallback((prompt:string, minReferences=0) => setDraft(d=>({...d,prompt,minReferences})),[setDraft]);
   const [history, setHistory] = useState<Artwork[]>([]);
   const [job, setJob] = useState<Job | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -187,6 +187,7 @@ export function useStudio() {
     setError('');
     if (socket.current && socket.current.readyState < WebSocket.CLOSING) return;
     try {
+      if (references.length < minReferences) throw new Error(`请再添加 ${minReferences-references.length} 张参考图。`);
       if (!connected) throw new Error('请先连接图像服务。');
       if (cloudModel) {
         const request = buildCloudRequest(cloudModel, settings, includeReferences ? 'edit' : 'generate', prompt, includeReferences ? references : [], Boolean(cloud.capabilities?.configured));
@@ -302,7 +303,7 @@ export function useStudio() {
     if (restored.length && expected > restored.length) throw new Error('任务参考原图不完整，请检查原图记录后再试。');
     const cloudDraft = cloudChoice && cloudArtworkSettings(artwork, cloudChoice, settings);
     const editing = restored.length > 0 || expected > 0 || cloudDraft?.operation === 'edit';
-    setDraft({ prompt: artwork.prompt, references: restored, editing });
+    setDraft({ prompt: artwork.prompt, references: restored, minReferences:editing && !restored.length ? 1 : 0 });
     setError(editing && !restored.length ? '此任务未保存参考原图，请重新添加后提交。' : '');
     setCloudModelId(cloudChoice?.id ?? null);
     setSettings(cloudDraft?.settings ?? {
@@ -318,7 +319,7 @@ export function useStudio() {
 
   return { client, connected, connecting, error, setError, historyError, status, params, models, config, configurationError, backendReady, localReady,
     ready: connected && (cloudModel ? Boolean(cloud.capabilities?.configured) : Boolean(settings.model) && backendReady && localReady && !configurationError),
-    settings, setSettings, references, prompt, setPrompt, editing, setEditing, draftReady, draftError, history, job: displayJob, loadingHistory,
+    settings, setSettings, references, prompt, setPrompt, minReferences, setTemplate, draftReady, draftError, history, job: displayJob, loadingHistory,
     cloudModel, cloudModels: cloud.capabilities?.models ?? [], cloudConfigured: Boolean(cloud.capabilities?.configured), cloudCapabilityError: cloud.capabilityError, cloudTasks: cloud.tasks,
     cloudAccount: cloud.account, accountLoading: cloud.accountLoading, accountError: cloud.accountError, refreshAccount: cloud.loadAccount, creditQuote,
     connect, refreshHistory, hideTask, setGeometry, addReferences, removeReference, selectModel, selectCloudModel, selectLocal, generate, stop, reuse,

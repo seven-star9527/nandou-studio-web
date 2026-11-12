@@ -4,13 +4,15 @@ import { checkImageBatch } from '../image-upload-limits';
 import { useModalDialog } from '../useModalDialog';
 import { uploadBoardVideo, uploadImage, workRequest, type WorkImage } from '../workbench-api';
 import Icon from './Icon';
+import type { CanvasProject } from './CanvasProjects';
 import ModalPortal from './ModalPortal';
 
 type LayerContent = { kind?: 'image' | 'video'; url:string } | { kind:'text'; text:string; url?:never };
 type LayerInput = LayerContent & {name:string};
 type Card = LayerInput & { id:string; x:number; y:number; hidden?:boolean; available?:boolean };
+interface Point {x:number; y:number}
 interface View { x: number; y: number; zoom: number }
-interface Board { cards: Card[]; preferred: string | null; view: View }
+interface Board { name?:string; cards: Card[]; preferred: string | null; view: View }
 type SavedBoard = Board & { revision: number };
 const width = 300, height = 242, gap = 24, maxCards = 60;
 const empty: Board = {cards:[], preferred:null, view:{x:24,y:36,zoom:1}};
@@ -30,7 +32,7 @@ function place(image:LayerInput, cards:Card[]): Card {
     x:last ? last.x+width+gap : 0,y:last?.y ?? 0};
 }
 
-export default function CompareBoard({initial, close}: {initial?:WorkImage; close:()=>void}) {
+export default function CompareBoard({project, initial, close}: {project:CanvasProject; initial?:WorkImage; close:()=>void}) {
   const dialog = useRef<HTMLElement>(null), plane = useRef<HTMLDivElement>(null), file = useRef<HTMLInputElement>(null);
   const videoFile = useRef<HTMLInputElement>(null);
   const textEditor = useRef<HTMLTextAreaElement>(null);
@@ -47,14 +49,14 @@ export default function CompareBoard({initial, close}: {initial?:WorkImage; clos
   function save():Promise<boolean> {
     clearTimeout(timeout.current);
     if (writing.current) return writing.current;
-    if (!dirty.current) return Promise.resolve(true);
+    if (!dirty.current) { if(mounted.current)setStatus('已保存'); return Promise.resolve(true); }
     const run = async () => {
       try {
         while (dirty.current) {
           const snapshot=current.current;
           dirty.current=false;
           if(mounted.current) setStatus('保存中…');
-          const response=await workRequest<{revision:number}>('board',{...snapshot,revision:revision.current});
+          const response=await workRequest<{revision:number}>('projects/'+project.id,{...snapshot,revision:revision.current});
           revision.current=response.revision;
         }
         if(mounted.current) setStatus('已保存');
@@ -69,36 +71,46 @@ export default function CompareBoard({initial, close}: {initial?:WorkImage; clos
     return writing.current;
   }
   function schedule(){ clearTimeout(timeout.current); timeout.current=setTimeout(()=>void save(),250); }
-  async function exit() { if (!importing.current && await save()) close(); }
+  async function exit() {
+    if(importing.current)return;
+    if(document.activeElement instanceof HTMLInputElement)document.activeElement.blur();
+    if(await save())close();
+  }
   useModalDialog(true,dialog,()=>void exit());
-  function append(images:LayerInput[]) {
+  function positionOnCanvas(clientX:number,clientY:number):Point {
+    const bounds=plane.current!.getBoundingClientRect(), view=current.current.view;
+    return {x:(clientX-bounds.left-view.x)/view.zoom,y:(clientY-bounds.top-view.y)/view.zoom};
+  }
+  function append(images:LayerInput[], at?:Point) {
     const next=current.current;
     const list=[...next.cards];
     let last='';
-    for(const image of images){
+    for(const [i,image] of images.entries()){
       const known=image.url && list.find(item=>item.url===image.url);
       if(known){last=known.id;continue;}
       if(list.length>=maxCards) throw new Error('每块画布最多放 60 个图层。');
-      const card=place(image,list);list.push(card);last=card.id;
+      const card=place(image,list);
+      if(at){card.x=at.x+i*24;card.y=at.y+i*24;}
+      list.push(card);last=card.id;
     }
-    choose(last);change({...next,cards:list,view:fit(list,plane.current!)});
+    choose(last);change({...next,cards:list,view:at?next.view:fit(list,plane.current!)});
     void save();
   }
   useEffect(()=>{
     mounted.current=true;
     const controller=new AbortController();
-    void workRequest<SavedBoard>('board',undefined,controller.signal).then(data=>{
+    void workRequest<SavedBoard>('projects/'+project.id,undefined,controller.signal).then(data=>{
       if(controller.signal.aborted)return;
       revision.current=data.revision;
-      current.current={cards:data.cards,preferred:data.preferred,view:data.view};
+      current.current={name:data.name??project.name,cards:data.cards,preferred:data.preferred,view:data.view};
       setBoard(current.current);choose(data.preferred ?? data.cards[0]?.id ?? '');setReady(true);
       if(initial)append([initial]);
     }).catch(cause=>{if(!controller.signal.aborted)setError(String(cause));});
     const leaving=(e:BeforeUnloadEvent)=>{if(dirty.current||writing.current){e.preventDefault();e.returnValue='';}};
     window.addEventListener('beforeunload',leaving);
     return ()=>{mounted.current=false;controller.abort();clearTimeout(timeout.current);window.removeEventListener('beforeunload',leaving);};
-  },[initial]);
-  async function addFiles(files:File[]) {
+  },[initial,project]);
+  async function addFiles(files:File[], at?:Point) {
     if(!ready||importing.current||!files.length)return;
     importing.current=true;setAdding(true);setError('');
     const images:LayerInput[]=[];
@@ -110,7 +122,7 @@ export default function CompareBoard({initial, close}: {initial?:WorkImage; clos
       }
     }catch(cause){if(mounted.current)setError(String(cause));}
     finally{
-      if(mounted.current&&images.length)append(images);
+      if(mounted.current&&images.length)append(images,at);
       importing.current=false;if(mounted.current)setAdding(false);
     }
   }
@@ -128,14 +140,16 @@ export default function CompareBoard({initial, close}: {initial?:WorkImage; clos
     return ()=>element.removeEventListener('wheel',wheel);
   },[ready]);
   function start(e:PointerEvent<HTMLDivElement>){
-    if(!ready||e.button!==0)return;
-    const id=(e.target as HTMLElement).closest<HTMLElement>('[data-card]')?.dataset.card;
+    if(!ready || (e.button!==0 && e.button!==1))return;
+    const id=e.button===1 ? undefined : (e.target as HTMLElement).closest<HTMLElement>('[data-card]')?.dataset.card;
     const card=current.current.cards.find(c=>c.id===id);
-    if(card)choose(card.id);
+    if(e.button===0) choose(card?.id??'');
+    if(e.button===1)e.preventDefault();
     if ((e.target as HTMLElement).closest('video')) return;
     const origin=card??current.current.view;
     drag.current={id,px:e.clientX,py:e.clientY,x:origin.x,y:origin.y};
-    e.currentTarget.setPointerCapture(e.pointerId);
+    const handle=(e.target as HTMLElement).closest<HTMLElement>('[data-card]') ?? e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
   }
   function move(e:PointerEvent<HTMLDivElement>){
     const d=drag.current;if(!d)return;
@@ -149,6 +163,16 @@ export default function CompareBoard({initial, close}: {initial?:WorkImage; clos
     const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(b.cards.length*1.4))));
     const cards=b.cards.map((c,i)=>({...c,x:(i%cols)*(width+gap),y:Math.floor(i/cols)*(height+gap)}));
     change({...b,cards,view:fit(cards,plane.current!)});void save();
+  }
+  function nudge(event:React.KeyboardEvent, card:Card) {
+    const step=event.shiftKey?10:1;
+    const offsets:Record<string,[number,number]> = {ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]};
+    const offset=offsets[event.key];
+    if(!offset || event.target!==event.currentTarget)return;
+    event.preventDefault();
+    const b=current.current;
+    change({...b,cards:b.cards.map(c=>c.id===card.id?{...c,x:c.x+offset[0],y:c.y+offset[1]}:c)});
+    schedule();
   }
   function remove(){
     const b=current.current,cards=b.cards.filter(c=>c.id!==selected);
@@ -167,29 +191,32 @@ export default function CompareBoard({initial, close}: {initial?:WorkImage; clos
     [cards[from],cards[to]]=[cards[to],cards[from]];
     change({...b,cards});schedule();
   }
-  function addText() {
+  function addText(at?:Point) {
+    if(!ready||adding)return;
     if (current.current.cards.length >= maxCards) { setError('每块画布最多放 60 个图层。'); return; }
-    append([{kind:'text', name:'文本', text:'文本'}]);
+    append([{kind:'text', name:'文本', text:'文本'}],at);
     requestAnimationFrame(()=>{textEditor.current?.focus();textEditor.current?.select();});
   }
   const index=board.cards.findIndex(c=>c.id===selected);
   const disableAdd=!ready||adding;
   return <ModalPortal><div className="modal-backdrop" onClick={()=>void exit()}>
     <section ref={dialog} tabIndex={-1} className="modal work-dialog compare-dialog" role="dialog" aria-modal="true" aria-label="方案对比画布" onClick={e=>e.stopPropagation()}>
-      <header className="work-heading"><h2>方案对比画布</h2><button className="quiet-button" onClick={()=>void exit()} disabled={adding}>关闭</button></header>
+      <header className="work-heading"><input className="project-title" aria-label="项目名称" key={ready?'loaded':'loading'} maxLength={80} disabled={!ready} defaultValue={board.name??project.name} onBlur={e=>{const value=e.target.value.trim()||current.current.name||project.name;e.target.value=value;if(value!==current.current.name){change({...current.current,name:value});schedule();}}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/><span className="work-spacer"/><button className="quiet-button" disabled={!ready||adding||status==='保存中…'} onClick={()=>void save()}>保存项目</button><button className="quiet-button" onClick={()=>void exit()} disabled={adding}>返回项目</button></header>
       <div className="board-tools">
         <button className="quiet-button" disabled={disableAdd} onClick={()=>file.current?.click()}><Icon name="image" size={16}/>添加图片</button>
         <button className="quiet-button" disabled={disableAdd} onClick={()=>videoFile.current?.click()}><Icon name="video" size={16}/>添加视频</button>
-        <button className="quiet-button" disabled={disableAdd} onClick={addText}><Icon name="text" size={16}/>添加文本</button>
+        <button className="quiet-button" disabled={disableAdd} onClick={()=>addText()}><Icon name="text" size={16}/>添加文本</button>
         <input ref={file} hidden type="file" multiple accept="image/png,image/jpeg,image/webp" onChange={e=>{void addFiles(Array.from(e.target.files??[]));e.target.value='';}}/>
         <input ref={videoFile} hidden type="file" multiple accept="video/mp4,video/webm" onChange={e=>{void addFiles(Array.from(e.target.files??[]));e.target.value='';}}/>
         <span className="work-spacer"/><button className="quiet-button" disabled={!board.cards.length} onClick={arrange}>并排整理</button>
       </div>
       <div className="board-layout">
-        <div className="compare-plane" ref={plane} onPointerDown={start} onPointerMove={move} onPointerUp={()=>{if(drag.current){drag.current=null;schedule();}}} onPointerCancel={()=>{drag.current=null;schedule();}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();void addFiles(Array.from(e.dataTransfer.files));}}>
+        <div className="compare-plane" ref={plane} onDoubleClick={e=>{
+            if(!(e.target as HTMLElement).closest('[data-card]'))addText(positionOnCanvas(e.clientX,e.clientY));
+          }} onPointerDown={start} onPointerMove={move} onPointerUp={()=>{if(drag.current){drag.current=null;schedule();}}} onPointerCancel={()=>{drag.current=null;schedule();}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();void addFiles(Array.from(e.dataTransfer.files),positionOnCanvas(e.clientX,e.clientY));}}>
           {!board.cards.length&&<p>{ready?'拖入图片或视频，或添加文本':'正在打开画布…'}</p>}
           <div className="compare-world" style={{transform:`translate(${board.view.x}px,${board.view.y}px) scale(${board.view.zoom})`}}>
-            {board.cards.filter(c=>!c.hidden).map(c=><div key={c.id} data-card={c.id} className={'compare-card '+(c.id===selected?'active':'')} tabIndex={0} onFocus={()=>choose(c.id)} aria-label={c.name} style={{left:c.x,top:c.y,width,height}}>
+            {board.cards.filter(c=>!c.hidden).map(c=><div key={c.id} data-card={c.id} className={'compare-card '+(c.id===selected?'active':'')} onKeyDown={e=>nudge(e,c)} tabIndex={0} onDoubleClick={()=>{if(c.kind==='text'){textEditor.current?.focus();textEditor.current?.select();}}} onFocus={()=>choose(c.id)} aria-label={c.name} style={{left:c.x,top:c.y,width,height}}>
               {c.kind==='text' ? <div className="board-text">{c.text}</div> :
                 c.available===false||broken.has(c.id)?<span className="missing-image">素材不可用</span> :
                 c.kind==='video'?<video controls playsInline preload="metadata" src={c.url} aria-label={c.name} onError={()=>setBroken(s=>new Set(s).add(c.id))}/> :

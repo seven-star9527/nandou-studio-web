@@ -1,13 +1,13 @@
 /* Nandou liquid glass. Specification: /DESIGN.md. Imported after feature styles. */
 :root {
-  --glass-surface: rgb(26 39 42 / .50);
-  --glass-control: rgb(38 52 57 / .50);
-  --glass-reading: rgb(23 34 37 / .50);
-  --glass-line: rgb(208 248 255 / .16);
-  --glass-rim: rgb(235 253 255 / .38);
-  --glass-accent: #b3edf3;
-  --glass-ink: #eef9fa;
-  --glass-muted: #9cb5bc;
+  --glass-surface: rgb(30 31 38 / .50);
+  --glass-control: rgb(49 50 59 / .50);
+  --glass-reading: rgb(27 28 34 / .50);
+  --glass-line: rgb(225 225 240 / .16);
+  --glass-rim: rgb(246 245 255 / .38);
+  --glass-accent: #d4ceff;
+  --glass-ink: #f4f3f8;
+  --glass-muted: #abaaba;
   --glass-shadow: inset 0 1px 0 rgb(242 255 255 / .13), inset 0 -1px 0 rgb(0 0 0 / .14), 0 12px 36px rgb(0 0 0 / .13);
   --ease-out: cubic-bezier(.23,1,.32,1);
   --ease-in-out: cubic-bezier(.77,0,.175,1);
@@ -166,7 +166,7 @@ button:active:not(:disabled):not(.artwork-open,.showcase-open,.reference-preview
 
 /* A single optical surface: header stays clear; only the list scrolls. */
 .agent-skill-picker[data-motion-layer] { display:flex; flex-direction:column; padding:0; width:410px; overflow:hidden; border-radius:24px; animation:none; isolation:isolate; }
-.agent-skill-picker::before { content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none; z-index:-1; background:radial-gradient(ellipse at 0 0,#efffff30,transparent 55%),linear-gradient(125deg,#ffffff0c,transparent 55%,#b3edf314); filter:url(#nandou-glass-rim); }
+.agent-skill-picker::before { content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none; z-index:-1; background:radial-gradient(ellipse at 0 0,#efffff30,transparent 55%),linear-gradient(125deg,#ffffff0c,transparent 55%,#d4ceff14); filter:url(#nandou-glass-rim); }
 .agent-skill-picker>header { position:relative; top:auto; flex:none; align-items:center; gap:12px; margin:0 18px; padding:20px 0 17px; background:transparent; border-bottom:1px solid var(--glass-line); }
 .agent-skill-picker>header>div { flex:1; }
 .agent-skill-picker>header .icon-button { width:30px; height:30px; flex:none; background:var(--glass-control); border:1px solid var(--glass-line); color:var(--glass-accent); }
@@ -191,3 +191,22 @@ button:active:not(:disabled):not(.artwork-open,.showcase-open,.reference-preview
 .agent-user-message>div { background:transparent; }
 .agent-tool-event { background:transparent; padding:7px 0; }
 .agent-tool-event small,.agent-skill-event { color:var(--glass-muted); }
+
+/* Neutral surfaces stay separate from the artwork and semantic status colors. */
+html:not([data-theme=light]) {
+  --accent:#c7bfff; --text:#f4f3f8; color-scheme:dark;
+  --studio-ground:#0b0b0e; --studio-panel:#18181e;
+}
+html:not([data-theme=light]) :is(.app-shell,.auth-shell,.agent-workspace) { background:radial-gradient(ellipse 62% 29rem at 53% -7%,#27243480,transparent 82%),var(--studio-ground);color:var(--glass-ink); }
+html:not([data-theme=light]) :is(.agent-conversation,.agent-sidebar,.creation-rail) { background:transparent; }
+html:not([data-theme=light]) :is(.composer,.agent-composer,.auth-shell .auth-card,.modal,.popover,.agent-skill-picker,.agent-preferences) { background:linear-gradient(135deg,#faf8ff09,transparent 55%),var(--glass-reading);color:var(--glass-ink);border-color:var(--glass-line); }
+html:not([data-theme=light]) .title-pattern { opacity:.12;filter:grayscale(1); }
+html:not([data-theme=light]) :is(.glass-tabs,.toolbar-button,.scene-chip,.quiet-button,.prompt-library-button,.account-credits,.credit-account-button,.auth-field input,.history-refresh-button,.reference-add) { background-color:var(--glass-control);color:var(--glass-ink);border-color:var(--glass-line); }
+html:not([data-theme=light]) :is(.glass-tabs button,.artwork-info,.agent-chat-item,.scene-add,.panel-note,.workspace-mode-switch.glass-tabs button) { color:var(--glass-muted); }
+html:not([data-theme=light]) :is(.glass-tabs button.selected,.glass-tabs button.active,.glass-tabs button[aria-selected=true]) {color:var(--glass-ink);}
+html:not([data-theme=light]) :is(.glass-tab-lens,.creation-tabs .glass-tab-lens) { background:linear-gradient(140deg,#ddd9ff33,#c0b9e914);border-color:#dcd7ff47; }
+html:not([data-theme=light]) :is(.primary-button,.auth-submit,.composer .generation-actions .generate-button,.agent-send) {background:linear-gradient(145deg,#efedff,#c3bbf4);color:#242135;border-color:#e1dcff99;box-shadow:inset 0 1px 0 #fff8,0 4px 16px #0a091633;}
+html:not([data-theme=light]) :is(.artwork,.showcase-card,.library-template,.library-detail,.agent-user-bubble,.agent-user-message,.agent-plan-message,.glass-select-menu) { background-color:var(--studio-panel);border-color:var(--glass-line); }
+html:not([data-theme=light]) :is(.composer,.agent-composer)::after { background:linear-gradient(130deg,#fff1,transparent 26%,transparent 82%,#ded7ff0a); }
+html:not([data-theme=light]) :is(.quiet-button,.scene-chip,.toolbar-button,.library-template):hover:not(:disabled) { color:var(--glass-ink);background-color:#35343f;border-color:#a8a3bf70; }
+html:not([data-theme=light]) :is(.agent-guide-link,.agent-chat-item button,.library-template strong,.history-heading h2) { color:var(--glass-ink); }

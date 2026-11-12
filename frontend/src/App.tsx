@@ -16,7 +16,7 @@ import History, { isBusy } from './components/History';
 import Icon from './components/Icon';
 import ScenePresets from './components/ScenePresets';
 import PromptLibrary from './components/PromptLibrary';
-import { dimensions } from './resolution-policy';
+import CanvasProjects, { type CanvasProject } from './components/CanvasProjects';
 import { useStudio } from './useStudio';
 import CloudCreditsAccount from './components/CloudCreditsAccount';
 import PromptPolisher from './components/PromptPolisher';
@@ -67,7 +67,9 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
       setTimeout(() => observer.disconnect(), 1000);
     }
   };
-  const { editing, setEditing } = studio;
+  const editing = studio.references.length > 0;
+  const [surface,setSurface] = useState<'image'|'canvas'>('image');
+  const [project,setProject] = useState<CanvasProject|null>(null);
   const [edits, setEdits] = useState<Artwork[]>([]);
   const [editHistoryError, setEditHistoryError] = useState('');
   const refreshEdits = async () => {
@@ -76,16 +78,22 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
   };
   useEffect(() => { void refreshEdits(); }, []);
   const [board, setBoard] = useState<{initial?:WorkImage} | null>(null);
-  const openBoard = (initial?:WorkImage) => { setQuick(null); void refreshEdits(); setBoard({initial}); };
+  const openBoard = (initial?:WorkImage) => { setQuick(null); void refreshEdits(); setBoard({initial});selectWorkspace('studio');setSurface('canvas');setProject(null);window.scrollTo(0,0); };
   const [quick, setQuick] = useState<{tool:QuickTool; source?:WorkImage} | null>(null);
   const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth >= 1150);
+  const [previousPrompt,setPreviousPrompt] = useState<{before:string;minimum:number;applied:string}|null>(null);
+  const applyTemplate = (text:string,minimum=0) => {
+    setPreviousPrompt({before:studio.prompt,minimum:studio.minReferences,applied:text});
+    studio.setTemplate(text,minimum);
+    requestAnimationFrame(()=>{
+      const field=document.querySelector<HTMLTextAreaElement>('.composer textarea');
+      const slot=/【[^】]+】/.exec(text);
+      field?.focus({preventScroll:true});
+      if(slot)field?.setSelectionRange(slot.index,slot.index+slot[0].length);
+    });
+  };
   const busy = isBusy(studio.job);
   const connectedLabel = studio.connecting ? '连接中' : studio.connected ? '已连接' : '未连接';
-  const changeEditing = (value: boolean) => {
-    setEditing(value);
-    if (!studio.cloudModel && studio.settings.ratio === 'smart') studio.setSettings(previous => ({ ...previous, ...dimensions('smart', previous.resolution, value ? studio.references[0] : undefined) }));
-  };
-  const chooseCloud = (id: string) => { studio.selectCloudModel(id); setEditing(studio.cloudModels.find(model => model.id === id)?.preferredOperation === 'edit'); };
   return <div className="app-shell">
     <header className="app-header"><a className="brand" href="/studio/" aria-label="Nandou Studio 首页"><img className="brand-logo" src={`${import.meta.env.BASE_URL}brand/nandou-mark-on-dark.svg`} width="34" height="34" alt="" /><span>Nandou Studio</span></a>
       <GlassTabs className="workspace-mode-switch" role="navigation" aria-label="创作模式"><button className={workspace === 'studio' ? 'active' : ''} onClick={event => void setWorkspace('studio', event.detail > 0)}>图片创作</button><button className={workspace === 'agent' ? 'active' : ''} onClick={event => void setWorkspace('agent', event.detail > 0)}>Agent 创作</button></GlassTabs>
@@ -97,31 +105,43 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
       <main className="studio-content"><section className="creation-section" aria-labelledby="creation-title">
         {studio.draftError ? <div className="service-notice" role="status">{studio.draftError}</div> : null}
         <div className="title-pattern" aria-hidden="true" />
-        <h1 id="creation-title">让想象，成为图像</h1>
+        <h1 id="creation-title">你好，今天想要创作什么？</h1>
+        <GlassTabs className="creation-tabs segmented" role="tablist" aria-label="创作方式" onKeyDown={e=>{
+          if(!['ArrowRight','ArrowLeft','Home','End'].includes(e.key))return;
+          e.preventDefault();
+          const next = e.key==='Home'?'image':e.key==='End'?'canvas':surface==='image'?'canvas':'image';
+          const target=e.currentTarget.querySelectorAll('button')[next==='image'?0:1];
+          target.click();target.focus();
+        }}>
+          {(['image','canvas'] as const).map(t=><button key={t} role="tab" aria-selected={surface===t} className={surface===t?'selected':''} onClick={()=>{setSurface(t);if(t==='image')setBoard(null);}}>{t==='image'?'图片生成':'画布'}</button>)}
+        </GlassTabs>
+        {surface==='canvas' ? <CanvasProjects key={project?.id??'projects'} adding={Boolean(board?.initial)} open={setProject}/> : <>
         <Composer settings={studio.settings} config={studio.config} params={studio.params} models={studio.models} prompt={studio.prompt} references={studio.references}
-          editing={editing} setEditing={changeEditing} setPrompt={studio.setPrompt} update={changes => studio.setSettings(previous => ({ ...previous, ...changes }))}
+          editing={editing} setPrompt={studio.setPrompt} update={changes => studio.setSettings(previous => ({ ...previous, ...changes }))}
           setGeometry={(ratio, resolution) => studio.setGeometry(ratio, resolution, editing)} addReferences={studio.addReferences} removeReference={studio.removeReference} selectModel={studio.selectModel}
-          selectLocal={studio.selectLocal} selectCloud={chooseCloud} cloudModel={studio.cloudModel} cloudModels={studio.cloudModels} cloudConfigured={studio.cloudConfigured} cloudCapabilityError={studio.cloudCapabilityError}
+          selectLocal={studio.selectLocal} selectCloud={studio.selectCloudModel} cloudModel={studio.cloudModel} cloudModels={studio.cloudModels} cloudConfigured={studio.cloudConfigured} cloudCapabilityError={studio.cloudCapabilityError}
           creditQuote={studio.creditQuote}
           polisher={<PromptPolisher client={studio.client} prompt={studio.prompt} setPrompt={studio.setPrompt} width={studio.settings.width} height={studio.settings.height} model={studio.cloudModel?.id ?? studio.settings.model} referenceCount={editing ? studio.references.length : 0} referenceIds={editing ? studio.references.map(reference => reference.id).join(',') : ''} busy={busy} />}
-          generate={() => studio.generate(editing)} busy={busy} ready={studio.ready} />
+          generate={() => studio.generate(editing)} busy={busy} ready={studio.ready && studio.references.length>=studio.minReferences} />
+        {studio.references.length<studio.minReferences && <p className="panel-note">此提示词还需 {studio.minReferences-studio.references.length} 张参考图。</p>}
         {editing && studio.references.length > 0 ? <p className="edit-notice">{IMAGE_UPLOAD_HINT}。较大原图会另建缩图作为生图参考；原尺寸精修请使用修图 Agent。</p> : null}
         {studio.error ? <div className="error-banner" role="alert"><span>{studio.error}</span><button className="icon-button" onClick={() => studio.setError('')} aria-label="关闭错误提示"><Icon name="close" size={15} /></button></div> : null}
         {!studio.cloudModel && studio.connected && !studio.settings.model ? <div className="service-notice" role="status">服务已连接，正在等待 Qwen-Image-2.1 模型就绪。<button onClick={() => void studio.connect()}>刷新模型</button></div> : null}
         {!studio.cloudModel && studio.connected && studio.settings.model && (studio.configurationError || !studio.backendReady || !studio.localReady) ? <div className="service-notice" role="status"><span>{studio.configurationError || (!studio.localReady ? '模型组件正在下载或尚未就绪，请稍后刷新连接。' : '图像服务尚未就绪，请稍后刷新连接。')}</span><button onClick={() => void studio.connect()}>刷新连接</button></div> : null}
         {studio.cloudModel && !studio.cloudConfigured ? <div className="service-notice" role="status"><span>APIMart 云模型待配置。请在服务端配置密钥后刷新连接。</span><button onClick={() => void studio.connect()}>刷新连接</button></div> : null}
-        <ScenePresets currentPrompt={studio.prompt} apply={text => { studio.setPrompt(text); if (text.includes('参考图')) changeEditing(true); }} />
-        <div className="library-entry"><PromptLibrary referenceCount={studio.references.length} apply={(text, minReferences) => { studio.setPrompt(text); if (minReferences > 0) changeEditing(true); }} /></div>
+        <ScenePresets currentPrompt={studio.prompt} apply={applyTemplate} />
+        <div className="library-entry"><PromptLibrary referenceCount={studio.references.length} apply={applyTemplate} /></div>
+        {previousPrompt && previousPrompt.applied===studio.prompt && <button className="scene-add" onClick={()=>{studio.setTemplate(previousPrompt.before,previousPrompt.minimum);setPreviousPrompt(null);}}>撤销套用</button>}</>}
       </section>
-      <section className="work-entry" aria-label="快捷修图"><div className="work-heading"><h2>快捷修图</h2><button className="quiet-button" onClick={() => openBoard()}>打开对比画布</button></div><div className="work-tiles">{(Object.keys(toolNames) as QuickTool[]).map(tool =>
+      {surface==='image' && <><section className="work-entry" aria-label="快捷修图"><div className="work-heading"><h2>快捷修图</h2></div><div className="work-tiles">{(Object.keys(toolNames) as QuickTool[]).map(tool =>
         <button className="quiet-button" key={tool} onClick={() => setQuick({tool})}><Icon name={tool==='cutout'?'image':tool==='retouch'?'brush':'expand'} />{toolNames[tool]}<Icon name="arrow" size={16}/></button>)}</div></section>
-      <ShowcaseGallery apply={(prompt, referenceEdit) => { studio.setPrompt(prompt); changeEditing(referenceEdit); window.scrollTo({ top: 0, behavior: 'smooth' }); }} addReference={async file => {
+      <ShowcaseGallery apply={(prompt,referenceEdit) => { studio.setTemplate(prompt,referenceEdit?1:0); window.scrollTo({ top: 0, behavior: 'smooth' }); }} addReference={async file => {
         const limit = studio.cloudModel ? referenceLimit(studio.cloudModel) : studio.config.maxReferences ?? 3;
         if (studio.references.length >= limit) throw new Error(`最多添加${limit}张参考图，请先移除一张。`);
-        changeEditing(true); await studio.addReferences([file]);
-      }} />
+        await studio.addReferences([file]);
+      }} /></>}
     </main></div>}
     {quick && <QuickEdit compare={openBoard} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => {setQuick(null);void refreshEdits();}} />}
-    {board && <CompareBoard initial={board.initial} close={() => setBoard(null)} />}
+    {project && <CompareBoard key={project.id} project={project} initial={board?.initial} close={() => {setProject(null);setBoard(null);}} />}
   </div>;
 }

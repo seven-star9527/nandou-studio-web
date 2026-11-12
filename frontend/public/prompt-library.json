@@ -124,6 +124,370 @@
   },
   "templates": [
     {
+      "id": "studio-scene-0-0",
+      "title": "白底套装主图",
+      "category": "商品图",
+      "description": "以【商品与实际配件】为主体，在白底上完整排列实售套装，尺度关系与数量和实物一致。",
+      "prompt": "以【商品与实际配件】为主体，在白底上完整排列实售套装，尺度关系与数量和实物一致。侧前方柔光，接触阴影轻薄。 保留商品实际外观，仅使用已确认的商品信息。",
+      "tags": [
+        "商品图",
+        "白底套装主图"
+      ],
+      "operations": [
+        "generate",
+        "edit"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "1:1",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "Photoroom 商品布景",
+          "url": "https://www.photoroom.com/tools/product-staging"
+        }
+      ]
+    },
+    {
+      "id": "studio-scene-0-1",
+      "title": "颜料盒开盖细节",
+      "category": "商品图",
+      "description": "将【颜料盒】开盖呈现，重点表现色格、铰链与盒盖边缘，照实保留色序与已有文字。",
+      "prompt": "将【颜料盒】开盖呈现，重点表现色格、铰链与盒盖边缘，照实保留色序与已有文字。 保留商品实际外观，仅使用已确认的商品信息。",
+      "tags": [
+        "商品图",
+        "颜料盒开盖细节"
+      ],
+      "operations": [
+        "generate",
+        "edit"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "1:1",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "Photoroom 商品布景",
+          "url": "https://www.photoroom.com/tools/product-staging"
+        }
+      ]
+    },
+    {
+      "id": "studio-scene-0-2",
+      "title": "玩具使用场景",
+      "category": "商品图",
+      "description": "将【玩具】摆在自然光下的使用环境，聚焦实际玩法，布景与实售配件清楚区分。",
+      "prompt": "将【玩具】摆在自然光下的使用环境，聚焦实际玩法，布景与实售配件清楚区分。 保留商品实际外观，仅使用已确认的商品信息。",
+      "tags": [
+        "商品图",
+        "玩具使用场景"
+      ],
+      "operations": [
+        "generate",
+        "edit"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "1:1",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "Photoroom 商品布景",
+          "url": "https://www.photoroom.com/tools/product-staging"
+        }
+      ]
+    },
+    {
+      "id": "studio-scene-0-3",
+      "title": "画笔笔锋特写",
+      "category": "商品图",
+      "description": "微距拍摄【画笔】的笔锋、金属箍和笔杆接缝，保持笔毛方向与商品标识。",
+      "prompt": "微距拍摄【画笔】的笔锋、金属箍和笔杆接缝，保持笔毛方向与商品标识。 保留商品实际外观，仅使用已确认的商品信息。",
+      "tags": [
+        "商品图",
+        "画笔笔锋特写"
+      ],
+      "operations": [
+        "generate",
+        "edit"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "1:1",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "Photoroom 商品布景",
+          "url": "https://www.photoroom.com/tools/product-staging"
+        }
+      ]
+    },
+    {
+      "id": "studio-scene-1-0",
+      "title": "俯拍平铺",
+      "category": "构图",
+      "description": "从正上方拍摄【商品】，按形态整理，留出均匀间距，保留全貌与比例。",
+      "prompt": "从正上方拍摄【商品】，按形态整理，留出均匀间距，保留全貌与比例。 保留商品实际外观，仅使用已确认的商品信息。",
+      "tags": [
+        "构图",
+        "俯拍平铺"
+      ],
+      "operations": [
+        "generate",
+        "edit"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "3:4",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "Photoroom 构图工具",
+          "url": "https://help.photoroom.com/en/articles/11495331-introduction-to-ai-tools-in-photoroom"
+        }
+      ]
+    },
+    {
+      "id": "studio-scene-1-1",
+      "title": "对角线引导",
+      "category": "构图",
+      "description": "沿左下到右上的对角线排列【商品】，最近端清晰，远端保留可辨认轮廓。",
+      "prompt": "沿左下到右上的对角线排列【商品】，最近端清晰，远端保留可辨认轮廓。 保留商品实际外观，仅使用已确认的商品信息。",
+      "tags": [
+        "构图",
+        "对角线引导"
+      ],
+      "operations": [
+        "generate",
+        "edit"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "3:4",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "Photoroom 构图工具",
+          "url": "https://help.photoroom.com/en/articles/11495331-introduction-to-ai-tools-in-photoroom"
+        }
+      ]
+    },
+    {
+      "id": "studio-scene-1-2",
+      "title": "三分线留白",
+      "category": "构图",
+      "description": "将【商品】置于右侧三分线交点，左侧留出干净排字区域，光线从左上方进入。",
+      "prompt": "将【商品】置于右侧三分线交点，左侧留出干净排字区域，光线从左上方进入。 保留商品实际外观，仅使用已确认的商品信息。",
+      "tags": [
+        "构图",
+        "三分线留白"
+      ],
+      "operations": [
+        "generate",
+        "edit"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "3:4",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "Photoroom 构图工具",
+          "url": "https://help.photoroom.com/en/articles/11495331-introduction-to-ai-tools-in-photoroom"
+        }
+      ]
+    },
+    {
+      "id": "studio-scene-1-3",
+      "title": "套件拆解排列",
+      "category": "构图",
+      "description": "将【商品套件】的真实组件逐项平铺，呈现装配顺序，保持尺寸关系，仅展示实售部件。",
+      "prompt": "将【商品套件】的真实组件逐项平铺，呈现装配顺序，保持尺寸关系，仅展示实售部件。 保留商品实际外观，仅使用已确认的商品信息。",
+      "tags": [
+        "构图",
+        "套件拆解排列"
+      ],
+      "operations": [
+        "generate",
+        "edit"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "3:4",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "Photoroom 构图工具",
+          "url": "https://help.photoroom.com/en/articles/11495331-introduction-to-ai-tools-in-photoroom"
+        }
+      ]
+    },
+    {
+      "id": "studio-scene-2-0",
+      "title": "开箱首图",
+      "category": "YouTube 封面",
+      "description": "为【商品】制作横向开箱封面，右侧放产品与真实包装，左侧留给短标题【标题】，缩小后主体仍清晰。",
+      "prompt": "为【商品】制作横向开箱封面，右侧放产品与真实包装，左侧留给短标题【标题】，缩小后主体仍清晰。 保留商品实际外观，仅使用已确认的商品信息。",
+      "tags": [
+        "YouTube 封面",
+        "开箱首图"
+      ],
+      "operations": [
+        "generate",
+        "edit"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "16:9",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "YouTube 缩略图指南",
+          "url": "https://support.google.com/youtube/answer/72431"
+        }
+      ]
+    },
+    {
+      "id": "studio-scene-2-1",
+      "title": "教程结果预览",
+      "category": "YouTube 封面",
+      "description": "以【实际作品】作为主要视觉，相关工具放在一侧，横向构图，标题【教程名称】与主体之间留出间距。",
+      "prompt": "以【实际作品】作为主要视觉，相关工具放在一侧，横向构图，标题【教程名称】与主体之间留出间距。 保留商品实际外观，仅使用已确认的商品信息。",
+      "tags": [
+        "YouTube 封面",
+        "教程结果预览"
+      ],
+      "operations": [
+        "generate",
+        "edit"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "16:9",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "YouTube 缩略图指南",
+          "url": "https://support.google.com/youtube/answer/72431"
+        }
+      ]
+    },
+    {
+      "id": "studio-scene-2-2",
+      "title": "两种方案对比",
+      "category": "YouTube 封面",
+      "description": "将【方案一】和【方案二】放在等高左右区域，统一机位和光线，通过轮廓或色块区分，标题区留在上方。",
+      "prompt": "将【方案一】和【方案二】放在等高左右区域，统一机位和光线，通过轮廓或色块区分，标题区留在上方。 保留商品实际外观，仅使用已确认的商品信息。",
+      "tags": [
+        "YouTube 封面",
+        "两种方案对比"
+      ],
+      "operations": [
+        "generate",
+        "edit"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "16:9",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "YouTube 缩略图指南",
+          "url": "https://support.google.com/youtube/answer/72431"
+        }
+      ]
+    },
+    {
+      "id": "studio-scene-3-0",
+      "title": "竖屏商品亮相",
+      "category": "TikTok 封面",
+      "description": "为【商品】制作竖屏首帧，商品轮廓集中在中部，标题【短标题】避开画面右缘和底部，背景简洁。",
+      "prompt": "为【商品】制作竖屏首帧，商品轮廓集中在中部，标题【短标题】避开画面右缘和底部，背景简洁。 保留商品实际外观，仅使用已确认的商品信息。",
+      "tags": [
+        "TikTok 封面",
+        "竖屏商品亮相"
+      ],
+      "operations": [
+        "generate",
+        "edit"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "9:16",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "TikTok 竖屏与安全区",
+          "url": "https://ads.tiktok.com/resources/help/article/tiktok-auction-in-feed-ads?lang=en"
+        }
+      ]
+    },
+    {
+      "id": "studio-scene-3-1",
+      "title": "手部演示特写",
+      "category": "TikTok 封面",
+      "description": "展示双手使用【商品】的一个真实动作，以竖屏中部的接触点为焦点，避开界面覆盖区域。",
+      "prompt": "展示双手使用【商品】的一个真实动作，以竖屏中部的接触点为焦点，避开界面覆盖区域。 保留商品实际外观，仅使用已确认的商品信息。",
+      "tags": [
+        "TikTok 封面",
+        "手部演示特写"
+      ],
+      "operations": [
+        "generate",
+        "edit"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "9:16",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "TikTok 竖屏与安全区",
+          "url": "https://ads.tiktok.com/resources/help/article/tiktok-auction-in-feed-ads?lang=en"
+        }
+      ]
+    },
+    {
+      "id": "studio-scene-3-2",
+      "title": "制作过程封面",
+      "category": "TikTok 封面",
+      "description": "选取【制作步骤】中最能说明动作的一帧，保持工具和成品完整可辨，短标题【标题】放在上中部。",
+      "prompt": "选取【制作步骤】中最能说明动作的一帧，保持工具和成品完整可辨，短标题【标题】放在上中部。 保留商品实际外观，仅使用已确认的商品信息。",
+      "tags": [
+        "TikTok 封面",
+        "制作过程封面"
+      ],
+      "operations": [
+        "generate",
+        "edit"
+      ],
+      "minReferences": 0,
+      "recommended": {
+        "ratio": "9:16",
+        "resolution": "1K"
+      },
+      "sources": [
+        {
+          "title": "TikTok 竖屏与安全区",
+          "url": "https://ads.tiktok.com/resources/help/article/tiktok-auction-in-feed-ads?lang=en"
+        }
+      ]
+    },
+    {
       "id": "product-studio",
       "title": "干净棚拍产品图",
       "category": "产品摄影",
