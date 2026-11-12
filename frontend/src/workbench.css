@@ -68,3 +68,26 @@
 .work-dialog .work-controls .segmented.work-tabs { display:inline-flex; width:max-content; flex:none; }
 .work-dialog .work-tabs>button { white-space:nowrap; }
 .work-dialog .work-controls .work-tabs>button { flex:0 0 auto; padding-inline:12px; }
+
+.board-tools,.board-actions,.board-tools button { display:flex; align-items:center; gap:8px; }
+.board-tools { margin:16px 0 12px; }
+.board-layout { display:grid; grid-template-columns:minmax(0,1fr) clamp(190px,18vw,260px); gap:12px; }
+.board-layout .compare-plane { height:clamp(310px,61dvh,820px); }
+.board-layers { display:flex; flex-direction:column; min-height:0; max-height:clamp(310px,61dvh,820px); overflow:auto; padding:14px; border:1px solid var(--glass-line); border-radius:16px; background:var(--glass-control); }
+.board-layers h3 { font-size:15px; margin:0 0 12px; }
+.board-layer-list { flex:1 1 auto; overflow:auto; min-height:60px; }
+.board-layer { display:flex; align-items:center; gap:6px; border:1px solid transparent; border-radius:9px; }
+.board-layer.chosen { border-color:var(--glass-line); background:var(--glass-reading); }
+.board-layer button { display:flex; align-items:center; gap:7px; padding:7px 5px; }
+.board-layer button:first-child { flex:1; min-width:0; }
+.board-layer button:last-child { color:var(--glass-muted); font-size:12px; white-space:nowrap; }
+.board-layer span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.board-inspector { display:grid; gap:9px; margin-top:12px; padding-top:10px; border-top:1px solid var(--glass-line); }
+.board-inspector label { display:grid; gap:5px; color:var(--glass-muted); font-size:12px; }
+.board-inspector input,.board-inspector textarea { width:100%; padding:8px; border:1px solid var(--glass-line); border-radius:8px; background:var(--glass-reading); color:var(--glass-ink); font:inherit; font-size:14px; }
+.board-inspector textarea { min-height:64px; max-height:140px; }
+.board-actions { flex-wrap:wrap; }
+.board-inspector .quiet-button { padding:6px 9px; font-size:12px; }
+.compare-card video,.board-text { width:100%; height:185px; border-radius:8px; }
+.compare-card video { background:#141719; object-fit:contain; }
+.board-text { padding:14px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:19px; }

@@ -14,6 +14,7 @@ from PIL import Image
 from .image_uploads import original_image_bytes, ImageUploadError
 from .image_preview import preview_path
 from .compare_board import CompareBoard
+from .board_video import upload_video, video_source
 from .quick_edits import RECIPES, correct_mask, cutout, product_retouch, retouch_or_enlarge, retouch_settings
 from .photocraft import PhotoCraftError
 from .agent_limits import AgentError
@@ -222,6 +223,10 @@ class Workbench:
                 'hiddenAt':str(r['hidden_at']) if r['hidden_at'] else None,'url':MEDIA+r['id'],'source':'quick',
                 'prompt':r['name'],'width':r['width'],'height':r['height'],
                 'generatedAt':datetime.fromtimestamp(r['created_at'],timezone.utc).isoformat()} for r in rows])
+        if route == 'board-video' and request.method == 'POST':
+            return await upload_video(self, request, user)
+        if route.startswith('board-video/') and request.method in ('GET', 'HEAD'):
+            return web.FileResponse(video_source(self, user, request.path))
         if route == 'board':
             return await self.board.route(request,user)
         if route == 'board-image' and request.method == 'GET':
