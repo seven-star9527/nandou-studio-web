@@ -98,8 +98,13 @@ export default function QuickEdit({tool, switchTool, initial, close, compare}: {
   }
   function selectTool(next: QuickTool) {
     if (next === tool || working.current || busy) return;
+    let previous = '';
+    if (!source) {
+      try { previous = sessionStorage.getItem(pendingKey(next)) ?? ''; } catch { /* Storage is optional. */ }
+    }
     setOption(options[next][0][0]);
-    setWatch('');
+    setWatch(previous);
+    setBusy(Boolean(previous));
     setJob(undefined);
     setError('');
     setCorrecting(false);
