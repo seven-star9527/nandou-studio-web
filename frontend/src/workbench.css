@@ -138,3 +138,19 @@
 .canvas-variant .quote-control { justify-self:start; }
 .canvas-variant .quote-popover { left:auto; right:0; max-width:210px; }
 .board-layer-tools .primary-button,.canvas-variant .primary-button { width:100%; margin:0; font-size:13px; }
+
+.studio-doc-links { display:flex; align-items:center; gap:12px; white-space:nowrap; font-size:12px; }
+.studio-doc-links a { color:var(--glass-muted); }
+.studio-doc-links a:hover,.studio-doc-links a:focus-visible { color:var(--glass-ink); text-decoration:underline; }
+
+.prompt-library .library-search { align-items:end; }
+.prompt-library .library-search>input,.prompt-library .library-detail textarea { background:var(--glass-control); color:var(--glass-ink); border-color:var(--glass-line); }
+.prompt-library .library-search>.glass-select { min-width:150px; }
+.library-list.visual-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-content:start; gap:8px; }
+.visual-list .library-template { margin:0; padding:6px; border:1px solid var(--glass-line); background:var(--glass-control); }
+.visual-list .library-thumb { float:none; display:block; margin:0 0 8px; width:100%; height:82px; object-fit:contain; background:var(--studio-ground); }
+.visual-list .library-template strong { font-size:12px; }
+.visual-list .library-template span { color:var(--glass-muted); font-size:10px; margin:3px 0; }
+.library-detail .template-actions { position:sticky; bottom:0; z-index:1; padding:9px 6px; background:var(--studio-panel); border-radius:8px; }
+
+.template-notice button { color:var(--glass-accent); text-decoration:underline; text-underline-offset:3px; }

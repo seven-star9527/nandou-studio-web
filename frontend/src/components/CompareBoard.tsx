@@ -141,6 +141,7 @@ export default function CompareBoard({project, initial, close, studio, quickEdit
     return ()=>{controller.abort();clearTimeout(timer);};
   },[pendingIds,ready,project.id]);
   async function reserveVariant(parentId:string, taskId:string, name:string) {
+    if (!mounted.current) throw new Error('画布已关闭。');
     const b=current.current, parent=b.cards.find(c=>c.id===parentId);
     if(!parent || b.cards.length>=maxCards) throw new Error('画布已满或原图已移除。');
     const x=parent.x+width+gap;

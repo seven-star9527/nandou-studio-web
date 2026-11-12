@@ -6,7 +6,7 @@ import { useModalDialog } from '../useModalDialog';
 import { useTheme } from '../theme';
 
 type Guide = {url: string; title: string; origin: string};
-const guides: Record<string, string> = {'/studio/model-guide.html': '模型怎么选', '/studio/agent-guide.html': 'Agent 使用指南'};
+const guides: Record<string, string> = {'/studio/model-guide.html': '模型怎么选', '/studio/agent-guide.html': '使用指南', '/studio/changelog.html': '更新日志'};
 
 function Reader({ guide, close }: {guide: Guide; close: () => void}) {
   const panel = useRef<HTMLElement>(null);
@@ -55,7 +55,7 @@ export default function DocumentReader({ children }: {children: ReactNode}) {
       if (url.origin !== location.origin || !guides[url.pathname]) return;
       event.preventDefault();
       const r = link.getBoundingClientRect();
-      setGuide({url: `${url.pathname}?v=glass-theme-20261016`, title: guides[url.pathname], origin: `${Math.round((r.left + r.width/2) / innerWidth * 100)}% ${Math.round((r.top+r.height/2) / innerHeight *100)}%`});
+      setGuide({url: `${url.pathname}${url.search}${url.hash}`, title: guides[url.pathname], origin: `${Math.round((r.left + r.width/2) / innerWidth * 100)}% ${Math.round((r.top+r.height/2) / innerHeight *100)}%`});
     };
     document.addEventListener('click', open);
     return () => document.removeEventListener('click', open);

@@ -86,7 +86,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
   const openBoard = (initial?:WorkImage) => { if(quickProject){setBoard({initial});setProject(quickProject);setQuickProject(null);setQuick(null);void refreshEdits();return;} setQuick(null); void refreshEdits(); setBoard({initial});selectWorkspace('studio');setSurface('canvas');setProject(null);window.scrollTo(0,0); };
   const [quick, setQuick] = useState<{tool:QuickTool; source?:WorkImage} | null>(null);
   const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth >= 1150);
-  const [previousPrompt,setPreviousPrompt] = useState<{before:string;minimum:number;applied:string; added?:string; ratio?:string; appliedRatio?:string}|null>(null);
+  const [previousPrompt,setPreviousPrompt] = useState<{before:string;minimum:number;applied:string; added?:string; geometry?:Pick<typeof studio.settings,'ratio'|'width'|'height'|'resolution'>; appliedRatio?:string}|null>(null);
   const [templateNotice,setTemplateNotice] = useState('');
   const applyTemplate = (text:string,minimum=0) => {
     setTemplateNotice('');
@@ -115,7 +115,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         : RATIOS.some(r=>r.id===choice.ratio);
       if (supportsRatio) studio.setGeometry(choice.ratio, studio.settings.resolution);
       const ratio = supportsRatio ? choice.ratio : studio.settings.ratio;
-      setPreviousPrompt({before:studio.prompt, minimum:studio.minReferences, applied:choice.prompt, added:reference?.id, ratio:studio.settings.ratio, appliedRatio:ratio});
+      setPreviousPrompt({before:studio.prompt, minimum:studio.minReferences, applied:choice.prompt, added:reference?.id, geometry:{ratio:studio.settings.ratio,width:studio.settings.width,height:studio.settings.height,resolution:studio.settings.resolution}, appliedRatio:ratio});
       note = `已套用「${choice.title}」 · ${ratio}${supportsRatio?'':'（沿用当前比例）'}${reference?' · 已带入样图':''}`;
     }
     setTemplateNotice(note);
@@ -129,11 +129,16 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
   return <div className="app-shell">
     <header className="app-header"><a className="brand" href="/studio/" aria-label="Nandou Studio 首页"><img className="brand-logo" src={`${import.meta.env.BASE_URL}brand/nandou-mark-on-dark.svg`} width="34" height="34" alt="" /><span>Nandou Studio</span></a>
       <GlassTabs className="workspace-mode-switch" role="navigation" aria-label="创作模式"><button className={workspace === 'studio' ? 'active' : ''} onClick={event => void setWorkspace('studio', event.detail > 0)}>图片创作</button><button className={workspace === 'agent' ? 'active' : ''} onClick={event => void setWorkspace('agent', event.detail > 0)}>Agent 创作</button></GlassTabs>
-      <div className="header-actions"><ThemeToggle/><CloudCreditsAccount account={studio.cloudAccount} loading={studio.accountLoading} error={studio.accountError} refresh={() => void studio.refreshAccount()} /><button className={`connection ${studio.connected ? 'connected' : ''}`} onClick={() => { if (!busy) void studio.connect(); }} disabled={studio.connecting || busy} title="重新连接图像服务"><span className={`connection-dot ${studio.connecting ? 'spinning' : ''}`} />{connectedLabel}</button><div className="studio-account"><span className="studio-account-identity" title={user.email}><span>{user.email}</span>{user.is_admin ? <small>管理员</small> : null}</span>{user.is_admin && adminEntry ? <AdminUsage /> : null}<button className="account-logout-button" onClick={() => void logout()}>退出</button></div></div>
+      <div className="header-actions"><nav className="studio-doc-links" aria-label="帮助与更新"><a href={workspace==='agent'?'/studio/agent-guide.html':'/studio/agent-guide.html#studio-canvas'}>使用指南</a><a href="/studio/changelog.html">更新日志</a></nav><ThemeToggle/><CloudCreditsAccount account={studio.cloudAccount} loading={studio.accountLoading} error={studio.accountError} refresh={() => void studio.refreshAccount()} /><button className={`connection ${studio.connected ? 'connected' : ''}`} onClick={() => { if (!busy) void studio.connect(); }} disabled={studio.connecting || busy} title="重新连接图像服务"><span className={`connection-dot ${studio.connecting ? 'spinning' : ''}`} />{connectedLabel}</button><div className="studio-account"><span className="studio-account-identity" title={user.email}><span>{user.email}</span>{user.is_admin ? <small>管理员</small> : null}</span>{user.is_admin && adminEntry ? <AdminUsage /> : null}<button className="account-logout-button" onClick={() => void logout()}>退出</button></div></div>
     </header>
     {workspace === 'agent' ? <AgentWorkspace onQuick={source=>setQuick({tool:'cutout',source})} compare={openBoard} user={user} client={studio.client} refreshAccount={studio.refreshAccount} /> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <div className={`studio-layout ${historyOpen ? '' : 'rail-closed'}`}>
       <aside className="creation-rail" aria-label="创作记录侧栏"><button className="quiet-button rail-toggle" aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)}>{historyOpen ? '收起记录' : '创作记录'}</button>
-      {historyOpen && <History compare={openBoard} onQuick={source => setQuick({tool:'cutout',source})} isAdmin={user.is_admin || user.role === 'admin'} hideTask={async id => { await studio.hideTask(id,user.is_admin); await refreshEdits(); }} currentUserId={user.id} artworks={[...edits,...studio.history].sort((a,b) => (Date.parse(b.generatedAt ?? '')||0)-(Date.parse(a.generatedAt ?? '')||0))} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError || editHistoryError} refresh={() => { void studio.refreshHistory(); void refreshEdits(); }} stop={() => void studio.stop()} reuse={studio.reuse} />}</aside>
+      {historyOpen && <History compare={openBoard} onQuick={source => setQuick({tool:'cutout',source})} isAdmin={user.is_admin || user.role === 'admin'} hideTask={async id => { await studio.hideTask(id,user.is_admin); await refreshEdits(); }} currentUserId={user.id} artworks={[...edits,...studio.history].sort((a,b) => (Date.parse(b.generatedAt ?? '')||0)-(Date.parse(a.generatedAt ?? '')||0))} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError || editHistoryError} refresh={() => { void studio.refreshHistory(); void refreshEdits(); }} stop={() => void studio.stop()} reuse={async (artwork, signal)=>{
+        await studio.reuse(artwork,signal);
+        if(signal.aborted)return;
+        setSurface('image');setTemplateNotice('');setPreviousPrompt(null);
+        requestAnimationFrame(()=>document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus());
+      }} />}</aside>
       <main className="studio-content"><section className="creation-section" aria-labelledby="creation-title">
         {studio.draftError ? <div className="service-notice" role="status">{studio.draftError}</div> : null}
         <div className="title-pattern" aria-hidden="true" />
@@ -163,8 +168,8 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         {studio.cloudModel && !studio.cloudConfigured ? <div className="service-notice" role="status"><span>APIMart 云模型待配置。请在服务端配置密钥后刷新连接。</span><button onClick={() => void studio.connect()}>刷新连接</button></div> : null}
         <ScenePresets currentPrompt={studio.prompt} apply={applyTemplate} />
         <div className="library-entry"><PromptLibrary referenceCount={studio.references.length} apply={chooseTemplate} /></div>
-        {templateNotice && <p className="panel-note" role="status">{templateNotice}</p>}
-        {previousPrompt && previousPrompt.applied===studio.prompt && <button className="scene-add" onClick={()=>{studio.setTemplate(previousPrompt.before,previousPrompt.minimum);if(previousPrompt.added)studio.removeReference(previousPrompt.added);if(previousPrompt.ratio && previousPrompt.appliedRatio===studio.settings.ratio)studio.setGeometry(previousPrompt.ratio,studio.settings.resolution);setPreviousPrompt(null);setTemplateNotice('');}}>撤销套用</button>}</>}
+        {templateNotice && <p className="panel-note template-notice" role="status">{templateNotice} <button onClick={()=>{setHistoryOpen(true);requestAnimationFrame(()=>document.querySelector<HTMLElement>('.rail-toggle')?.focus());}}>出图位置：创作记录</button></p>}
+        {previousPrompt && previousPrompt.applied===studio.prompt && <button className="scene-add" onClick={()=>{studio.setTemplate(previousPrompt.before,previousPrompt.minimum);if(previousPrompt.added)studio.removeReference(previousPrompt.added);if(previousPrompt.geometry && previousPrompt.appliedRatio===studio.settings.ratio && previousPrompt.geometry.resolution===studio.settings.resolution)studio.setSettings(old=>({...old,...previousPrompt.geometry}));setPreviousPrompt(null);setTemplateNotice('');}}>撤销套用</button>}</>}
       </section>
       {surface==='image' && <><section className="work-entry" aria-label="快捷修图"><div className="work-heading"><h2>快捷修图</h2></div><div className="work-tiles">{(Object.keys(toolNames) as QuickTool[]).map(tool =>
         <button className="quiet-button" key={tool} onClick={() => setQuick({tool})}><Icon name={tool==='cutout'?'image':tool==='retouch'?'brush':'expand'} />{toolNames[tool]}<Icon name="arrow" size={16}/></button>)}</div></section>

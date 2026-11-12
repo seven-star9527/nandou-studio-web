@@ -38,7 +38,13 @@ export async function loadStudioImage(url: string, name: string) {
   const response = await fetch(url, { credentials: 'same-origin', mode: 'same-origin', redirect: 'error' });
   if (!response.ok) throw new Error('图片读取失败，请重新打开后再试。');
   const blob = await response.blob();
-  const file = new File([blob], name, { type: blob.type });
+  // Static WebP files can be served as octet-stream by Windows MIME mappings.
+  const header = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+  const tag = (start:number, length:number) => String.fromCharCode(...header.slice(start,start+length));
+  const type = tag(0,4)==='RIFF' && tag(8,4)==='WEBP' ? 'image/webp'
+    : header[0]===0xff && header[1]===0xd8 && header[2]===0xff ? 'image/jpeg'
+    : header[0]===0x89 && tag(1,3)==='PNG' ? 'image/png' : blob.type;
+  const file = new File([blob], name, { type });
   checkImageBatch([file], []);
   return readReferenceImage(file);
 }

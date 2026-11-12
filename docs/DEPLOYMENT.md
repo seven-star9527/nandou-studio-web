@@ -91,6 +91,9 @@ New-Item -ItemType Directory -Path server/SwarmUI/src/wwwroot/studio -Force
 Copy-Item -Path frontend/dist/* -Destination server/SwarmUI/src/wwwroot/studio -Recurse -Force
 ```
 
+快捷模板的实测预览采用独立静态素材包。将对应版本的「南斗模板预览素材」解压到 `frontend/public/`，使其中的 `template-previews/*.webp` 与 `prompt-library.json` 的 `preview` 路径对应，再构建前端。也可解压至同版本已部署的 `/studio/` 静态目录。当前验收配套文件为 `南斗模板预览素材-20261113.zip`（SHA-256：`c1f949bcd7ae5922e55162d953b4aedf1a1ef707e1de9665a27bf560282b49e1`）。发布后在模板详情检查样图和「仅用作参考图」。
+
+
 快捷抠图与主图精修的纯白背景使用本机 BiRefNet。将 [BiRefNet General Lite ONNX 权重](https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx) 放到网关根目录的 `models/birefnet-general-lite.onnx`，核对 MD5 为 `4fab47adc4ff364be1713e97b7e66334`。模型只在第一次处理时加载。画布视频上传需要网关进程能从 PATH 找到 ffprobe。
 
 在项目根目录自行创建 `.env`，填写 `APIMART_API_KEY` 与 `DEEPSEEK_API_KEY`。这两个值仅由服务端读取，不要写入浏览器配置或使用 `VITE_` 前缀。
