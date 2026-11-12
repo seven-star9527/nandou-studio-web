@@ -121,7 +121,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         changeEditing(true); await studio.addReferences([file]);
       }} />
     </main></div>}
-    {quick && <QuickEdit compare={openBoard} key={quick.tool} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => {setQuick(null);void refreshEdits();}} />}
+    {quick && <QuickEdit compare={openBoard} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => {setQuick(null);void refreshEdits();}} />}
     {board && <CompareBoard initial={board.initial} close={() => setBoard(null)} />}
   </div>;
 }

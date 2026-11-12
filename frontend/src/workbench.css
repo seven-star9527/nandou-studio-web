@@ -62,3 +62,9 @@
 .compare-caption b { color:var(--glass-accent); }
 .mask-stage { min-height:260px; height:49vh; }
 .mask-stage canvas { display:block; max-width:100%; max-height:100%; width:auto; height:auto; touch-action:none; cursor:crosshair; }
+
+/* Keep tool changes within the same dialog and reserve one row for each control group. */
+.work-dialog .work-controls { min-height:42px; }
+.work-dialog .work-controls .segmented.work-tabs { display:inline-flex; width:max-content; flex:none; }
+.work-dialog .work-tabs>button { white-space:nowrap; }
+.work-dialog .work-controls .work-tabs>button { flex:0 0 auto; padding-inline:12px; }

@@ -44,7 +44,7 @@ export default function QuickEdit({tool, switchTool, initial, close, compare}: {
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
-  }, [tool, initial]);
+  }, []);
   useEffect(() => {
     if (!watch) return;
     const controller = new AbortController();
@@ -96,6 +96,15 @@ export default function QuickEdit({tool, switchTool, initial, close, compare}: {
       }
     } finally { working.current = false; }
   }
+  function selectTool(next: QuickTool) {
+    if (next === tool || working.current || busy) return;
+    setOption(options[next][0][0]);
+    setWatch('');
+    setJob(undefined);
+    setError('');
+    setCorrecting(false);
+    switchTool(next, source);
+  }
   const result = job?.status === 'completed' ? job.result : undefined;
   const width = source?.width, height = source?.height;
   const factor = tool === 'upscale' ? Number(option) : 1;
@@ -111,7 +120,7 @@ export default function QuickEdit({tool, switchTool, initial, close, compare}: {
   return <ModalPortal><div className="modal-backdrop" onClick={close}><section ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label={toolNames[tool]} className="modal work-dialog" onClick={e => e.stopPropagation()} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (!correcting) void choose(Array.from(e.dataTransfer.files)); }}>
     <header className="work-heading"><h2>{toolNames[tool]}</h2><button className="quiet-button" onClick={close}>关闭</button></header>
     {correcting && source && result ? <MaskBrush original={source.url} result={result.url} cancel={()=>setCorrecting(false)} apply={strokes=>void run(strokes)} /> : <>
-    <GlassTabs className="segmented work-tabs" aria-label="修图工具">{(Object.keys(toolNames) as QuickTool[]).map(t => <button key={t} disabled={busy} className={tool===t?'selected':''} onClick={() => { if(t!==tool) switchTool(t,source); }}>{toolNames[t]}</button>)}</GlassTabs>
+    <GlassTabs className="segmented work-tabs" aria-label="修图工具">{(Object.keys(toolNames) as QuickTool[]).map(t => <button key={t} disabled={busy} className={tool===t?'selected':''} aria-pressed={tool===t} onClick={() => selectTool(t)}>{toolNames[t]}</button>)}</GlassTabs>
     <div className="work-controls">
       <button className="quiet-button" disabled={busy} onClick={() => file.current?.click()}>{source ? '更换图片' : '选择图片'}</button>
       <input hidden ref={file} type="file" accept="image/png,image/jpeg,image/webp" onChange={e => { void choose(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
