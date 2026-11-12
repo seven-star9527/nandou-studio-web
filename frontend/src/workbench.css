@@ -130,3 +130,11 @@
 .template-actions input { accent-color:var(--glass-accent); }
 .template-actions .primary-button { margin:0; width:auto; }
 .template-actions [role=alert] { color:var(--glass-ink); }
+
+.board-connections { position:absolute; inset:0; overflow:visible; pointer-events:none; }
+.board-connections path { fill:none; stroke:var(--glass-accent); stroke-width:2; opacity:.7; }
+.canvas-variant,.board-layer-tools { display:grid; gap:8px; }
+.canvas-variant small { color:var(--glass-muted); font-size:12px; }
+.canvas-variant .quote-control { justify-self:start; }
+.canvas-variant .quote-popover { left:auto; right:0; max-width:210px; }
+.board-layer-tools .primary-button,.canvas-variant .primary-button { width:100%; margin:0; font-size:13px; }

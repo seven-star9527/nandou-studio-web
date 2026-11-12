@@ -82,7 +82,8 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
   };
   useEffect(() => { void refreshEdits(); }, []);
   const [board, setBoard] = useState<{initial?:WorkImage} | null>(null);
-  const openBoard = (initial?:WorkImage) => { setQuick(null); void refreshEdits(); setBoard({initial});selectWorkspace('studio');setSurface('canvas');setProject(null);window.scrollTo(0,0); };
+  const [quickProject,setQuickProject] = useState<CanvasProject|null>(null);
+  const openBoard = (initial?:WorkImage) => { if(quickProject){setBoard({initial});setProject(quickProject);setQuickProject(null);setQuick(null);void refreshEdits();return;} setQuick(null); void refreshEdits(); setBoard({initial});selectWorkspace('studio');setSurface('canvas');setProject(null);window.scrollTo(0,0); };
   const [quick, setQuick] = useState<{tool:QuickTool; source?:WorkImage} | null>(null);
   const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth >= 1150);
   const [previousPrompt,setPreviousPrompt] = useState<{before:string;minimum:number;applied:string; added?:string; ratio?:string; appliedRatio?:string}|null>(null);
@@ -169,7 +170,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         <button className="quiet-button" key={tool} onClick={() => setQuick({tool})}><Icon name={tool==='cutout'?'image':tool==='retouch'?'brush':'expand'} />{toolNames[tool]}<Icon name="arrow" size={16}/></button>)}</div></section>
       <ShowcaseGallery apply={chooseTemplate} hasReferences={editing} /></>}
     </main></div>}
-    {quick && <QuickEdit compare={openBoard} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => {setQuick(null);void refreshEdits();}} />}
-    {project && <CompareBoard key={project.id} project={project} initial={board?.initial} close={() => {setProject(null);setBoard(null);}} />}
+    {quick && <QuickEdit compare={openBoard} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => {setQuick(null);if(quickProject){setProject(quickProject);setQuickProject(null);}void refreshEdits();}} />}
+    {project && <CompareBoard key={project.id} studio={studio} quickEdit={source=>{setQuickProject(project);setProject(null);setBoard(null);setQuick({tool:'cutout',source});}} project={project} initial={board?.initial} close={() => {setProject(null);setBoard(null);}} />}
   </div>;
 }

@@ -6,10 +6,11 @@ import { uploadBoardVideo, uploadImage, workRequest, type WorkImage } from '../w
 import Icon from './Icon';
 import type { CanvasProject } from './CanvasProjects';
 import ModalPortal from './ModalPortal';
+import CanvasVariant, { type StudioSession } from './CanvasVariant';
 
 type LayerContent = { kind?: 'image' | 'video'; url:string } | { kind:'text'; text:string; url?:never };
 type LayerInput = LayerContent & {name:string};
-type Card = LayerInput & { id:string; x:number; y:number; hidden?:boolean; available?:boolean };
+type Card = LayerInput & { id:string; x:number; y:number; hidden?:boolean; available?:boolean; generationId?:string; parentId?:string; generationStatus?:string };
 interface Point {x:number; y:number}
 interface View { x: number; y: number; zoom: number }
 interface Board { name?:string; cards: Card[]; preferred: string | null; view: View }
@@ -32,7 +33,7 @@ function place(image:LayerInput, cards:Card[]): Card {
     x:last ? last.x+width+gap : 0,y:last?.y ?? 0};
 }
 
-export default function CompareBoard({project, initial, close}: {project:CanvasProject; initial?:WorkImage; close:()=>void}) {
+export default function CompareBoard({project, initial, close, studio, quickEdit}: {project:CanvasProject; initial?:WorkImage; close:()=>void; studio:StudioSession; quickEdit:(source:WorkImage)=>void}) {
   const dialog = useRef<HTMLElement>(null), plane = useRef<HTMLDivElement>(null), file = useRef<HTMLInputElement>(null);
   const videoFile = useRef<HTMLInputElement>(null);
   const textEditor = useRef<HTMLTextAreaElement>(null);
@@ -44,6 +45,7 @@ export default function CompareBoard({project, initial, close}: {project:CanvasP
   const writing = useRef<Promise<boolean>|null>(null), mounted = useRef(true), importing = useRef(false);
   const timeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const drag = useRef<{id?:string; px:number; py:number; x:number; y:number} | null>(null);
+  const [variant,setVariant] = useState('');
   const active = board.cards.find(c=>c.id===selected);
   function change(value:Board) { current.current=value; dirty.current=true; setBoard(value); setStatus('待保存'); }
   function save():Promise<boolean> {
@@ -110,6 +112,53 @@ export default function CompareBoard({project, initial, close}: {project:CanvasP
     window.addEventListener('beforeunload',leaving);
     return ()=>{mounted.current=false;controller.abort();clearTimeout(timeout.current);window.removeEventListener('beforeunload',leaving);};
   },[initial,project]);
+  const pending = board.cards.filter(c=>c.generationId && !c.url && !['failed','cancelled','interrupted'].includes(c.generationStatus ?? ''));
+  const pendingIds = pending.map(c=>c.id).join(',');
+  useEffect(()=>{
+    if (!ready || !pendingIds) return;
+    const controller=new AbortController();
+    let timer:ReturnType<typeof setTimeout>;
+    async function refresh() {
+      try {
+        const saved=await workRequest<SavedBoard>('projects/'+project.id,undefined,controller.signal);
+        if (controller.signal.aborted) return;
+        const b=current.current;
+        let resolved=false, updated=false;
+        const cards=b.cards.map(c=>{
+          if (!c.generationId || c.url) return c;
+          const remote=saved.cards.find(r=>r.id===c.id && r.generationId===c.generationId);
+          if (!remote || remote.kind==='text' || (!remote.url && remote.generationStatus===c.generationStatus)) return c;
+          updated=true;
+          if(remote.url) resolved=true;
+          return {...c,url:remote.url,generationStatus:remote.generationStatus,available:remote.available} as Card;
+        });
+        if (resolved) { change({...b,cards}); void save(); }
+        else if (updated) {current.current={...b,cards}; setBoard(current.current);}
+      } catch { /* Keep the saved task ID. A read failure must never submit a second generation. */ }
+      finally {if(!controller.signal.aborted)timer=setTimeout(()=>void refresh(),4000);}
+    }
+    void refresh();
+    return ()=>{controller.abort();clearTimeout(timer);};
+  },[pendingIds,ready,project.id]);
+  async function reserveVariant(parentId:string, taskId:string, name:string) {
+    const b=current.current, parent=b.cards.find(c=>c.id===parentId);
+    if(!parent || b.cards.length>=maxCards) throw new Error('画布已满或原图已移除。');
+    const x=parent.x+width+gap;
+    let y=parent.y;
+    while(b.cards.some(c=>Math.abs(c.x-x)<width+gap && Math.abs(c.y-y)<height+gap))y+=height+gap;
+    const card:Card={id:createId(), kind:'image', name, parentId, generationId:taskId, url:'', x,y};
+    const cards=[...b.cards,card];
+    change({...b,cards,view:fit(cards,plane.current!)});
+    if(!await save()) {
+      const latest=current.current;
+      change({...latest,cards:latest.cards.filter(c=>c.id!==card.id)});
+      throw new Error('画布未能保存，本次生成尚未提交。');
+    }
+  }
+  function discardVariant(id:string) {
+    const b=current.current;
+    change({...b,cards:b.cards.filter(c=>c.generationId!==id)}); void save();
+  }
   async function addFiles(files:File[], at?:Point) {
     if(!ready||importing.current||!files.length)return;
     importing.current=true;setAdding(true);setError('');
@@ -145,7 +194,7 @@ export default function CompareBoard({project, initial, close}: {project:CanvasP
     const card=current.current.cards.find(c=>c.id===id);
     if(e.button===0) choose(card?.id??'');
     if(e.button===1)e.preventDefault();
-    if ((e.target as HTMLElement).closest('video')) return;
+    if ((e.target as HTMLElement).closest('video,button')) return;
     const origin=card??current.current.view;
     drag.current={id,px:e.clientX,py:e.clientY,x:origin.x,y:origin.y};
     const handle=(e.target as HTMLElement).closest<HTMLElement>('[data-card]') ?? e.currentTarget;
@@ -216,8 +265,16 @@ export default function CompareBoard({project, initial, close}: {project:CanvasP
           }} onPointerDown={start} onPointerMove={move} onPointerUp={()=>{if(drag.current){drag.current=null;schedule();}}} onPointerCancel={()=>{drag.current=null;schedule();}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();void addFiles(Array.from(e.dataTransfer.files),positionOnCanvas(e.clientX,e.clientY));}}>
           {!board.cards.length&&<p>{ready?'拖入图片或视频，或添加文本':'正在打开画布…'}</p>}
           <div className="compare-world" style={{transform:`translate(${board.view.x}px,${board.view.y}px) scale(${board.view.zoom})`}}>
+            <svg className="board-connections" width="1" height="1" aria-hidden="true">{board.cards.map(child=>{
+              const parent=child.parentId && board.cards.find(c=>c.id===child.parentId);
+              if (!parent || child.hidden || parent.hidden) return null;
+              const x=parent.x+width,y=parent.y+height/2, tx=child.x,ty=child.y+height/2;
+              const bend=Math.max(24,Math.abs(tx-x)/2);
+              return <path key={child.id} d={`M ${x} ${y} C ${x+bend} ${y}, ${tx-bend} ${ty}, ${tx} ${ty}`}/>;
+            })}</svg>
             {board.cards.filter(c=>!c.hidden).map(c=><div key={c.id} data-card={c.id} className={'compare-card '+(c.id===selected?'active':'')} onKeyDown={e=>nudge(e,c)} tabIndex={0} onDoubleClick={()=>{if(c.kind==='text'){textEditor.current?.focus();textEditor.current?.select();}}} onFocus={()=>choose(c.id)} aria-label={c.name} style={{left:c.x,top:c.y,width,height}}>
               {c.kind==='text' ? <div className="board-text">{c.text}</div> :
+                c.generationId&&!c.url?<span className="missing-image" role="status">{['failed','cancelled','interrupted'].includes(c.generationStatus??'')?'任务未出图':c.generationStatus==='unknown'?'等待任务回执':'等待出图…'}</span> :
                 c.available===false||broken.has(c.id)?<span className="missing-image">素材不可用</span> :
                 c.kind==='video'?<video controls playsInline preload="metadata" src={c.url} aria-label={c.name} onError={()=>setBroken(s=>new Set(s).add(c.id))}/> :
                 <img draggable={false} src={imageUrl(c.url,board.view.zoom<1.7)} alt={c.name} onError={()=>setBroken(s=>new Set(s).add(c.id))}/>}
@@ -234,10 +291,15 @@ export default function CompareBoard({project, initial, close}: {project:CanvasP
             </div>)}
           </div>
           {active&&<div className="board-inspector" key={active.id}>
+            {active.kind!=='text' && active.kind!=='video' && active.url && active.available!==false && !broken.has(active.id) &&
+              (variant===active.id ? <CanvasVariant studio={studio} source={{url:imageUrl(active.url),name:active.name}}
+                reserve={(id,name)=>reserveVariant(active.id,id,name)} discard={discardVariant} done={()=>setVariant('')} /> :
+                <div className="board-layer-tools"><button className="primary-button" onClick={()=>setVariant(active.id)}>基于此图创建</button>
+                  <button className="quiet-button" onClick={async()=>{if(await save())quickEdit({url:active.url!,name:active.name});}}>快捷修图</button></div>)}
             <label>图层名称<input key={active.name} defaultValue={active.name} maxLength={160} onBlur={e=>{const name=e.target.value.trim()||active.name;e.target.value=name;if(name!==active.name)updateLayer(active.id,{name});}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></label>
             {active.kind==='text'&&<label>文本内容<textarea ref={textEditor} value={active.text} maxLength={4000} onChange={e=>updateLayer(active.id,{text:e.target.value})}/></label>}
             <div className="board-actions"><button className="quiet-button" disabled={index===board.cards.length-1} onClick={()=>reorder(1)}>上移一层</button><button className="quiet-button" disabled={index<=0} onClick={()=>reorder(-1)}>下移一层</button></div>
-            {active.kind!=='text'&&active.available!==false&&!broken.has(active.id)&&<div className="board-actions"><button className="quiet-button" onClick={()=>{const b=current.current;change({...b,preferred:b.preferred===selected?null:selected});void save();}}>{board.preferred===selected?'取消首选':'设为首选'}</button><a className="quiet-button" href={active.kind==='video'?active.url:imageUrl(active.url)} download={active.name}>{active.kind==='video'?'下载视频':'下载选中原图'}</a></div>}
+            {active.kind!=='text'&&active.url&&active.available!==false&&!broken.has(active.id)&&<div className="board-actions"><button className="quiet-button" onClick={()=>{const b=current.current;change({...b,preferred:b.preferred===selected?null:selected});void save();}}>{board.preferred===selected?'取消首选':'设为首选'}</button><a className="quiet-button" href={active.kind==='video'?active.url:imageUrl(active.url)} download={active.name}>{active.kind==='video'?'下载视频':'下载选中原图'}</a></div>}
             <button className="quiet-button" onClick={remove}>移出画布</button>
           </div>}
         </aside>

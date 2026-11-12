@@ -59,6 +59,8 @@ class CompareBoard:
 
     def check_source(self, user, card):
         kind = card.get('kind', 'image')
+        if kind == 'image' and not card.get('url') and card.get('generationId'):
+            return
         if kind == 'image':
             self.workbench.source(user, card['url'])
         elif kind == 'video':
@@ -70,6 +72,19 @@ class CompareBoard:
             return True
         except (ValueError, OSError, web.HTTPNotFound):
             return False
+
+    def project_card(self, user, card):
+        card = dict(card)
+        if card.get('generationId') and not card.get('url'):
+            task = self.store.task(card['generationId'])
+            card['generationStatus'] = 'unknown'
+            if task and task['owner_id'] == user['id'] and not task['hidden_at']:
+                card['generationStatus'] = task['status']
+                result = self.store.one('SELECT url FROM artifacts WHERE task_id=? AND owner_id=? ORDER BY created_at LIMIT 1',
+                                        (task['id'], user['id']))
+                if result:
+                    card['url'] = result['url']
+        return {**card, 'available': self.visible(user, card)}
 
     def validate(self, user, body, old):
         items = body.get('cards')
@@ -90,6 +105,10 @@ class CompareBoard:
                 raise ValueError('invalid layer')
             card = {'id':cid, 'kind':kind, 'name':name, 'hidden':hidden,
                     'x':bounded(item.get('x')), 'y':bounded(item.get('y'))}
+            if kind == 'image' and item.get('generationId'):
+                card['generationId'] = str(uuid.UUID(str(item['generationId'])))
+                if item.get('parentId'):
+                    card['parentId'] = str(uuid.UUID(str(item['parentId'])))
             if kind == 'text':
                 content = item.get('text')
                 if not isinstance(content, str) or len(content) > 4000:
@@ -111,7 +130,7 @@ class CompareBoard:
         uid = user['id']
         if request.method=='GET':
             revision, board = self.read(uid, project)
-            cards = [{**c,'available':self.visible(user,c)} for c in board['cards']]
+            cards = [self.project_card(user, c) for c in board['cards']]
             name = self.store.one('SELECT name FROM studio_canvas_projects WHERE owner_id=? AND id=?',(uid,project))
             return web.json_response({**board,'cards':cards,'revision':revision,'name':name['name'] if name else '我的对比画布'})
         if request.method!='POST':

@@ -188,22 +188,27 @@ export function useStudio() {
     setJob(activeJob.current);
   };
 
-  const generate = (includeReferences: boolean) => {
+  const generate = (includeReferences: boolean, branch?: {id:string; prompt:string; references:ReferenceImage[]; settings:GenerationSettings}) => {
+    const input = branch ?? { prompt, references, settings };
     setError('');
-    if (socket.current && socket.current.readyState < WebSocket.CLOSING) return;
+    if (socket.current && socket.current.readyState < WebSocket.CLOSING) {
+      if (branch) throw new Error('当前任务仍在运行。');
+      return;
+    }
     try {
-      if (references.length < minReferences) throw new Error(`请再添加 ${minReferences-references.length} 张参考图。`);
+      if (!branch && references.length < minReferences) throw new Error(`请再添加 ${minReferences-references.length} 张参考图。`);
       if (!connected) throw new Error('请先连接图像服务。');
       if (cloudModel) {
-        const request = buildCloudRequest(cloudModel, settings, includeReferences ? 'edit' : 'generate', prompt, includeReferences ? references : [], Boolean(cloud.capabilities?.configured));
+        const request = buildCloudRequest(cloudModel, input.settings, includeReferences ? 'edit' : 'generate', input.prompt, includeReferences ? input.references : [], Boolean(cloud.capabilities?.configured));
+        if (branch) request.request_id = branch.id;
         void cloud.generate(request);
         return;
       }
       if (!backendReady) throw new Error('图像服务尚未就绪，请稍后刷新连接。');
       if (!localReady) throw new Error('模型组件正在下载或尚未就绪，请稍后刷新连接。');
       if (configurationError) throw new Error(configurationError);
-      const request = buildGenerationRequest(settings, prompt, includeReferences ? references : [], paramsRef.current, configRef.current);
-      const newJob: Job = { id: createId(), started: Date.now(), requested: settings.count, completed: 0, phase: 'connecting', source: 'local' };
+      const request = buildGenerationRequest(input.settings, input.prompt, includeReferences ? input.references : [], paramsRef.current, configRef.current);
+      const newJob: Job = { id: branch?.id ?? createId(), started: Date.now(), requested: input.settings.count, completed: 0, phase: 'connecting', source: 'local' };
       request.studio_task_id = newJob.id;
       activeJob.current = newJob; setJob(newJob);
       const completedIndices = new Set<number>();
@@ -237,8 +242,8 @@ export function useStudio() {
           artwork.id = `${newJob.id}-${index}`; artwork.current = true; artwork.batchIndex = index;
           artwork.taskId = message.studio_task_id ?? newJob.id; artwork.source = 'local';
           artwork.ownerId = message.studio_owner_id; artwork.ownerEmail = message.studio_owner_email;
-          artwork.prompt ||= prompt; artwork.width ??= settings.width; artwork.height ??= settings.height;
-          artwork.model ??= settings.model; artwork.steps ??= settings.steps;
+          artwork.prompt ||= input.prompt; artwork.width ??= input.settings.width; artwork.height ??= input.settings.height;
+          artwork.model ??= input.settings.model; artwork.steps ??= input.settings.steps;
           artwork.generatedAt = new Date(newJob.started).toISOString();
           artwork.duration = (Date.now() - newJob.started) / 1000;
           setHistory(previous => [artwork, ...previous.filter(item => item.url !== artwork.url)]);
@@ -263,7 +268,7 @@ export function useStudio() {
         }
         socket.current = null;
       });
-    } catch (e) { setError(errorText(e)); }
+    } catch (e) { if (branch) throw e; setError(errorText(e)); }
   };
 
   const stop = async () => {
