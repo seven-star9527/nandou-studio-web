@@ -7,6 +7,8 @@ import { ThemeToggle } from './theme';
 import AgentWorkspace from './components/AgentWorkspace';
 import { flushSync } from 'react-dom';
 import { IMAGE_UPLOAD_HINT } from './image-upload-limits';
+import QuickEdit from './components/QuickEdit';
+import { toolNames, type QuickTool, type WorkImage } from './workbench-api';
 import Composer from './components/Composer';
 import History, { isBusy } from './components/History';
 import Icon from './components/Icon';
@@ -64,6 +66,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
     }
   };
   const { editing, setEditing } = studio;
+  const [quick, setQuick] = useState<{tool:QuickTool; source?:WorkImage} | null>(null);
   const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth >= 1150);
   const busy = isBusy(studio.job);
   const connectedLabel = studio.connecting ? '连接中' : studio.connected ? '已连接' : '未连接';
@@ -79,7 +82,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
     </header>
     {workspace === 'agent' ? <AgentWorkspace user={user} client={studio.client} refreshAccount={studio.refreshAccount} /> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <div className={`studio-layout ${historyOpen ? '' : 'rail-closed'}`}>
       <aside className="creation-rail" aria-label="创作记录侧栏"><button className="quiet-button rail-toggle" aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)}>{historyOpen ? '收起记录' : '创作记录'}</button>
-      {historyOpen && <History isAdmin={user.is_admin || user.role === 'admin'} hideTask={id => studio.hideTask(id, user.is_admin)} currentUserId={user.id} artworks={studio.history} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError} refresh={() => void studio.refreshHistory()} stop={() => void studio.stop()} reuse={studio.reuse} />}</aside>
+      {historyOpen && <History onQuick={source => setQuick({tool:'cutout',source})} isAdmin={user.is_admin || user.role === 'admin'} hideTask={id => studio.hideTask(id, user.is_admin)} currentUserId={user.id} artworks={studio.history} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError} refresh={() => void studio.refreshHistory()} stop={() => void studio.stop()} reuse={studio.reuse} />}</aside>
       <main className="studio-content"><section className="creation-section" aria-labelledby="creation-title">
         {studio.draftError ? <div className="service-notice" role="status">{studio.draftError}</div> : null}
         <div className="title-pattern" aria-hidden="true" />
@@ -99,11 +102,14 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         <ScenePresets currentPrompt={studio.prompt} apply={text => { studio.setPrompt(text); if (text.includes('参考图')) changeEditing(true); }} />
         <div className="library-entry"><PromptLibrary referenceCount={studio.references.length} apply={(text, minReferences) => { studio.setPrompt(text); if (minReferences > 0) changeEditing(true); }} /></div>
       </section>
+      <section className="work-entry" aria-label="快捷修图"><h2>快捷修图</h2><div className="work-tiles">{(Object.keys(toolNames) as QuickTool[]).map(tool =>
+        <button className="quiet-button" key={tool} onClick={() => setQuick({tool})}><Icon name={tool==='cutout'?'image':tool==='retouch'?'brush':'expand'} />{toolNames[tool]}<Icon name="arrow" size={16}/></button>)}</div></section>
       <ShowcaseGallery apply={(prompt, referenceEdit) => { studio.setPrompt(prompt); changeEditing(referenceEdit); window.scrollTo({ top: 0, behavior: 'smooth' }); }} addReference={async file => {
         const limit = studio.cloudModel ? referenceLimit(studio.cloudModel) : studio.config.maxReferences ?? 3;
         if (studio.references.length >= limit) throw new Error(`最多添加${limit}张参考图，请先移除一张。`);
         changeEditing(true); await studio.addReferences([file]);
       }} />
     </main></div>}
+    {quick && <QuickEdit key={quick.tool} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => setQuick(null)} />}
   </div>;
 }

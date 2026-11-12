@@ -21,6 +21,7 @@ from aiohttp import ClientError, ClientSession, ClientTimeout, WSMsgType, web
 from .store import Store, TERMINAL, password_hash, password_valid
 from .local_queue import LocalQueue
 from .agent import CreativeAgent
+from .workbench import Workbench
 from .image_uploads import ImageUploadError, check_upload_batch, generation_references
 from .task_references import reference_directory, save_task_references, task_references
 
@@ -93,6 +94,7 @@ class Gateway:
         self.rate = defaultdict(list)
         self.local_queue = LocalQueue(self)
         self.agent = CreativeAgent(self)
+        self.workbench = Workbench(self)
         self.reconcile_interval = reconcile_interval
         self.import_cloud_ledger()
         self.app = web.Application(client_max_size=384 * 1024 ** 2, middlewares=[self.boundary])
@@ -141,6 +143,8 @@ class Gateway:
         self.poller = asyncio.create_task(self.reconcile_loop())
 
     async def cleanup(self, app):
+        if self.workbench.running:
+            await asyncio.gather(*self.workbench.running, return_exceptions=True)
         await self.agent.close()
         await self.local_queue.stop()
         self.poller.cancel()
@@ -180,6 +184,8 @@ class Gateway:
         user = request["user"]
         if not user:
             return error("请先登录。", 401, "authentication_required")
+        if path.startswith("/studio-agent/workbench/"):
+            return await self.workbench.route(request, user, path.removeprefix("/studio-agent/workbench/"))
         if path.startswith("/studio-agent/"):
             return await self.agent.route(request, user)
         if path.startswith('/studio-references/') and request.method in {'GET', 'HEAD'}:

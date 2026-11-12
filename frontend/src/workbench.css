@@ -25,3 +25,25 @@
 .task-cover img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:var(--glass-control); }
 .agent-chat-item .task-summary { display:grid; gap:3px; min-width:0; }
 .agent-chat-item .agent-chat-delete { opacity:1; }
+.work-entry { max-width:1400px; margin:32px auto; padding:0 36px; }
+.work-entry h2,.work-heading h2 { font-size:22px; color:var(--glass-ink); margin:0 0 14px; }
+.work-tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+.work-tiles button { display:flex; align-items:center; justify-content:flex-start; gap:12px; min-height:66px; padding:14px 18px; }
+.work-tiles button svg:last-child { margin-left:auto; }
+.modal.work-dialog { width:min(1150px,94vw); max-width:none; max-height:92dvh; overflow:auto; padding:24px; background:var(--glass-reading); color:var(--glass-ink); backdrop-filter:blur(32px); }
+.work-heading,.work-controls,.work-pair figcaption { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.work-heading,.work-pair figcaption { justify-content:space-between; }
+.work-heading h2 { margin:0; }
+.work-controls { margin:14px 0; }
+.work-controls small,.work-pair small { color:var(--glass-muted); }
+.work-tabs { width:auto; margin:0; }
+.work-pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.work-pair figure { min-width:0; margin:0; overflow:hidden; border:1px solid var(--glass-line); border-radius:14px; background:var(--glass-control); }
+.work-pair figcaption { padding:9px 12px; font-size:13px; }
+.work-preview { height:clamp(210px,40vh,450px); display:flex; align-items:center; justify-content:center; overflow:auto; }
+.work-preview img { display:block; width:100%; height:100%; object-fit:contain; }
+.work-preview.actual { display:block; }
+.work-preview.actual img { width:auto; height:auto; max-width:none; max-height:none; }
+.work-preview.checker { background:conic-gradient(#c9d1d3 25%,#fafbfc 0 50%,#c9d1d3 0 75%,#fafbfc 0) 0 0 / 18px 18px; color:#354655; }
+.work-preview.white { background:white; color:#345; }.work-preview.dark { background:#24292b; color:#eee; }
+.work-dialog footer { justify-content:flex-end; margin-bottom:0; }
