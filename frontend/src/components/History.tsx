@@ -46,7 +46,7 @@ function DownloadLink({ artwork, compact = false }: { artwork: Artwork; compact?
   </a>;
 }
 
-function GenerationStatus({ job, stop, remove }: { job: Job; stop: () => void; remove?: () => void }) {
+export function GenerationStatus({ job, stop, remove }: { job: Job; stop: () => void; remove?: () => void }) {
   const [now, setNow] = useState(Date.now());
   const busy = isBusy(job);
   const queueWaiting = job.queue?.state === 'queued' && ['queued', 'stopping'].includes(job.phase);

@@ -7,7 +7,7 @@ export interface CanvasProject { id:string; name:string; updated_at:number }
 
 export default function CanvasProjects({open, adding}: {open:(project:CanvasProject)=>void; adding:boolean}) {
   const [projects,setProjects] = useState<CanvasProject[]>([]);
-  const [name,setName] = useState(''), [busy,setBusy] = useState(false);
+  const [busy,setBusy] = useState(false);
   const [error,setError] = useState(''), [loading,setLoading] = useState(true);
   const creating = useRef(false);
   const requestId = useRef('');
@@ -19,20 +19,16 @@ export default function CanvasProjects({open, adding}: {open:(project:CanvasProj
     return ()=>controller.abort();
   },[]);
   async function create() {
-    if(creating.current || !name.trim()) return;
+    if(creating.current) return;
     creating.current=true;setBusy(true);setError('');
     requestId.current ||= createId();
     try {
-      const {id}=await workRequest<{id:string}>('projects',{id:requestId.current,name:name.trim()});
-      open({id,name:name.trim(),updated_at:Date.now()/1000});
+      const {id}=await workRequest<{id:string}>('projects',{id:requestId.current,name:'未命名画布'});
+      open({id,name:'未命名画布',updated_at:Date.now()/1000});
     } catch(e){setError(String(e));} finally{creating.current=false;setBusy(false);}
   }
   return <section className="canvas-projects" aria-label="画布项目">
-    <header><h2>{adding?'选择素材要加入的画布':'我的画布'}</h2></header>
-    <form onSubmit={e=>{e.preventDefault();void create();}}>
-      <input aria-label="新项目名称" placeholder="输入新画布名称" maxLength={80} disabled={busy} value={name} onChange={e=>{setName(e.target.value);requestId.current='';}}/>
-      <button className="primary-button" disabled={!name.trim()||busy}><Icon name="plus" size={16}/>新建画布</button>
-    </form>
+    <header><h2>{adding?'选择素材要加入的画布':'我的画布'}</h2><button className="primary-button" disabled={busy} onClick={()=>void create()}><Icon name="plus" size={16}/>{busy?'正在创建…':'新建画布'}</button></header>
     {error&&<p role="alert" className="history-error">{error}</p>}
     {loading?<p role="status">正在读取项目…</p>:<div className="project-grid">
       {projects.map(p=><button className="project-tile" key={p.id} disabled={busy} onClick={()=>open(p)}>

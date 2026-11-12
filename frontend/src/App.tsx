@@ -12,7 +12,7 @@ import QuickEdit from './components/QuickEdit';
 import type { Artwork } from './types';
 import { workRequest, toolNames, type QuickTool, type WorkImage } from './workbench-api';
 import Composer from './components/Composer';
-import History, { isBusy } from './components/History';
+import History, { GenerationStatus, isBusy } from './components/History';
 import Icon from './components/Icon';
 import ScenePresets from './components/ScenePresets';
 import PromptLibrary from './components/PromptLibrary';
@@ -82,8 +82,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
   };
   useEffect(() => { void refreshEdits(); }, []);
   const [board, setBoard] = useState<{initial?:WorkImage} | null>(null);
-  const [quickProject,setQuickProject] = useState<CanvasProject|null>(null);
-  const openBoard = (initial?:WorkImage) => { if(quickProject){setBoard({initial});setProject(quickProject);setQuickProject(null);setQuick(null);void refreshEdits();return;} setQuick(null); void refreshEdits(); setBoard({initial});selectWorkspace('studio');setSurface('canvas');setProject(null);window.scrollTo(0,0); };
+  const openBoard = (initial?:WorkImage) => { setQuick(null); void refreshEdits(); setBoard({initial});selectWorkspace('studio');setSurface('canvas');setProject(null);window.scrollTo(0,0); };
   const [quick, setQuick] = useState<{tool:QuickTool; source?:WorkImage} | null>(null);
   const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth >= 1150);
   const [previousPrompt,setPreviousPrompt] = useState<{before:string;minimum:number;applied:string; added?:string; geometry?:Pick<typeof studio.settings,'ratio'|'width'|'height'|'resolution'>; appliedRatio?:string}|null>(null);
@@ -132,13 +131,13 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
       <div className="header-actions"><nav className="studio-doc-links" aria-label="帮助与更新"><a href={workspace==='agent'?'/studio/agent-guide.html':'/studio/agent-guide.html#studio-canvas'}>使用指南</a><a href="/studio/changelog.html">更新日志</a></nav><ThemeToggle/><CloudCreditsAccount account={studio.cloudAccount} loading={studio.accountLoading} error={studio.accountError} refresh={() => void studio.refreshAccount()} /><button className={`connection ${studio.connected ? 'connected' : ''}`} onClick={() => { if (!busy) void studio.connect(); }} disabled={studio.connecting || busy} title="重新连接图像服务"><span className={`connection-dot ${studio.connecting ? 'spinning' : ''}`} />{connectedLabel}</button><div className="studio-account"><span className="studio-account-identity" title={user.email}><span>{user.email}</span>{user.is_admin ? <small>管理员</small> : null}</span>{user.is_admin && adminEntry ? <AdminUsage /> : null}<button className="account-logout-button" onClick={() => void logout()}>退出</button></div></div>
     </header>
     {workspace === 'agent' ? <AgentWorkspace onQuick={source=>setQuick({tool:'cutout',source})} compare={openBoard} user={user} client={studio.client} refreshAccount={studio.refreshAccount} /> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <div className={`studio-layout ${historyOpen ? '' : 'rail-closed'}`}>
-      <aside className="creation-rail" aria-label="创作记录侧栏"><button className="quiet-button rail-toggle" aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)}>{historyOpen ? '收起记录' : '创作记录'}</button>
-      {historyOpen && <History compare={openBoard} onQuick={source => setQuick({tool:'cutout',source})} isAdmin={user.is_admin || user.role === 'admin'} hideTask={async id => { await studio.hideTask(id,user.is_admin); await refreshEdits(); }} currentUserId={user.id} artworks={[...edits,...studio.history].sort((a,b) => (Date.parse(b.generatedAt ?? '')||0)-(Date.parse(a.generatedAt ?? '')||0))} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError || editHistoryError} refresh={() => { void studio.refreshHistory(); void refreshEdits(); }} stop={() => void studio.stop()} reuse={async (artwork, signal)=>{
+      <aside className="creation-rail" aria-label="创作记录侧栏"><button className="icon-button rail-toggle" title={historyOpen ? '收起创作记录' : '展开创作记录'} aria-label={historyOpen ? '收起创作记录' : '展开创作记录'} aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)}><Icon name="panel" size={19}/></button>
+      <div hidden={!historyOpen}><History compare={openBoard} onQuick={source => setQuick({tool:'cutout',source})} isAdmin={user.is_admin || user.role === 'admin'} hideTask={async id => { await studio.hideTask(id,user.is_admin); await refreshEdits(); }} currentUserId={user.id} artworks={[...edits,...studio.history].sort((a,b) => (Date.parse(b.generatedAt ?? '')||0)-(Date.parse(a.generatedAt ?? '')||0))} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError || editHistoryError} refresh={() => { void studio.refreshHistory(); void refreshEdits(); }} stop={() => void studio.stop()} reuse={async (artwork, signal)=>{
         await studio.reuse(artwork,signal);
         if(signal.aborted)return;
         setSurface('image');setTemplateNotice('');setPreviousPrompt(null);
         requestAnimationFrame(()=>document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus());
-      }} />}</aside>
+      }} /></div></aside>
       <main className="studio-content"><section className="creation-section" aria-labelledby="creation-title">
         {studio.draftError ? <div className="service-notice" role="status">{studio.draftError}</div> : null}
         <div className="title-pattern" aria-hidden="true" />
@@ -160,6 +159,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
           creditQuote={studio.creditQuote}
           polisher={<PromptPolisher client={studio.client} prompt={studio.prompt} setPrompt={studio.setPrompt} width={studio.settings.width} height={studio.settings.height} model={studio.cloudModel?.id ?? studio.settings.model} referenceCount={editing ? studio.references.length : 0} referenceIds={editing ? studio.references.map(reference => reference.id).join(',') : ''} busy={busy} />}
           generate={() => studio.generate(editing)} busy={busy} ready={studio.ready && studio.references.length>=studio.minReferences} />
+        {studio.job && (busy || !historyOpen) && <div className="composer-status"><GenerationStatus job={studio.job} stop={()=>void studio.stop()}/>{!busy && <button className="quiet-button" onClick={()=>setHistoryOpen(true)}>查看创作记录</button>}</div>}
         {studio.references.length<studio.minReferences && <p className="panel-note">此提示词还需 {studio.minReferences-studio.references.length} 张参考图。</p>}
         {editing && studio.references.length > 0 ? <p className="edit-notice">{IMAGE_UPLOAD_HINT}。较大原图会另建缩图作为生图参考；原尺寸精修请使用修图 Agent。</p> : null}
         {studio.error ? <div className="error-banner" role="alert"><span>{studio.error}</span><button className="icon-button" onClick={() => studio.setError('')} aria-label="关闭错误提示"><Icon name="close" size={15} /></button></div> : null}
@@ -175,7 +175,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         <button className="quiet-button" key={tool} onClick={() => setQuick({tool})}><Icon name={tool==='cutout'?'image':tool==='retouch'?'brush':'expand'} />{toolNames[tool]}<Icon name="arrow" size={16}/></button>)}</div></section>
       <ShowcaseGallery apply={chooseTemplate} hasReferences={editing} /></>}
     </main></div>}
-    {quick && <QuickEdit compare={openBoard} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => {setQuick(null);if(quickProject){setProject(quickProject);setQuickProject(null);}void refreshEdits();}} />}
-    {project && <CompareBoard key={project.id} studio={studio} quickEdit={source=>{setQuickProject(project);setProject(null);setBoard(null);setQuick({tool:'cutout',source});}} project={project} initial={board?.initial} close={() => {setProject(null);setBoard(null);}} />}
+    {quick && <QuickEdit compare={openBoard} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => {setQuick(null);void refreshEdits();}} />}
+    {project && <CompareBoard key={project.id} studio={studio} onEditComplete={refreshEdits} project={project} initial={board?.initial} close={() => {setProject(null);setBoard(null);}} />}
   </div>;
 }
