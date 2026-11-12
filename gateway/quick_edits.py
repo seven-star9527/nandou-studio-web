@@ -44,6 +44,35 @@ def upscale_size(width, height, option):
     return size
 
 
+def retouch_color(rgb, option, ev):
+    brightness = rgb.convert('L')
+    # Anchor black and white and restrict local contrast around fine labels and nibs.
+    contrast, sharpness, limit = {'brush': (.12, 65, 4), 'paint': (.06, 35, 2),
+                                 'toy': (.10, 50, 3)}[option]
+    tone = brightness.point([round(v + contrast * (v - 127.5) * (1 - abs(v / 127.5 - 1)))
+                             for v in range(256)])
+    detail = tone.filter(ImageFilter.UnsharpMask(radius=.85, percent=sharpness, threshold=3))
+    bounded = [min(i, limit) for i in range(256)]
+    plus = ImageChops.subtract(detail, tone).point(bounded)
+    minus = ImageChops.subtract(tone, detail).point(bounded)
+    adjusted = ImageChops.subtract(ImageChops.add(tone, plus), minus)
+    if ev:
+        # An exposure adjustment with fixed black/white endpoints protects highlights.
+        gain = 2**ev
+        adjusted = adjusted.point([round(255 * gain * v / (255 + (gain-1)*v)) for v in range(256)])
+    # Apply the luminance difference equally to RGB, avoiding a lossy YCbCr round trip.
+    lighter = ImageChops.subtract(adjusted, brightness)
+    darker = ImageChops.subtract(brightness, adjusted)
+    channels = rgb.split()
+    # Limit the shift for the whole pixel so saturated pigments keep their channel differences.
+    brightest = ImageChops.lighter(ImageChops.lighter(channels[0],channels[1]),channels[2])
+    darkest = ImageChops.darker(ImageChops.darker(channels[0],channels[1]),channels[2])
+    lighter = ImageChops.darker(lighter, ImageOps.invert(brightest))
+    darker = ImageChops.darker(darker, darkest)
+    channels = [ImageChops.subtract(ImageChops.add(channel, lighter), darker) for channel in channels]
+    return Image.merge('RGB', channels)
+
+
 def retouch_or_enlarge(source, output, tool, option):
     image = upright(source)
     if tool == 'upscale':
@@ -52,29 +81,22 @@ def retouch_or_enlarge(source, output, tool, option):
     else:
         # Adjust luminance only. Preserve original chroma, markings and alpha.
         option,background,ev = retouch_settings(option)
-        rgb = image.convert('RGB')
-        brightness = rgb.convert('L')
-        # Anchor black and white and restrict local contrast around fine labels and nibs.
-        contrast, sharpness, limit = {'brush': (.12, 65, 4), 'paint': (.06, 35, 2),
-                                     'toy': (.10, 50, 3)}[option]
-        tone = brightness.point([round(v + contrast * (v - 127.5) * (1 - abs(v / 127.5 - 1)))
-                                 for v in range(256)])
-        detail = tone.filter(ImageFilter.UnsharpMask(radius=.85, percent=sharpness, threshold=3))
-        bounded = [min(i, limit) for i in range(256)]
-        plus = ImageChops.subtract(detail, tone).point(bounded)
-        minus = ImageChops.subtract(tone, detail).point(bounded)
-        adjusted = ImageChops.subtract(ImageChops.add(tone, plus), minus)
-        if ev:
-            # An exposure adjustment with fixed black/white endpoints protects highlights.
-            gain = 2**ev
-            adjusted = adjusted.point([round(255 * gain * v / (255 + (gain-1)*v)) for v in range(256)])
-        # Apply the luminance difference equally to RGB, avoiding a lossy YCbCr round trip.
-        lighter = ImageChops.subtract(adjusted, brightness)
-        darker = ImageChops.subtract(brightness, adjusted)
-        channels = [ImageChops.subtract(ImageChops.add(channel, lighter), darker) for channel in rgb.split()]
-        result = Image.merge('RGBA', (*channels, image.getchannel('A')))
-        if background == 'white':
-            result = Image.alpha_composite(Image.new('RGBA',result.size,'white'),result).convert('RGB')
+        result = Image.new('RGB' if background=='white' else 'RGBA',image.size,'white')
+        for y in range(0,image.height,768):
+            for x in range(0,image.width,768):
+                right,bottom=min(x+768,image.width),min(y+768,image.height)
+                # Include neighboring pixels for the 0.85px unsharp mask on each tile boundary.
+                left,top=max(0,x-8),max(0,y-8)
+                tile=image.crop((left,top,min(image.width,right+8),min(image.height,bottom+8)))
+                polished=retouch_color(tile.convert('RGB'),option,ev)
+                inner=(x-left,y-top,right-left,bottom-top)
+                pixels=polished.crop(inner)
+                alpha=tile.getchannel('A').crop(inner)
+                if background=='white':
+                    result.paste(pixels,(x,y),alpha)
+                else:
+                    pixels.putalpha(alpha)
+                    result.paste(pixels,(x,y))
     result.save(output, format='PNG', icc_profile=image.info.get('icc_profile'))
 
 
