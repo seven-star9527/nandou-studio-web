@@ -10,6 +10,7 @@ from aiohttp import web
 from PIL import Image
 from .image_uploads import original_image_bytes, ImageUploadError
 from .image_preview import preview_path
+from .compare_board import CompareBoard
 from .quick_edits import RECIPES, cutout, retouch_or_enlarge
 from .photocraft import PhotoCraftError
 from .agent_limits import AgentError
@@ -39,6 +40,7 @@ class Workbench:
         self.root.mkdir(parents=True, exist_ok=True)
         self.slots = asyncio.Semaphore(2)
         self.running = set()
+        self.board = CompareBoard(self)
         self.store.db.executescript("""
           CREATE TABLE IF NOT EXISTS studio_media(
             id TEXT PRIMARY KEY,owner_id TEXT NOT NULL,name TEXT NOT NULL,extension TEXT NOT NULL,
@@ -171,6 +173,13 @@ class Workbench:
             temp.unlink(missing_ok=True)
 
     async def route(self, request, user, route):
+        if route == 'board':
+            return await self.board.route(request,user)
+        if route == 'board-image' and request.method == 'GET':
+            path = self.source(user, request.query.get('source'))
+            if request.query.get('preview') == '1':
+                path = await preview_path(path,self.root/'previews',560)
+            return web.FileResponse(path)
         if route == 'upload' and request.method=='POST':
             return await self.upload(user, await self.g.body(request))
         if route == 'jobs' and request.method=='POST':

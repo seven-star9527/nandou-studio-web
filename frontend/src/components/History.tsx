@@ -76,7 +76,8 @@ function GenerationStatus({ job, stop, remove }: { job: Job; stop: () => void; r
   </div>;
 }
 
-export default function History({ onQuick, artworks, cloudTasks, job, loading, error, refresh, stop, reuse, hideTask, currentUserId, isAdmin = false }: {
+export default function History({ compare, onQuick, artworks, cloudTasks, job, loading, error, refresh, stop, reuse, hideTask, currentUserId, isAdmin = false }: {
+  compare: (image:WorkImage) => void;
   onQuick: (image:WorkImage) => void;
   artworks: Artwork[]; job: Job | null; loading: boolean; error: string;
   cloudTasks: CloudTask[];
@@ -196,7 +197,7 @@ export default function History({ onQuick, artworks, cloudTasks, job, loading, e
           {isAdmin ? <p className="artwork-owner">所属账号：{selected.ownerEmail ?? '历史管理员作品'}{selected.hiddenAt ? ' · 用户已移除' : ''}</p> : null}
           {selected.taskId ? <TaskReferences taskId={selected.taskId} /> : null}
           {retryError && <p className="history-error" role="alert">{retryError}</p>}
-          <div className="detail-actions"><DownloadLink artwork={selected} />{ownImageUrl(selected.url) && !selected.hiddenAt && (!isAdmin || selected.ownerId === currentUserId) && <button className="quiet-button" onClick={() => { setSelected(null); onQuick({url:selected.url,name:selected.prompt || '创作图片',width:selected.width,height:selected.height}); }}>快捷修图</button>}<button className="quiet-button" disabled={retrying} onClick={() => void retrySelected()}>{retrying ? '正在读取…' : '再试一次'}</button>{canHide(selected.taskId) ? <button className="quiet-button" onClick={() => askRemove(selected.taskId!)}><Icon name="trash" size={15} />移除任务</button> : null}</div>
+          <div className="detail-actions"><DownloadLink artwork={selected} />{ownImageUrl(selected.url) && !selected.hiddenAt && (!isAdmin || selected.ownerId === currentUserId) && <><button className="quiet-button" onClick={() => { setSelected(null); compare({url:selected.url,name:selected.prompt || '创作图片'}); }}>加入对比画布</button><button className="quiet-button" onClick={() => { setSelected(null); onQuick({url:selected.url,name:selected.prompt || '创作图片',width:selected.width,height:selected.height}); }}>快捷修图</button></>}<button className="quiet-button" disabled={retrying} onClick={() => void retrySelected()}>{retrying ? '正在读取…' : '再试一次'}</button>{canHide(selected.taskId) ? <button className="quiet-button" onClick={() => askRemove(selected.taskId!)}><Icon name="trash" size={15} />移除任务</button> : null}</div>
           {selected.metadata ? <details><summary>生成信息</summary><pre>{selected.metadata}</pre></details> : null}
         </div>
       </section>

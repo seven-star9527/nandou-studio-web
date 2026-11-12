@@ -47,3 +47,16 @@
 .work-preview.checker { background:conic-gradient(#c9d1d3 25%,#fafbfc 0 50%,#c9d1d3 0 75%,#fafbfc 0) 0 0 / 18px 18px; color:#354655; }
 .work-preview.white { background:white; color:#345; }.work-preview.dark { background:#24292b; color:#eee; }
 .work-dialog footer { justify-content:flex-end; margin-bottom:0; }
+.work-entry .work-heading { margin-bottom:12px; }
+.work-spacer { flex:1; }
+.modal.compare-dialog { width:min(1560px,95vw); }
+.compare-plane { height:clamp(260px,57dvh,800px); isolation:isolate; position:relative; overflow:hidden; touch-action:none; user-select:none; cursor:grab; border:1px solid var(--glass-line); border-radius:16px; background:radial-gradient(circle,var(--glass-line) 1px,transparent 1.5px) 0 0/18px 18px var(--glass-control); }
+.compare-plane:active,.compare-card:active { cursor:grabbing; }
+.compare-plane>p { position:absolute; inset:42% 0 auto; text-align:center; color:var(--glass-muted); pointer-events:none; }
+.compare-world { position:absolute; inset:0 auto auto 0; transform-origin:0 0; }
+.compare-card { position:absolute; display:flex; flex-direction:column; align-items:stretch; padding:7px; border:1px solid var(--glass-line); border-radius:14px; background:var(--glass-reading); color:var(--glass-ink); cursor:grab; }
+.compare-card.active { outline:2px solid var(--glass-accent); }
+.compare-card img,.compare-card .missing-image { display:block; width:100%; height:185px; object-fit:contain; border-radius:8px; pointer-events:none; }
+.compare-caption { flex:1; display:flex; align-items:center; gap:8px; padding:4px; }
+.compare-caption span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
+.compare-caption b { color:var(--glass-accent); }

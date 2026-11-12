@@ -7,6 +7,7 @@ import { ThemeToggle } from './theme';
 import AgentWorkspace from './components/AgentWorkspace';
 import { flushSync } from 'react-dom';
 import { IMAGE_UPLOAD_HINT } from './image-upload-limits';
+import CompareBoard from './components/CompareBoard';
 import QuickEdit from './components/QuickEdit';
 import { toolNames, type QuickTool, type WorkImage } from './workbench-api';
 import Composer from './components/Composer';
@@ -66,6 +67,8 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
     }
   };
   const { editing, setEditing } = studio;
+  const [board, setBoard] = useState<{initial?:WorkImage} | null>(null);
+  const openBoard = (initial?:WorkImage) => { setQuick(null); setBoard({initial}); };
   const [quick, setQuick] = useState<{tool:QuickTool; source?:WorkImage} | null>(null);
   const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth >= 1150);
   const busy = isBusy(studio.job);
@@ -80,9 +83,9 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
       <GlassTabs className="workspace-mode-switch" role="navigation" aria-label="创作模式"><button className={workspace === 'studio' ? 'active' : ''} onClick={event => void setWorkspace('studio', event.detail > 0)}>图片创作</button><button className={workspace === 'agent' ? 'active' : ''} onClick={event => void setWorkspace('agent', event.detail > 0)}>Agent 创作</button></GlassTabs>
       <div className="header-actions"><ThemeToggle/><CloudCreditsAccount account={studio.cloudAccount} loading={studio.accountLoading} error={studio.accountError} refresh={() => void studio.refreshAccount()} /><button className={`connection ${studio.connected ? 'connected' : ''}`} onClick={() => { if (!busy) void studio.connect(); }} disabled={studio.connecting || busy} title="重新连接图像服务"><span className={`connection-dot ${studio.connecting ? 'spinning' : ''}`} />{connectedLabel}</button><div className="studio-account"><span className="studio-account-identity" title={user.email}><span>{user.email}</span>{user.is_admin ? <small>管理员</small> : null}</span>{user.is_admin && adminEntry ? <AdminUsage /> : null}<button className="account-logout-button" onClick={() => void logout()}>退出</button></div></div>
     </header>
-    {workspace === 'agent' ? <AgentWorkspace user={user} client={studio.client} refreshAccount={studio.refreshAccount} /> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <div className={`studio-layout ${historyOpen ? '' : 'rail-closed'}`}>
+    {workspace === 'agent' ? <AgentWorkspace compare={openBoard} user={user} client={studio.client} refreshAccount={studio.refreshAccount} /> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <div className={`studio-layout ${historyOpen ? '' : 'rail-closed'}`}>
       <aside className="creation-rail" aria-label="创作记录侧栏"><button className="quiet-button rail-toggle" aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)}>{historyOpen ? '收起记录' : '创作记录'}</button>
-      {historyOpen && <History onQuick={source => setQuick({tool:'cutout',source})} isAdmin={user.is_admin || user.role === 'admin'} hideTask={id => studio.hideTask(id, user.is_admin)} currentUserId={user.id} artworks={studio.history} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError} refresh={() => void studio.refreshHistory()} stop={() => void studio.stop()} reuse={studio.reuse} />}</aside>
+      {historyOpen && <History compare={openBoard} onQuick={source => setQuick({tool:'cutout',source})} isAdmin={user.is_admin || user.role === 'admin'} hideTask={id => studio.hideTask(id, user.is_admin)} currentUserId={user.id} artworks={studio.history} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError} refresh={() => void studio.refreshHistory()} stop={() => void studio.stop()} reuse={studio.reuse} />}</aside>
       <main className="studio-content"><section className="creation-section" aria-labelledby="creation-title">
         {studio.draftError ? <div className="service-notice" role="status">{studio.draftError}</div> : null}
         <div className="title-pattern" aria-hidden="true" />
@@ -102,7 +105,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         <ScenePresets currentPrompt={studio.prompt} apply={text => { studio.setPrompt(text); if (text.includes('参考图')) changeEditing(true); }} />
         <div className="library-entry"><PromptLibrary referenceCount={studio.references.length} apply={(text, minReferences) => { studio.setPrompt(text); if (minReferences > 0) changeEditing(true); }} /></div>
       </section>
-      <section className="work-entry" aria-label="快捷修图"><h2>快捷修图</h2><div className="work-tiles">{(Object.keys(toolNames) as QuickTool[]).map(tool =>
+      <section className="work-entry" aria-label="快捷修图"><div className="work-heading"><h2>快捷修图</h2><button className="quiet-button" onClick={() => openBoard()}>打开对比画布</button></div><div className="work-tiles">{(Object.keys(toolNames) as QuickTool[]).map(tool =>
         <button className="quiet-button" key={tool} onClick={() => setQuick({tool})}><Icon name={tool==='cutout'?'image':tool==='retouch'?'brush':'expand'} />{toolNames[tool]}<Icon name="arrow" size={16}/></button>)}</div></section>
       <ShowcaseGallery apply={(prompt, referenceEdit) => { studio.setPrompt(prompt); changeEditing(referenceEdit); window.scrollTo({ top: 0, behavior: 'smooth' }); }} addReference={async file => {
         const limit = studio.cloudModel ? referenceLimit(studio.cloudModel) : studio.config.maxReferences ?? 3;
@@ -110,6 +113,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         changeEditing(true); await studio.addReferences([file]);
       }} />
     </main></div>}
-    {quick && <QuickEdit key={quick.tool} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => setQuick(null)} />}
+    {quick && <QuickEdit compare={openBoard} key={quick.tool} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => setQuick(null)} />}
+    {board && <CompareBoard initial={board.initial} close={() => setBoard(null)} />}
   </div>;
 }
