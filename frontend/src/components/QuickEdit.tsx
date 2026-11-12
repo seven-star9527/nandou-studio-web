@@ -113,7 +113,12 @@ export default function QuickEdit({tool, switchTool, initial, close, compare}: {
   const result = job?.status === 'completed' ? job.result : undefined;
   const width = source?.width, height = source?.height;
   const factor = tool === 'upscale' ? Number(option) : 1;
-  const tooLarge = Boolean(width && height && width * height * factor ** 2 > MAX_IMAGE_PIXELS);
+  const fits = tool==='upscale' && option==='fit';
+  const outputWidth = width && height ? (fits ? Math.min(width*4,Math.floor(Math.sqrt(MAX_IMAGE_PIXELS*width/height))) : width*factor) : 0;
+  const outputHeight = width && height ? (fits ? Math.min(height*4,Math.floor(Math.sqrt(MAX_IMAGE_PIXELS*height/width))) : height*factor) : 0;
+  const tooLarge = tool==='upscale' && (outputWidth*outputHeight>MAX_IMAGE_PIXELS || (fits && width===outputWidth && height===outputHeight));
+  const offerFit = tool==='upscale' && width && height && width*height*16>MAX_IMAGE_PIXELS;
+  const choices = offerFit || fits ? [...options[tool], ['fit','上限内放大']] : options[tool];
   const sync = (from: HTMLDivElement, to: HTMLDivElement | null) => {
     if (!actualSize || !to) return;
     for (const [offset, dimension, client] of [['scrollLeft','scrollWidth','clientWidth'],['scrollTop','scrollHeight','clientHeight']] as const) {
@@ -129,7 +134,7 @@ export default function QuickEdit({tool, switchTool, initial, close, compare}: {
     <div className="work-controls">
       <button className="quiet-button" disabled={busy} onClick={() => file.current?.click()}>{source ? '更换图片' : '选择图片'}</button>
       <input hidden ref={file} type="file" accept="image/png,image/jpeg,image/webp" onChange={e => { void choose(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
-      {tool !== 'cutout' && <GlassTabs className="segmented work-tabs" aria-label={tool==='retouch'?'商品类目':'放大倍率'}>{options[tool].map(([value,label]) => <button key={value} className={option===value?'selected':''} disabled={busy} onClick={() => { if (option!==value) {setOption(value); setJob(undefined); remember(tool,'');} }}>{label}</button>)}</GlassTabs>}
+      {tool !== 'cutout' && <GlassTabs className="segmented work-tabs" aria-label={tool==='retouch'?'商品类目':'放大倍率'}>{choices.map(([value,label]) => <button key={value} className={option===value?'selected':''} disabled={busy} onClick={() => { if (option!==value) {setOption(value); setJob(undefined); remember(tool,'');} }}>{label}</button>)}</GlassTabs>}
       {tool==='retouch' && <>
         <GlassTabs className="segmented work-tabs" aria-label="主图背景">{[['original','保留背景'],['white','纯白背景']].map(([v,t])=><button key={v} disabled={busy} className={v===background?'selected':''} onClick={()=>{setBackground(v);setJob(undefined);remember(tool,'');}}>{t}</button>)}</GlassTabs>
         <GlassTabs className="segmented work-tabs" aria-label="曝光调整">{[['-0.5','压暗'],['0','原曝光'],['0.5','提亮']].map(([v,t])=><button key={v} disabled={busy} className={v===exposure?'selected':''} onClick={()=>{setExposure(v);setJob(undefined);remember(tool,'');}}>{t}</button>)}</GlassTabs>
@@ -142,8 +147,8 @@ export default function QuickEdit({tool, switchTool, initial, close, compare}: {
     </div>
     <div className="work-controls">{tool==='cutout' && <GlassTabs className="segmented work-tabs" aria-label="检查背景">{['棋盘','白色','深色'].map(v => <button key={v} className={backdrop===v?'selected':''} onClick={() => setBackdrop(v)}>{v}</button>)}</GlassTabs>}
     {tool==='retouch' && <small>{{brush:'轻微调整明暗与锐度，保留笔锋。',paint:'轻调明度，保留颜料色序和包装文字。',toy:'轻调对比和轮廓，保留零件和接缝。'}[option]}</small>}
-    {tool==='upscale' && <small>{width && height ? `输出 ${width*factor} × ${height*factor} px` : '从原尺寸放大'} · 保真重采样</small>}</div>
-    {(tooLarge || error || job?.error) && <p className="history-error" role="alert">{tooLarge ? '输出超过 6400 万像素，请降低倍率。' : job?.error || error}</p>}
+    {tool==='upscale' && <small>{width && height ? `输出 ${outputWidth} × ${outputHeight} px` : '从原尺寸放大'} · 保真重采样</small>}</div>
+    {(tooLarge || error || job?.error) && <p className="history-error" role="alert">{tooLarge ? (width && height && width*height>=MAX_IMAGE_PIXELS ? '原图已达 6400 万像素上限。' : '所选倍率超过 6400 万像素，请选择「上限内放大」。') : job?.error || error}</p>}
     <footer className="work-controls">{result && <>{tool==='cutout' && <button className="quiet-button" onClick={()=>setCorrecting(true)}>调整边缘</button>}<a className="quiet-button" href={result.url} download={result.name}>下载 PNG</a>{compare && <button className="quiet-button" onClick={() => compare(result)}>加入对比画布</button>}</>}
     <button className="primary-button" disabled={!source || busy || tooLarge} onClick={() => void run()}>{busy ? '请稍候…' : result ? '重新处理' : '开始处理'}</button></footer></>}
   </section></div></ModalPortal>;

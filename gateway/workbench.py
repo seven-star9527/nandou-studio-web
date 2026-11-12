@@ -15,7 +15,7 @@ from .image_uploads import original_image_bytes, ImageUploadError
 from .image_preview import preview_path
 from .compare_board import CompareBoard
 from .board_video import upload_video, video_source
-from .quick_edits import RECIPES, correct_mask, cutout, product_retouch, retouch_or_enlarge, retouch_settings
+from .quick_edits import RECIPES, correct_mask, cutout, product_retouch, retouch_or_enlarge, retouch_settings, upscale_size
 from .photocraft import PhotoCraftError
 from .agent_limits import AgentError
 
@@ -168,8 +168,10 @@ class Workbench:
         path = self.source(user, source)
         if tool == 'upscale':
             width, height = dimensions(path)
-            if width * height * int(option)**2 > 64_000_000:
-                return fail('放大后超过 6400 万像素，请降低倍率。',400)
+            try:
+                upscale_size(width,height,option)
+            except ValueError as exc:
+                return fail(str(exc),400)
         if self.store.one("SELECT 1 FROM studio_quick_jobs WHERE owner_id=? AND status='processing'",(user['id'],)):
             return fail('上一张图片仍在处理中。',409)
         with self.store.db:

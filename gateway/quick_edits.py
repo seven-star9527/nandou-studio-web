@@ -5,11 +5,12 @@ from pathlib import Path
 from functools import lru_cache
 from threading import Lock
 import os
+from math import isqrt
 
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 from .image_uploads import MAX_IMAGE_PIXELS
 
-RECIPES = {'cutout': ('transparent',), 'retouch': ('brush', 'paint', 'toy'), 'upscale': ('2', '4')}
+RECIPES = {'cutout': ('transparent',), 'retouch': ('brush', 'paint', 'toy'), 'upscale': ('2', '4', 'fit')}
 
 
 def retouch_settings(option):
@@ -30,13 +31,21 @@ def upright(path):
         return ImageOps.exif_transpose(source).convert('RGBA')
 
 
+def upscale_size(width, height, option):
+    if option == 'fit':
+        size = (min(4*width, isqrt(MAX_IMAGE_PIXELS*width//height)),
+                min(4*height, isqrt(MAX_IMAGE_PIXELS*height//width)))
+    else:
+        size = (width*int(option), height*int(option))
+    if size[0]*size[1] > MAX_IMAGE_PIXELS or size == (width,height):
+        raise ValueError('当前尺寸无法按所选倍率放大，单次输出上限为 6400 万像素。')
+    return size
+
+
 def retouch_or_enlarge(source, output, tool, option):
     image = upright(source)
     if tool == 'upscale':
-        factor = int(option)
-        size = (image.width * factor, image.height * factor)
-        if size[0] * size[1] > MAX_IMAGE_PIXELS:
-            raise ValueError('放大后超过 6400 万像素，请降低倍率。')
+        size = upscale_size(image.width,image.height,option)
         result = image.resize(size, Image.Resampling.LANCZOS)
     else:
         # Adjust luminance only. Preserve original chroma, markings and alpha.
