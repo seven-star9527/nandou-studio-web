@@ -1,4 +1,4 @@
-"""One versioned comparison draft per account. Cards reference original media."""
+"""Named, versioned canvas projects scoped to each account. Cards reference original media."""
 import json
 import math
 import uuid
@@ -24,9 +24,38 @@ class CompareBoard:
             self.store.db.execute("""CREATE TABLE IF NOT EXISTS studio_compare_boards(
               owner_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, board_json TEXT NOT NULL)""")
 
-    def read(self, uid):
-        row = self.store.one('SELECT * FROM studio_compare_boards WHERE owner_id=?',(uid,))
+            self.store.db.execute("""CREATE TABLE IF NOT EXISTS studio_canvas_projects(
+              owner_id TEXT NOT NULL,id TEXT NOT NULL,name TEXT NOT NULL,revision INTEGER NOT NULL,
+              board_json TEXT NOT NULL,updated_at INTEGER NOT NULL,PRIMARY KEY(owner_id,id))""")
+            self.store.db.execute("""INSERT OR IGNORE INTO studio_canvas_projects
+              SELECT owner_id,'legacy','我的对比画布',revision,board_json,0 FROM studio_compare_boards""")
+
+    def read(self, uid, project):
+        row = self.store.one('SELECT * FROM studio_canvas_projects WHERE owner_id=? AND id=?',(uid,project))
+        if not row and project != 'legacy':
+            raise web.HTTPNotFound()
         return (row['revision'], json.loads(row['board_json'])) if row else (0, DEFAULT)
+
+    @staticmethod
+    def name(body):
+        name = body.get('name')
+        if not isinstance(name,str) or not 1 <= len(name.strip()) <= 80:
+            raise ValueError('invalid project name')
+        return name.strip()
+
+    async def projects(self, request, user):
+        uid = user['id']
+        if request.method == 'GET':
+            return web.json_response(self.store.all("""SELECT id,name,revision,updated_at FROM studio_canvas_projects
+                WHERE owner_id=? ORDER BY updated_at DESC,rowid DESC""",(uid,)))
+        if request.method != 'POST':
+            raise web.HTTPNotFound()
+        body = await self.workbench.g.body(request)
+        name, project = self.name(body), uuid.UUID(str(body.get('id'))).hex
+        with self.store.db:
+            self.store.db.execute("""INSERT OR IGNORE INTO studio_canvas_projects VALUES(?,?,?,0,?,unixepoch())""",
+                                  (uid,project,name,json.dumps(DEFAULT)))
+        return web.json_response({'id':project})
 
     def check_source(self, user, card):
         kind = card.get('kind', 'image')
@@ -78,20 +107,28 @@ class CompareBoard:
             raise ValueError('invalid preferred card')
         return {'cards':cards,'preferred':preferred,'view':{'x':bounded(view.get('x')),'y':bounded(view.get('y')),'zoom':bounded(view.get('zoom'),.05,16)}}
 
-    async def route(self, request, user):
+    async def route(self, request, user, project="legacy"):
         uid = user['id']
         if request.method=='GET':
-            revision, board = self.read(uid)
+            revision, board = self.read(uid, project)
             cards = [{**c,'available':self.visible(user,c)} for c in board['cards']]
-            return web.json_response({**board,'cards':cards,'revision':revision})
+            name = self.store.one('SELECT name FROM studio_canvas_projects WHERE owner_id=? AND id=?',(uid,project))
+            return web.json_response({**board,'cards':cards,'revision':revision,'name':name['name'] if name else '我的对比画布'})
         if request.method!='POST':
             raise web.HTTPNotFound()
         body = await self.workbench.g.body(request)
-        revision, old = self.read(uid)
+        revision, old = self.read(uid, project)
         if type(body.get('revision')) is not int or body['revision'] != revision:
             return web.json_response({'error':'画布已在另一个窗口更新，请重新打开后继续。'},status=409)
         board = self.validate(user,body,old)
         with self.store.db:
-            self.store.db.execute('INSERT INTO studio_compare_boards VALUES(?,?,?) ON CONFLICT(owner_id) DO UPDATE SET revision=excluded.revision,board_json=excluded.board_json',
-                                  (uid,revision+1,json.dumps(board,ensure_ascii=False)))
+            if project == 'legacy' and revision == 0:
+                self.store.db.execute("INSERT OR IGNORE INTO studio_canvas_projects VALUES(?,'legacy','我的对比画布',0,?,0)",
+                                      (uid,json.dumps(DEFAULT)))
+            name = self.name(body) if 'name' in body else None
+            changed = self.store.db.execute("""UPDATE studio_canvas_projects SET revision=revision+1,board_json=?,
+                name=COALESCE(?,name),updated_at=unixepoch() WHERE owner_id=? AND id=? AND revision=?""",
+                (json.dumps(board,ensure_ascii=False),name,uid,project,revision))
+            if not changed.rowcount:
+                return web.json_response({'error':'项目已在另一个窗口更新，请重新打开。'},status=409)
         return web.json_response({'revision':revision+1})

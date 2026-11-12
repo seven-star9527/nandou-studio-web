@@ -229,6 +229,10 @@ class Workbench:
             return await upload_video(self, request, user)
         if route.startswith('board-video/') and request.method in ('GET', 'HEAD'):
             return web.FileResponse(video_source(self, user, request.path))
+        if route == 'projects':
+            return await self.board.projects(request,user)
+        if route.startswith('projects/'):
+            return await self.board.route(request,user,route.split('/',1)[1])
         if route == 'board':
             return await self.board.route(request,user)
         if route == 'board-image' and request.method == 'GET':
