@@ -9,7 +9,8 @@ import { flushSync } from 'react-dom';
 import { IMAGE_UPLOAD_HINT } from './image-upload-limits';
 import CompareBoard from './components/CompareBoard';
 import QuickEdit from './components/QuickEdit';
-import { toolNames, type QuickTool, type WorkImage } from './workbench-api';
+import type { Artwork } from './types';
+import { workRequest, toolNames, type QuickTool, type WorkImage } from './workbench-api';
 import Composer from './components/Composer';
 import History, { isBusy } from './components/History';
 import Icon from './components/Icon';
@@ -67,8 +68,15 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
     }
   };
   const { editing, setEditing } = studio;
+  const [edits, setEdits] = useState<Artwork[]>([]);
+  const [editHistoryError, setEditHistoryError] = useState('');
+  const refreshEdits = async () => {
+    try { setEdits(await workRequest<Artwork[]>('history')); setEditHistoryError(''); }
+    catch (cause) { setEditHistoryError(String(cause)); }
+  };
+  useEffect(() => { void refreshEdits(); }, []);
   const [board, setBoard] = useState<{initial?:WorkImage} | null>(null);
-  const openBoard = (initial?:WorkImage) => { setQuick(null); setBoard({initial}); };
+  const openBoard = (initial?:WorkImage) => { setQuick(null); void refreshEdits(); setBoard({initial}); };
   const [quick, setQuick] = useState<{tool:QuickTool; source?:WorkImage} | null>(null);
   const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth >= 1150);
   const busy = isBusy(studio.job);
@@ -83,9 +91,9 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
       <GlassTabs className="workspace-mode-switch" role="navigation" aria-label="创作模式"><button className={workspace === 'studio' ? 'active' : ''} onClick={event => void setWorkspace('studio', event.detail > 0)}>图片创作</button><button className={workspace === 'agent' ? 'active' : ''} onClick={event => void setWorkspace('agent', event.detail > 0)}>Agent 创作</button></GlassTabs>
       <div className="header-actions"><ThemeToggle/><CloudCreditsAccount account={studio.cloudAccount} loading={studio.accountLoading} error={studio.accountError} refresh={() => void studio.refreshAccount()} /><button className={`connection ${studio.connected ? 'connected' : ''}`} onClick={() => { if (!busy) void studio.connect(); }} disabled={studio.connecting || busy} title="重新连接图像服务"><span className={`connection-dot ${studio.connecting ? 'spinning' : ''}`} />{connectedLabel}</button><div className="studio-account"><span className="studio-account-identity" title={user.email}><span>{user.email}</span>{user.is_admin ? <small>管理员</small> : null}</span>{user.is_admin && adminEntry ? <AdminUsage /> : null}<button className="account-logout-button" onClick={() => void logout()}>退出</button></div></div>
     </header>
-    {workspace === 'agent' ? <AgentWorkspace compare={openBoard} user={user} client={studio.client} refreshAccount={studio.refreshAccount} /> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <div className={`studio-layout ${historyOpen ? '' : 'rail-closed'}`}>
+    {workspace === 'agent' ? <AgentWorkspace onQuick={source=>setQuick({tool:'cutout',source})} compare={openBoard} user={user} client={studio.client} refreshAccount={studio.refreshAccount} /> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <div className={`studio-layout ${historyOpen ? '' : 'rail-closed'}`}>
       <aside className="creation-rail" aria-label="创作记录侧栏"><button className="quiet-button rail-toggle" aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)}>{historyOpen ? '收起记录' : '创作记录'}</button>
-      {historyOpen && <History compare={openBoard} onQuick={source => setQuick({tool:'cutout',source})} isAdmin={user.is_admin || user.role === 'admin'} hideTask={id => studio.hideTask(id, user.is_admin)} currentUserId={user.id} artworks={studio.history} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError} refresh={() => void studio.refreshHistory()} stop={() => void studio.stop()} reuse={studio.reuse} />}</aside>
+      {historyOpen && <History compare={openBoard} onQuick={source => setQuick({tool:'cutout',source})} isAdmin={user.is_admin || user.role === 'admin'} hideTask={async id => { await studio.hideTask(id,user.is_admin); await refreshEdits(); }} currentUserId={user.id} artworks={[...edits,...studio.history].sort((a,b) => (Date.parse(b.generatedAt ?? '')||0)-(Date.parse(a.generatedAt ?? '')||0))} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError || editHistoryError} refresh={() => { void studio.refreshHistory(); void refreshEdits(); }} stop={() => void studio.stop()} reuse={studio.reuse} />}</aside>
       <main className="studio-content"><section className="creation-section" aria-labelledby="creation-title">
         {studio.draftError ? <div className="service-notice" role="status">{studio.draftError}</div> : null}
         <div className="title-pattern" aria-hidden="true" />
@@ -113,7 +121,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         changeEditing(true); await studio.addReferences([file]);
       }} />
     </main></div>}
-    {quick && <QuickEdit compare={openBoard} key={quick.tool} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => setQuick(null)} />}
+    {quick && <QuickEdit compare={openBoard} key={quick.tool} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => {setQuick(null);void refreshEdits();}} />}
     {board && <CompareBoard initial={board.initial} close={() => setBoard(null)} />}
   </div>;
 }

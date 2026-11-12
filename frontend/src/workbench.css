@@ -60,3 +60,5 @@
 .compare-caption { flex:1; display:flex; align-items:center; gap:8px; padding:4px; }
 .compare-caption span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
 .compare-caption b { color:var(--glass-accent); }
+.mask-stage { min-height:260px; height:49vh; }
+.mask-stage canvas { display:block; max-width:100%; max-height:100%; width:auto; height:auto; touch-action:none; cursor:crosshair; }

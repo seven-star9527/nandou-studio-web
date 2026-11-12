@@ -2,6 +2,9 @@
 import asyncio
 import json
 import logging
+import math
+import time
+from datetime import datetime, timezone
 import uuid
 from pathlib import Path
 from urllib.parse import unquote
@@ -11,7 +14,7 @@ from PIL import Image
 from .image_uploads import original_image_bytes, ImageUploadError
 from .image_preview import preview_path
 from .compare_board import CompareBoard
-from .quick_edits import RECIPES, cutout, retouch_or_enlarge
+from .quick_edits import RECIPES, correct_mask, cutout, product_retouch, retouch_or_enlarge, retouch_settings
 from .photocraft import PhotoCraftError
 from .agent_limits import AgentError
 
@@ -51,9 +54,13 @@ class Workbench:
           UPDATE studio_quick_jobs SET status='failed',error='服务已重启，请核对原图后重新处理。'
             WHERE status='processing';
         """)
+        if not any(row[1] == 'mask_json' for row in self.store.db.execute('PRAGMA table_info(studio_quick_jobs)')):
+            self.store.db.execute("ALTER TABLE studio_quick_jobs ADD COLUMN mask_json TEXT")
+            self.store.db.commit()
 
     def media(self, uid, mid):
-        row = self.store.one('SELECT * FROM studio_media WHERE id=? AND owner_id=?', (mid, uid))
+        row = self.store.one("""SELECT m.* FROM studio_media m LEFT JOIN task_visibility v
+          ON v.task_id=m.id AND v.viewer_id=m.owner_id WHERE m.id=? AND m.owner_id=? AND v.hidden_at IS NULL""", (mid, uid))
         if not row:
             raise web.HTTPNotFound()
         return row
@@ -122,12 +129,38 @@ class Workbench:
     async def submit(self, user, data):
         jid = identifier(data.get('id'))
         tool, option, source = data.get('tool'), data.get('option'), data.get('source')
-        if not isinstance(tool, str) or tool not in RECIPES or option not in RECIPES[tool]:
+        if tool=='retouch':
+            retouch_settings(option)
+        elif not isinstance(tool, str) or tool not in RECIPES or option not in RECIPES[tool]:
             raise ValueError('unknown recipe')
-        existing = self.store.one('SELECT owner_id FROM studio_quick_jobs WHERE id=?', (jid,))
+        mask = data.get('mask')
+        encoded = None
+        base = None
+        if mask is not None:
+            if tool!='cutout' or not isinstance(mask,dict):
+                raise ValueError('invalid mask')
+            parent = self.job(user,identifier(mask.get('base')))
+            if parent['tool']!='cutout' or source!=parent['source'] or not parent['result']:
+                raise ValueError('invalid mask source')
+            base = self.source(user,parent['result']['url'])
+            strokes = mask.get('strokes')
+            if not isinstance(strokes,list) or not 1<=len(strokes)<=200:
+                raise ValueError('invalid strokes')
+            points_count = 0
+            for stroke in strokes:
+                if not isinstance(stroke,dict) or stroke.get('mode') not in ('keep','erase'):
+                    raise ValueError('invalid stroke')
+                radius, points = stroke.get('radius'), stroke.get('points')
+                if type(radius) not in (float,int) or not .001<=radius<=.15 or not isinstance(points,list) or not points:
+                    raise ValueError('invalid brush')
+                points_count += len(points)
+                if points_count>24000 or any(not isinstance(p,list) or len(p)!=2 or any(type(v) not in (float,int) or not math.isfinite(v) or not 0<=v<=1 for v in p) for p in points):
+                    raise ValueError('invalid points')
+            encoded = json.dumps(mask,sort_keys=True,separators=(',',':'))
+        existing = self.store.one('SELECT owner_id,mask_json FROM studio_quick_jobs WHERE id=?', (jid,))
         if existing:
             previous = self.job(user, jid)
-            if (source,tool,option) != (previous['source'],previous['tool'],previous['option']):
+            if existing['mask_json'] != encoded or (source,tool,option) != (previous['source'],previous['tool'],previous['option']):
                 return fail('该请求编号已经用于另一张图片。',409)
             return web.json_response(previous)
         path = self.source(user, source)
@@ -138,21 +171,25 @@ class Workbench:
         if self.store.one("SELECT 1 FROM studio_quick_jobs WHERE owner_id=? AND status='processing'",(user['id'],)):
             return fail('上一张图片仍在处理中。',409)
         with self.store.db:
-            self.store.db.execute("INSERT INTO studio_quick_jobs VALUES(?,?,?,?,?,'processing',NULL,unixepoch())",
-                                  (jid,user['id'],source,tool,option))
-        task = asyncio.create_task(self.process(user['id'],jid,path,tool,option))
+            self.store.db.execute("INSERT INTO studio_quick_jobs VALUES(?,?,?,?,?,'processing',NULL,unixepoch(),?)",
+                                  (jid,user['id'],source,tool,option,encoded))
+        task = asyncio.create_task(self.process(user['id'],jid,path,tool,option,base,mask))
         self.running.add(task)
         task.add_done_callback(self.running.discard)
         return web.json_response(self.job(user,jid),status=202)
 
-    async def process(self, uid, jid, source, tool, option):
+    async def process(self, uid, jid, source, tool, option, base, mask):
         folder = self.root / uid
         folder.mkdir(exist_ok=True)
         temp, final = folder / (jid + '.part'), folder / (jid + '.png')
         try:
             async with self.slots:
-                if tool == 'cutout':
+                if base is not None:
+                    await asyncio.to_thread(correct_mask,source,base,temp,mask['strokes'])
+                elif tool == 'cutout':
                     await cutout(self.g.agent.editing,source,temp)
+                elif tool == 'retouch':
+                    await product_retouch(self.g.agent.editing,source,temp,option)
                 else:
                     await asyncio.to_thread(retouch_or_enlarge,source,temp,tool,option)
                 w,h = dimensions(temp)
@@ -160,6 +197,8 @@ class Workbench:
             name = {'cutout':'透明底','retouch':'主图精修','upscale':'高清放大'}[tool] + '.png'
             with self.store.db:
                 self.store.db.execute('INSERT INTO studio_media VALUES(?,?,?,?,?,?)',(jid,uid,name,'.png',w,h))
+                self.store.db.execute("""INSERT INTO tasks(id,owner_id,kind,model,status,requested,completed,started_at,ended_at,credits)
+                  SELECT id,owner_id,'quick',tool,'completed',1,1,created_at,?,0 FROM studio_quick_jobs WHERE id=?""",(time.time(),jid))
                 self.store.db.execute("UPDATE studio_quick_jobs SET status='completed' WHERE id=?",(jid,))
         except Exception as exc:
             if isinstance(exc,(ValueError,PhotoCraftError,AgentError)):
@@ -173,6 +212,15 @@ class Workbench:
             temp.unlink(missing_ok=True)
 
     async def route(self, request, user, route):
+        if route == 'history' and request.method == 'GET':
+            rows = self.store.all("""SELECT m.*,q.created_at,u.email,v.hidden_at FROM studio_quick_jobs q
+                JOIN studio_media m ON q.id=m.id JOIN users u ON m.owner_id=u.id
+                LEFT JOIN task_visibility v ON v.task_id=m.id AND v.viewer_id=m.owner_id
+                WHERE (? OR (m.owner_id=? AND v.hidden_at IS NULL)) ORDER BY q.created_at DESC LIMIT 100""",(user['role']=='admin',user['id']))
+            return web.json_response([{'id':r['id'],'taskId':r['id'],'ownerId':r['owner_id'],'ownerEmail':r['email'],
+                'hiddenAt':str(r['hidden_at']) if r['hidden_at'] else None,'url':MEDIA+r['id'],'source':'quick',
+                'prompt':r['name'],'width':r['width'],'height':r['height'],
+                'generatedAt':datetime.fromtimestamp(r['created_at'],timezone.utc).isoformat()} for r in rows])
         if route == 'board':
             return await self.board.route(request,user)
         if route == 'board-image' and request.method == 'GET':
@@ -187,7 +235,14 @@ class Workbench:
         if route.startswith('jobs/') and request.method=='GET':
             return web.json_response(self.job(user,identifier(route[5:])))
         if route.startswith('media/') and request.method=='GET':
-            path = self.source(user,MEDIA + route[6:])
+            mid = identifier(route[6:])
+            task = self.store.task(mid)
+            if user['role'] == 'admin' and task and task['kind']=='quick':
+                path = self.root / task['owner_id'] / (mid+'.png')
+                if not path.is_file():
+                    raise web.HTTPNotFound()
+            else:
+                path = self.source(user,MEDIA + mid)
             if request.query.get('preview') == '1':
                 path = await preview_path(path,self.root/'previews',480)
             return web.FileResponse(path)

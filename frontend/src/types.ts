@@ -52,7 +52,7 @@ export interface Artwork {
   id: string; url: string; prompt: string; width?: number; height?: number;
   seed?: string; model?: string; steps?: number; metadata?: string;
   generatedAt?: string; completedAt?: string; duration?: number; current?: boolean; batchIndex?: number;
-  source?: 'local' | 'cloud';
+  source?: 'local' | 'cloud' | 'quick';
   locallySaved?: boolean; downloadError?: string; mimeType?: string;
   taskCreditsCost?: number; taskCostSettled?: boolean;
   taskId?: string; ownerId?: string; ownerEmail?: string; hiddenAt?: string;

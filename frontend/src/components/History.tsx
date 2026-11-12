@@ -30,11 +30,11 @@ const PHASES: Record<Job['phase'], string> = {
 };
 export function isBusy(job: Job | null) { return Boolean(job && ['connecting', 'queued', 'loading', 'generating', 'stopping'].includes(job.phase)); }
 
-function ArtworkImage({ artwork }: { artwork: Artwork }) {
+function ArtworkImage({ artwork, thumbnail = false }: { artwork: Artwork; thumbnail?: boolean }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [artwork.url]);
   return failed ? <span className="image-unavailable"><Icon name="image" size={30} /><span>图像暂时无法预览</span><small>{artwork.locallySaved === false ? '可尝试打开远程原图，或刷新记录重新转存。' : '请刷新记录或检查图像服务。'}</small></span>
-    : <img src={artwork.url} alt={artwork.prompt || '生成图像'} loading="lazy" onError={() => setFailed(true)} />;
+    : <img src={thumbnail && artwork.source === 'quick' ? artwork.url + '?preview=1' : artwork.url} alt={artwork.prompt || '生成图像'} loading="lazy" onError={() => setFailed(true)} />;
 }
 
 function DownloadLink({ artwork, compact = false }: { artwork: Artwork; compact?: boolean }) {
@@ -177,7 +177,7 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
     {visible.length ? <div className="artwork-grid">
       {visible.map(artwork => <article className="artwork" key={artwork.id}>
         <button className="artwork-open" onClick={() => setSelected(artwork)} aria-label={`查看图像 ${artwork.prompt.slice(0, 30) || '创作记录'}`}>
-          <ArtworkImage artwork={artwork} />
+          <ArtworkImage artwork={artwork} thumbnail />
           <span className="artwork-expand"><Icon name="expand" size={20} /></span>
         </button>
         <div className="artwork-info"><p>{artwork.prompt || '生成图像'}</p><HistoryTime value={artwork.generatedAt} />{isAdmin ? <span className="artwork-owner">{artwork.ownerEmail ?? '历史管理员作品'}{artwork.hiddenAt ? <em>用户已移除</em> : null}</span> : null}<div><span>{artwork.width && artwork.height ? `${artwork.width} × ${artwork.height}` : '图像'}</span><span className="artwork-card-actions"><DownloadLink artwork={artwork} compact />{canHide(artwork.taskId) ? <button onClick={() => askRemove(artwork.taskId!)} title="从我的记录中移除整个任务" aria-label="删除任务记录" className="history-delete-button"><Icon name="trash" size={15} /><span>删除</span></button> : null}</span></div>{artwork.source === 'cloud' ? <p className="task-cost">{taskCostLabel(artwork.taskCreditsCost, artwork.taskCostSettled)}</p> : null}{artwork.source === 'cloud' && artwork.locallySaved === false ? <p className="delivery-warning">{artwork.downloadError ?? '本地缓存未完成；远程原图可能到期，请及时保存。'}</p> : null}</div>
@@ -195,9 +195,9 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
           <dl><dt>提交时间</dt><dd><HistoryTime value={selected.generatedAt} /></dd>{historyTimestamp(selected.completedAt) ? <><dt>完成时间</dt><dd><HistoryTime value={selected.completedAt} label="完成时间" /></dd></> : null}{selected.width && selected.height ? <><dt>尺寸</dt><dd>{selected.width} × {selected.height} px</dd></> : null}{selected.seed != null ? <><dt>种子</dt><dd>{selected.seed}</dd></> : null}{selected.steps != null ? <><dt>步数</dt><dd>{selected.steps}</dd></> : null}{selected.duration != null ? <><dt>{selected.source === 'cloud' ? '生成耗时' : '请求耗时'}</dt><dd>{selected.duration.toFixed(1)} 秒</dd></> : null}{selected.model ? <><dt>模型</dt><dd>{selected.model}</dd></> : null}{selected.source === 'cloud' ? <><dt>任务积分</dt><dd>{taskCostLabel(selected.taskCreditsCost, selected.taskCostSettled)}</dd></> : null}</dl>
           {selected.source === 'cloud' ? <p className={selected.locallySaved ? 'delivery-saved' : 'delivery-warning'}>{selected.locallySaved ? '原图已保存到本地。' : selected.downloadError ?? '本地缓存未完成；远程结果可能到期。可刷新创作记录重试转存。'}</p> : null}
           {isAdmin ? <p className="artwork-owner">所属账号：{selected.ownerEmail ?? '历史管理员作品'}{selected.hiddenAt ? ' · 用户已移除' : ''}</p> : null}
-          {selected.taskId ? <TaskReferences taskId={selected.taskId} /> : null}
+          {selected.source !== 'quick' && selected.taskId ? <TaskReferences taskId={selected.taskId} /> : null}
           {retryError && <p className="history-error" role="alert">{retryError}</p>}
-          <div className="detail-actions"><DownloadLink artwork={selected} />{ownImageUrl(selected.url) && !selected.hiddenAt && (!isAdmin || selected.ownerId === currentUserId) && <><button className="quiet-button" onClick={() => { setSelected(null); compare({url:selected.url,name:selected.prompt || '创作图片'}); }}>加入对比画布</button><button className="quiet-button" onClick={() => { setSelected(null); onQuick({url:selected.url,name:selected.prompt || '创作图片',width:selected.width,height:selected.height}); }}>快捷修图</button></>}<button className="quiet-button" disabled={retrying} onClick={() => void retrySelected()}>{retrying ? '正在读取…' : '再试一次'}</button>{canHide(selected.taskId) ? <button className="quiet-button" onClick={() => askRemove(selected.taskId!)}><Icon name="trash" size={15} />移除任务</button> : null}</div>
+          <div className="detail-actions"><DownloadLink artwork={selected} />{ownImageUrl(selected.url) && !selected.hiddenAt && (!isAdmin || selected.ownerId === currentUserId) && <><button className="quiet-button" onClick={() => { setSelected(null); compare({url:selected.url,name:selected.prompt || '创作图片'}); }}>加入对比画布</button><button className="quiet-button" onClick={() => { setSelected(null); onQuick({url:selected.url,name:selected.prompt || '创作图片',width:selected.width,height:selected.height}); }}>快捷修图</button></>}{selected.source !== 'quick' && <button className="quiet-button" disabled={retrying} onClick={() => void retrySelected()}>{retrying ? '正在读取…' : '再试一次'}</button>}{canHide(selected.taskId) ? <button className="quiet-button" onClick={() => askRemove(selected.taskId!)}><Icon name="trash" size={15} />移除任务</button> : null}</div>
           {selected.metadata ? <details><summary>生成信息</summary><pre>{selected.metadata}</pre></details> : null}
         </div>
       </section>

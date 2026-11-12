@@ -29,14 +29,14 @@ type Upload = { id: string; name: string; data_url: string; width: number; heigh
 type AgentDraft = { agent?: 'generate' | 'retouch'; text: string; uploads: Upload[]; refs: AgentAsset[]; skills?: {id: string; title: string}[]; submission?: { chatId: string; requestId: string } };
 const EMPTY_DRAFT: AgentDraft = {text: '', uploads: [], refs: []};
 
-function ImagePreview({ image, close }: { image: { url: string; name: string }; close: () => void }) {
+function ImagePreview({ image, close, onQuick }: { onQuick?: () => void; image: { url: string; name: string }; close: () => void }) {
   const dialog = useRef<HTMLDivElement>(null); useModalDialog(true, dialog, close);
   return <ModalPortal><div className="modal-backdrop agent-image-backdrop" onClick={close}><div className="agent-image-dialog" ref={dialog} role="dialog" aria-modal="true" aria-label="查看图片" tabIndex={-1} onClick={e => e.stopPropagation()}>
-    <button className="icon-button" onClick={close} aria-label="关闭图片"><Icon name="close" /></button><img src={image.url} alt={image.name} /><a href={image.url} download={image.name}><Icon name="download" />下载图片</a>
+    <button className="icon-button" onClick={close} aria-label="关闭图片"><Icon name="close" /></button><img src={image.url} alt={image.name} /><a href={image.url} download={image.name}><Icon name="download" />下载图片</a>{onQuick && <button className="quiet-button" onClick={onQuick}>快捷修图</button>}
   </div></div></ModalPortal>;
 }
 
-export default function AgentWorkspace({ user, client, refreshAccount, compare }: { compare: (image: WorkImage) => void; user: StudioUser; client: SwarmClient; refreshAccount: () => Promise<unknown> }) {
+export default function AgentWorkspace({ user, client, refreshAccount, compare, onQuick }: { onQuick:(image:WorkImage)=>void; compare: (image: WorkImage) => void; user: StudioUser; client: SwarmClient; refreshAccount: () => Promise<unknown> }) {
   const [config, setConfig] = useState<AgentConfig | null>(null);
   const [chats, setChats] = useState<AgentChat[]>([]);
   const [cid, setCid] = useState(() => { try { return sessionStorage.getItem(`nandou-agent-chat:${user.id}`) ?? ''; } catch { return ''; } });
@@ -225,6 +225,6 @@ export default function AgentWorkspace({ user, client, refreshAccount, compare }
           <AnimatePresence>{skillsOpen && <motion.div className="agent-skill-picker" data-motion-layer role="dialog" aria-label="创作技能" initial={{opacity:0,y:12,scale:.96}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:8,scale:.97}} transition={{duration:reducedMotion ? 0 : .24, ease:[.23,1,.32,1]}}><header><span className="agent-skill-heading-icon"><Icon name="spark" size={20}/></span><div><strong>创作技能</strong><p>{isRetouch ? '专业编辑，保留原图与每一次修改。' : '选一个方向，把想法变成更好的画面。'}</p></div><button type="button" className="icon-button" aria-label="关闭技能" onClick={() => setSkillsOpen(false)}><Icon name="close" size={16}/></button></header><div className="agent-skill-list">{currentSkills.map(s => <button type="button" disabled={active || readOnly} key={s.id} aria-pressed={skills.some(item => item.id === s.id)} onClick={() => { setDraft(d => ({...d, skills:(d.skills ?? []).some(item => item.id === s.id) ? d.skills : [...(d.skills ?? []), {id:s.id,title:s.title}]})); setPendingId(null); setSkillsOpen(false); composer.current?.focus(); }}><span className="agent-skill-row-icon"><Icon name="brush" size={18}/></span><span className="agent-skill-copy"><strong>{s.title}</strong><small>{s.description}</small></span><Icon name={skills.some(item => item.id === s.id) ? 'check' : 'plus'} size={16}/></button>)}</div></motion.div>}</AnimatePresence>
         </form><p className="agent-composer-hint">{isRetouch ? '需求明确直接修图 · 原图完整保留' : '需求明确直接创作 · 保留产品细节'} · {IMAGE_UPLOAD_HINT}</p>
       </div>
-    </section>{preview ? <ImagePreview image={preview} close={() => setPreview(null)} /> : null}
+    </section>{preview ? <ImagePreview image={preview} onQuick={readOnly ? undefined : () => {setPreview(null);onQuick(preview);}} close={() => setPreview(null)} /> : null}
   </div>;
 }
