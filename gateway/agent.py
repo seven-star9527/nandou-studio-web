@@ -36,6 +36,7 @@ DEFAULTS = {"model": "gpt-image-2.5-flare", "quality": "medium", "resolution": "
 RATIOS = {"1:1", "3:4", "4:3", "2:3", "3:2", "9:16", "16:9", "21:9"}
 MODELS = {"gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gemini-nano-banana-2.1"}
 TOOL_LABELS = {"research_design": "检索设计馆藏", "find_prompt_examples": "检索提示词案例", "use_skill": "加载创作技能", "update_plan": "更新创作计划", "generate_image": "生成图片", "inspect_images": "查看并检查图片", "ask_user": "确认关键信息", "finish_project": "完成本次创作", "list_edit_tools":"读取修图工具", "inspect_edit_document":"查看图层结构", "edit_image":"执行专业修图", "export_project":"导出可编辑工程"}
+TOOL_LABELS['remove_background'] = '抠出主体并验证透明 PNG'
 
 
 class State(TypedDict):
@@ -49,9 +50,9 @@ def direct_cutout(text):
     """Only bypass planning for an unambiguous, standalone cutout instruction."""
     words = re.sub(r"[\s，,。！!、]+", "", text)
     return bool(re.fullmatch(
-        r"(?:可以|好的?|请|帮我|麻烦|直接|把这张图|将这张图|给这张图)*"
-        r"(?:[抠扣](?:成|出)?(?:图|透明(?:层|底|背景|PNG)|背景|主体)|"
-        r"(?:去掉|去除|移除)背景|(?:背景改为|背景改成|背景换成)透明)"
+        r"(?:可以|好的?|请|帮我|麻烦|直接|把(?:这张图|背景)|将(?:这张图|背景)|给这张图)*"
+        r"(?:[抠扣](?:成|出|掉)?(?:图|透明(?:层|底|背景|PNG)?|背景|主体)|"
+        r"(?:去掉|去除|移除|删除)背景|(?:背景改为|背景改成|背景换成)透明)"
         r"(?:并?(?:导出|保存为|输出)?透明(?:背景|底)?(?:PNG)?|导出PNG)?", words, re.I))
 
 
@@ -598,7 +599,9 @@ class CreativeAgent:
         if name not in {t['function']['name'] for t in allowed}:
             return {'error':'当前智能体不支持此工具；不会调用其他智能体的付费能力。'}
         if name == 'remove_background':
-            return await self.editing.cutout(cid, tid, user, args['ref_id'], ctx)
+            result = await self.editing.cutout(cid, tid, user, args['ref_id'], ctx)
+            ctx['cutout_attempted'] = True
+            return result
         if retouch and name == 'list_edit_tools':
             return {'commands':await self.editing.tools(args['engine'], args.get('filter',''))}
         if retouch and name == 'inspect_edit_document':
@@ -695,6 +698,8 @@ class CreativeAgent:
             return {"images_attached": ids}
         if name != "generate_image":
             raise ValueError()
+        if ctx.get('cutout_attempted'):
+            return {'error':'本轮已处理抠图请求，请交付结果或说明抠图失败，不再付费重绘。'}
         if not ctx["skills"] or not ctx["planned"]:
             return {"error": "请先加载技能并展示任务计划。"}
         for event in self.store.events(cid):
