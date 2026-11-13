@@ -115,9 +115,9 @@ function Pane({label,image,backdrop='',view,empty,update,marks,onPick,onSize,onF
     </div></figure>;
 }
 
-export default function QuickPreview({source,result,backdrop,marks,onPick,onSize,choose,busy}:{
+export default function QuickPreview({source,result,backdrop,marks,onPick,onSize,choose,busy,activity}:{
   source?:WorkImage;result?:WorkImage;backdrop?:string;marks:SubjectMark[];onPick?:(p:Point)=>void;
-  onSize:(width:number,height:number)=>void;choose:()=>void;busy:boolean;
+  onSize:(width:number,height:number)=>void;choose:()=>void;busy:boolean;activity:string;
 }){
   const [view,setView]=useState(initialView);
   const [sourceFit,setSourceFit]=useState(1),[resultFit,setResultFit]=useState(1);
@@ -138,7 +138,11 @@ export default function QuickPreview({source,result,backdrop,marks,onPick,onSize
   return <><div className="work-pair">
     <Pane {...shared} label="原图" image={source} marks={marks} onPick={onPick} onSize={onSize} onFitScale={setSourceFit}
       empty={<button disabled={busy} onClick={choose}>拖入图片，或点击上传</button>}/>
-    <Pane {...shared} label="处理结果" image={result} backdrop={backdrop} onFitScale={setResultFit} empty={<span>{busy&&source?'正在处理…':'等待处理'}</span>}/>
+    <Pane {...shared} label="处理结果" image={result} backdrop={backdrop} onFitScale={setResultFit} empty={busy?<div className="quick-processing" role="status">
+      {source && <img className="quick-processing-image" src={source.url} alt="" draggable={false}/>}
+      <span className="quick-processing-sweep" aria-hidden="true"/>
+      <span className="quick-processing-label"><i aria-hidden="true"/>{activity}</span>
+    </div>:<span>等待处理</span>}/>
   </div>{source && <div className="work-controls preview-tools" role="group" aria-label="对照预览缩放">
     <button className="quiet-button" aria-label="缩小预览" disabled={view.zoom<=1} onClick={()=>scale(view.zoom/1.5)}>−</button>
     <output title={result?'结果图显示比例':'原图显示比例'}>{percent}%</output>

@@ -36,6 +36,7 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
   const [watch, setWatch] = useState(() => {
     try { return initial ? '' : sessionStorage.getItem(pendingKey(tool)) ?? ''; } catch { return ''; }
   });
+  const [uploading,setUploading]=useState(false);
   const [busy, setBusy] = useState(Boolean(watch));
   const [backdrop, setBackdrop] = useState('棋盘');
   const [correcting,setCorrecting] = useState(false);
@@ -80,12 +81,12 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
   async function choose(files: File[]) {
     if (busy || working.current || !files.length) return;
     if (files.length !== 1) { setError('请一次选择一张图片。'); return; }
-    working.current = true; setBusy(true); setError('');
+    working.current = true; setUploading(true); setBusy(true); setError('');
     try {
       const uploaded = await uploadImage(files[0]);
       if (mounted.current) { setSource(uploaded); setMarks([]); setJob(undefined); remember(tool,''); }
     } catch (cause) { if (mounted.current) setError(String(cause)); }
-    finally { working.current = false; if (mounted.current) setBusy(false); }
+    finally { working.current = false; if (mounted.current) {setUploading(false);setBusy(false);} }
   }
   async function run(strokes?:MaskStroke[]) {
     if (!source || busy || working.current) return;
@@ -124,6 +125,7 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
     switchTool(next, nextSource);
   }
   const result = job?.status === 'completed' ? job.result : undefined;
+  const activity=uploading?'正在上传图片':({cutout:'正在抠图',retouch:'正在精修',upscale:'正在放大'})[tool];
   const width = source?.width, height = source?.height;
   const factor = tool === 'upscale' ? Number(option) : 1;
   const fits = tool==='upscale' && option==='fit';
@@ -160,7 +162,7 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
       {picking && <><small>在原图点选要{option==='remove'?'移除':'保留'}的物体，选好后一起处理。</small>
         <button className="quiet-button" disabled={busy||!marks.length} onClick={()=>{setMarks(marks.slice(0,-1));setJob(undefined);setError('');remember(tool,'');}}>撤销选点</button></>}
     </div>
-    <QuickPreview key={source?.url || 'empty'} source={source} result={result} busy={busy} marks={marks}
+    <QuickPreview key={source?.url || 'empty'} source={source} result={result} busy={busy} activity={activity} marks={marks}
       backdrop={tool==='cutout'?({'棋盘':'checker','白色':'white','深色':'dark'}[backdrop]):''}
       onPick={picking&&!busy?pick:undefined} choose={()=>file.current?.click()}
       onSize={(w,h)=>{if(source && !width)setSource({...source,width:w,height:h});}}/>
@@ -169,6 +171,6 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
     {tool==='upscale' && <small>{width && height ? `输出 ${outputWidth} × ${outputHeight} px` : '从原尺寸放大'} · 保真重采样</small>}</div>
     {(tooLarge || error || job?.error) && <p className="history-error" role="alert">{tooLarge ? (width && height && width*height>=MAX_IMAGE_PIXELS ? '原图已达 6400 万像素上限。' : '所选倍率超过 6400 万像素，请选择「上限内放大」。') : job?.error || error}</p>}
     <footer className="work-controls">{result && <>{tool==='cutout' && <button className="quiet-button" onClick={()=>{setBackground('white');selectTool('retouch',result);}}>用此蒙版精修</button>}{tool==='retouch' && background==='white' && <button className="quiet-button" onClick={()=>selectTool('cutout')}>修正主体范围</button>}{tool!=='upscale' && <button className="quiet-button" onClick={()=>setCorrecting(true)}>{tool==='cutout'?'调整边缘':'局部去瑕'}</button>}<a className="quiet-button" href={result.url} download={result.name}>下载 PNG</a>{compare && <button className="quiet-button" onClick={() => compare(result)}>{compareLabel}</button>}</>}
-    <button className="primary-button" disabled={!source || busy || tooLarge || (picking && !marks.length && !result)} onClick={() => void run()}>{busy ? '请稍候…' : result ? '重新处理' : '开始处理'}</button></footer></>}
+    <button className="primary-button" disabled={!source || busy || tooLarge || (picking && !marks.length && !result)} onClick={() => void run()}>{busy ? activity : result ? '重新处理' : '开始处理'}</button></footer></>}
   </section></div></ModalPortal>;
 }
