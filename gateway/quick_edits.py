@@ -415,6 +415,85 @@ def suppress_shaft_shadows(camera, coarse, alpha, background):
     return Image.fromarray(out)
 
 
+def refit_dark_contour(camera, original, matte, allow_extension):
+    """Recover the optical transition of an opaque dark surface on a neutral backdrop."""
+    import numpy as np
+    result = matte.copy()
+    for top in range(0, matte.height, 256):
+        for left in range(0, matte.width, 256):
+            box = (left, top, min(left+256, matte.width), min(top+256, matte.height))
+            tile = (max(0, left-14), max(0, top-14), min(matte.width, box[2]+14), min(matte.height, box[3]+14))
+            mask = matte.crop(tile)
+            if mask.getextrema() != (0, 255):
+                continue
+            # Use the mask only for orientation. Sample the photographed edge at camera resolution.
+            guide = np.asarray(mask.filter(ImageFilter.GaussianBlur(2)), dtype=np.float32)
+            sy, sx = top-tile[1], left-tile[0]
+            patch = guide[sy:sy+box[3]-top, sx:sx+box[2]-left]
+            j, i = np.nonzero((patch > 1) & (patch < 254))
+            if not len(i):
+                continue
+            y, x = j+sy, i+sx
+            gy, gx = np.gradient(guide)
+            norm = np.maximum(np.hypot(gx[y,x], gy[y,x]), 1)
+            dx, dy = gx[y,x]/norm, gy[y,x]/norm
+            def offset(n):
+                return (np.rint(y+n*dy).astype(int).clip(0, guide.shape[0]-1),
+                        np.rint(x+n*dx).astype(int).clip(0, guide.shape[1]-1))
+            a = np.asarray(mask)
+            photo = camera.crop(tile)
+            rgb = np.asarray(photo)
+            smooth = np.asarray(photo.filter(ImageFilter.GaussianBlur(.6)))
+            outside, inside = offset(-5), offset(5)
+            bg, fg = smooth[outside].astype(np.float32), smooth[inside].astype(np.float32)
+            span = bg.mean(1)-fg.mean(1)
+            valid = (norm > 4) & (a[outside] < 8) & (a[offset(9)] > 246)
+            valid &= (fg.max(1) < 100) & (np.ptp(fg, axis=1) < 22)
+            valid &= (np.ptp(bg, axis=1) < 25) & (span > 45)
+            if not valid.any():
+                continue
+            # Locate the photographed transition along the mask normal. A derivative of the
+            # lightly denoised photo ignores both the broad shadow and surface grain.
+            yy, xx = y[valid], x[valid]
+            nx, ny = dx[valid], dy[valid]
+            light = np.asarray(photo.convert('L').filter(ImageFilter.GaussianBlur(1)), dtype=np.float32)
+            offsets = np.arange(-7, 8, dtype=np.float32)
+            px = (xx[:,None]+nx[:,None]*offsets).clip(0, light.shape[1]-1)
+            py = (yy[:,None]+ny[:,None]*offsets).clip(0, light.shape[0]-1)
+            x0, y0 = px.astype(int), py.astype(int)
+            x1, y1 = (x0+1).clip(max=light.shape[1]-1), (y0+1).clip(max=light.shape[0]-1)
+            fx, fy = px-x0, py-y0
+            line = ((1-fy)*((1-fx)*light[y0,x0]+fx*light[y0,x1])
+                    + fy*((1-fx)*light[y1,x0]+fx*light[y1,x1]))
+            slopes = line[:,:-1]-line[:,1:]
+            peak = slopes.argmax(axis=1)
+            strongest = slopes.max(axis=1)
+            # Reject weak, ambiguous and out-of-window edges.
+            trusted = (peak >= 2) & (peak <= 11) & (strongest > .18*span[valid])
+            if not trusted.any():
+                continue
+            j, i, yy, xx = j[valid][trusted], i[valid][trusted], yy[trusted], xx[trusted]
+            peak = peak[trusted]
+            k = peak[:,None]+np.arange(-2,3)
+            weights = np.maximum(0, np.take_along_axis(slopes[trusted], k, axis=1))
+            boundary = ((offsets[k]+.5)*weights).sum(1)/weights.sum(1)
+            # Preserve subpixel coverage across roughly two camera pixels at a hard edge.
+            coverage = np.clip(.5-boundary/2.6, 0, 1)
+            prior = a[yy,xx]/255.
+            if not allow_extension:
+                coverage = np.minimum(coverage, prior)
+            new_alpha = np.asarray(result.crop(box)).copy()
+            new_alpha[j,i] = np.rint(coverage*255).astype(np.uint8)
+            result.paste(Image.fromarray(new_alpha), box)
+            colour = np.asarray(original.crop(box)).copy()
+            observed = rgb[yy,xx].astype(np.float32)
+            # The first clean pixel inside the edge supplies the colour under partial coverage.
+            blend = (1-coverage[:,None])
+            colour[j,i,:3] = np.rint(observed*(1-blend)+fg[valid][trusted]*blend).astype(np.uint8)
+            original.paste(Image.fromarray(colour), box)
+    return result
+
+
 def studio_edge_detail(original, coarse, matte, allow_extension=True):
     """Refit boundary pixels against a locally uniform backdrop, including sub-mask-width bristles."""
     import numpy as np
@@ -525,7 +604,8 @@ def studio_edge_detail(original, coarse, matte, allow_extension=True):
                     colours[j[partial],i[partial],:3] = np.uint8(np.rint(recovered[partial].clip(0,255)))
             alpha.paste(Image.fromarray(result),box)
             original.paste(Image.fromarray(colours),box)
-    return suppress_shaft_shadows(camera,coarse,alpha,neutral)
+    alpha = suppress_shaft_shadows(camera,coarse,alpha,neutral)
+    return refit_dark_contour(camera, original, alpha, allow_extension)
 
 
 def checked_points(points):
