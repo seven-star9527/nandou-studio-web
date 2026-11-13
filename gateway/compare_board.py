@@ -16,6 +16,36 @@ def bounded(value, low=-1000000, high=1000000):
     return value
 
 
+def validate_text_node(node, depth=0):
+    blocks = ('paragraph', 'heading', 'blockquote', 'bullet_list', 'ordered_list')
+    allowed = {'doc': blocks, 'blockquote': blocks, 'list_item': blocks,
+               'bullet_list': ('list_item',), 'ordered_list': ('list_item',),
+               'paragraph': ('text', 'hard_break'), 'heading': ('text', 'hard_break'),
+               'text': (), 'hard_break': ()}
+    if not isinstance(node, dict) or depth > 20 or not isinstance(node.get('type'), str) or node['type'] not in allowed:
+        raise ValueError('invalid formatted text node')
+    kind = node['type']
+    if set(node) - {'type', 'content', 'text', 'marks', 'attrs'}:
+        raise ValueError('invalid formatted text fields')
+    attrs = node.get('attrs', {})
+    if not isinstance(attrs, dict) or set(attrs) - {'align', 'level', 'order'} or attrs.get('align') not in (None, 'left', 'center', 'right') or attrs.get('level', 1) not in (1, 2, 3) or type(attrs.get('order', 1)) is not int:
+        raise ValueError('invalid text style')
+    if kind == 'text' and (not isinstance(node.get('text'), str) or not 0 < len(node['text']) <= 4000):
+        raise ValueError('invalid text span')
+    marks = node.get('marks', [])
+    if not isinstance(marks, list) or any(not isinstance(m, dict) or set(m) != {'type'} or m['type'] not in ('strong', 'em', 'underline', 'strike') for m in marks):
+        raise ValueError('invalid text mark')
+    children = node.get('content', [])
+    if not isinstance(children, list) or (kind in ('doc', 'blockquote', 'list_item', 'bullet_list', 'ordered_list') and not children):
+        raise ValueError('invalid text block')
+    if kind == 'list_item' and (not isinstance(children[0], dict) or children[0].get('type') != 'paragraph'):
+        raise ValueError('invalid list item')
+    for child in children:
+        if not isinstance(child, dict) or child.get('type') not in allowed[kind]:
+            raise ValueError('invalid text structure')
+        validate_text_node(child, depth + 1)
+
+
 class CompareBoard:
     def __init__(self, workbench):
         self.workbench = workbench
@@ -59,6 +89,8 @@ class CompareBoard:
 
     def check_source(self, user, card):
         kind = card.get('kind', 'image')
+        if card.get('placeholder') and card.get('url') == '':
+            return
         if kind == 'image' and not card.get('url') and card.get('generationId'):
             return
         if kind == 'image':
@@ -107,13 +139,29 @@ class CompareBoard:
                     'x':bounded(item.get('x')), 'y':bounded(item.get('y'))}
             if kind == 'image' and item.get('generationId'):
                 card['generationId'] = str(uuid.UUID(str(item['generationId'])))
-                if item.get('parentId'):
-                    card['parentId'] = str(uuid.UUID(str(item['parentId'])))
+            if item.get('parentId'):
+                card['parentId'] = str(uuid.UUID(str(item['parentId'])))
+            colors = ('cyan', 'blue', 'violet', 'amber', 'yellow', 'rose')
+            if item.get('tag') in colors:
+                card['tag'] = item['tag']
+            if kind == 'text' and item.get('paper') in colors:
+                card['paper'] = item['paper']
+            if kind in ('image', 'video') and url == '' and not card.get('generationId'):
+                card['placeholder'] = True
             if kind == 'text':
                 content = item.get('text')
                 if not isinstance(content, str) or len(content) > 4000:
                     raise ValueError('invalid text')
                 card['text'] = content
+                if 'rich' in item:
+                    rich = item['rich']
+                    if not isinstance(rich, dict) or rich.get('type') != 'doc' or len(json.dumps(rich, ensure_ascii=False)) > 120000:
+                        raise ValueError('invalid formatted text')
+                    validate_text_node(rich)
+                    card['rich'] = rich
+                for key, low, high in [('w', 140, 1600), ('h', 90, 1200)]:
+                    if key in item:
+                        card[key] = bounded(item[key], low, high)
             else:
                 card['url'] = url
                 prior = previous.get(cid, {})
@@ -121,6 +169,9 @@ class CompareBoard:
                     self.check_source(user, card)
             seen.add(cid)
             cards.append(card)
+        for card in cards:
+            if card.get('parentId') not in seen or card.get('parentId') == card['id']:
+                card.pop('parentId', None)
         preferred, view = body.get('preferred'), body['view']
         if preferred is not None and preferred not in seen:
             raise ValueError('invalid preferred card')

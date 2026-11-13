@@ -230,3 +230,46 @@
 @media(prefers-reduced-motion:no-preference) {
   .board-header small[aria-busy=true]::before,.board-task-state[aria-busy=true]::before { animation:spin .8s linear infinite; }
 }
+.board-tools:is(:hover,:focus-within) button { width:112px; justify-content:flex-start; padding-inline:9px; }
+.board-tools:is(:hover,:focus-within) button::after { content:attr(aria-label); white-space:nowrap; font-size:13px; }
+.board-video-drag { position:absolute; inset:0 0 min(52px,35%); cursor:grab; }
+.board-video-drag:active { cursor:grabbing; }
+.board-text { text-align:left; white-space:normal; }
+.board-text .ProseMirror { outline:none; min-height:100%; cursor:inherit; white-space:pre-wrap; }
+.board-text.editing { cursor:text; user-select:text; }
+.board-text[data-empty]:not(.editing)::before { content:'双击编辑文本'; color:var(--glass-muted); position:absolute; pointer-events:none; }
+.board-text .ProseMirror :is(p,h1,h2,h3,blockquote,ul,ol) { margin:0 0 .3em; }
+.board-text .ProseMirror :is(ul,ol) { padding-inline-start:1.4em; }
+.board-text .ProseMirror blockquote { border-inline-start:3px solid var(--glass-line); padding-inline-start:.7em; }
+.board-format select { color:var(--glass-ink); border:0; background:var(--studio-panel); border-radius:5px; padding:5px 2px; font:inherit; font-size:12px; }
+.board-format button { width:29px; padding:0; }
+.board-format button[aria-pressed=true] { background:var(--glass-control); color:var(--glass-accent); }
+.board-port,.board-tag,.board-resize { opacity:0; pointer-events:none; }
+.compare-card:is(:hover,:focus-within,.active) :is(.board-port,.board-tag,.board-resize),.board-tag.assigned { opacity:1; pointer-events:auto; }
+.board-port { position:absolute; top:50%; transform:translateY(-50%); border:1px solid var(--glass-line); border-radius:50%; width:23px; height:23px; padding:0; display:grid; place-items:center; color:var(--glass-ink); background:var(--studio-panel); }
+.board-port.left { right:calc(100% + 6px); }.board-port.right { left:calc(100% + 6px); }
+.board-port::before { content:''; position:absolute; inset:-4px -9px; }
+.board-tag { flex:none; width:22px; height:22px; padding:0; border:0; background:transparent; color:var(--glass-muted); font-size:16px; }
+.board-resize { position:absolute; right:2px; bottom:2px; width:19px; height:19px; cursor:nwse-resize; border:0; background:linear-gradient(135deg,transparent 53%,var(--glass-muted) 54% 58%,transparent 59% 68%,var(--glass-muted) 69% 73%,transparent 74%); }
+.board-empty-media { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; position:relative; margin:0; width:100%; height:100%; background:var(--studio-panel); border:1px dashed var(--glass-line); color:var(--glass-muted); font-size:14px; border-radius:5px; cursor:pointer; }
+.board-empty-media input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+.board-empty-media:focus-within { outline:2px solid var(--glass-accent); }
+.board-menu-dismiss { position:absolute; inset:0; z-index:4; }
+.board-node-menu { position:absolute; z-index:5; display:grid; width:164px; padding:6px; background:var(--glass-reading); backdrop-filter:blur(24px); color:var(--glass-ink); box-shadow:0 8px 28px #0003; border:1px solid var(--glass-line); border-radius:11px; }
+.board-node-menu small { color:var(--glass-muted); text-align:left; padding:6px 9px; font-size:11px; }
+.board-node-menu button { display:flex; align-items:center; gap:9px; background:transparent; color:inherit; border:0; border-radius:6px; padding:7px 9px; text-align:left; }
+.board-node-menu button:is(:hover,:focus-visible) { background:var(--glass-control); }
+.board-node-menu.palette { display:flex; width:auto; }.board-node-menu.palette button { padding:5px; }
+.board-node-menu i { width:19px; height:19px; border-radius:100%; font:16px/19px sans-serif; text-align:center; }
+
+.board-empty-media { cursor:grab; }
+.board-empty-media label { position:relative; display:grid; justify-items:center; gap:8px; cursor:pointer; padding:12px; }
+.board-node-menu { background:var(--studio-panel); }
+
+.board-text[data-paper] { background:color-mix(in srgb,var(--paper-tint) 30%,var(--studio-panel)); }
+.board-text[data-paper=cyan] { --paper-tint:#61c9cf; }
+.board-text[data-paper=blue] { --paper-tint:#8e9cff; }
+.board-text[data-paper=violet] { --paper-tint:#cf9eea; }
+.board-text[data-paper=amber] { --paper-tint:#edb17d; }
+.board-text[data-paper=yellow] { --paper-tint:#e9cf64; }
+.board-text[data-paper=rose] { --paper-tint:#ec95a6; }
