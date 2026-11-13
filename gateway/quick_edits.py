@@ -345,14 +345,17 @@ def suppress_shaft_shadows(camera, coarse, alpha, background):
     low = np.asarray(camera.convert('L').filter(ImageFilter.GaussianBlur(.9)))
     chroma = np.asarray(camera)
     prior = np.asarray(coarse)
-    out = np.asarray(alpha).copy()
+    original_alpha = np.asarray(alpha)
+    out = original_alpha.copy()
     for vertical in (False, True):
         grey = low.T if vertical else low
         mask = prior.T if vertical else prior
+        opacity = original_alpha.T if vertical else original_alpha
         result = out.T if vertical else out
         rgb = chroma.swapaxes(0,1) if vertical else chroma
         for direction in (1,-1):
             g, c, a, pixels = grey[:,::direction], mask[:,::direction], result[:,::direction], rgb[:,::direction]
+            uncut = opacity[:, ::direction]
             width = g.shape[1]
             for row in range(0,len(g),192):
                 slab = c[row:row+192]
@@ -397,6 +400,12 @@ def suppress_shaft_shadows(camera, coarse, alpha, background):
                     yy,ee,ss=y[outside],edge[outside],start_x[outside]
                     for line,bound,begin in zip(yy,ee,ss):
                         if bound<=begin+6: continue
+                        # A highlight inside the shaft can look like a second exterior edge.
+                        # Reject the trace if it would cross the already opaque subject.
+                        # Leave the antialiased transition itself available for refinement.
+                        trusted = slice(begin, bound-4)
+                        if np.any((uncut[line,trusted]>=240) & (c[line,trusted]>=235)):
+                            continue
                         outer=float(g[line,bound-4]);inner=float(g[line,bound+4])
 
                         a[line,begin:bound-3]=0
