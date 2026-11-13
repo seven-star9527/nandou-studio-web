@@ -75,8 +75,16 @@ def local_entry(request):
         return False
 
 
+def account_name(value):
+    if isinstance(value, str):
+        name = value.strip()
+        if 1 <= len(name) <= 64 and name.isprintable() and any(c.isalpha() for c in name):
+            return name
+    return None
+
+
 def public_user(user):
-    return {"id": user["id"], "email": user["email"], "role": user["role"], "is_admin": user["role"] == "admin"} if user else None
+    return {"id": user["id"], "email": user["email"], "name": user["name"], "role": user["role"], "is_admin": user["role"] == "admin"} if user else None
 
 
 class Gateway:
@@ -168,8 +176,6 @@ class Gateway:
         path = request.path
         if path == "/health":
             return web.json_response({"ok": True, "service": "nandou-account-gateway"})
-        if path.startswith("/studio-auth/"):
-            return await self.auth(request)
         if path in {"/", "/studio"}:
             raise web.HTTPFound("/studio/")
         if path.startswith("/studio/") and request.method in {"GET", "HEAD"}:
@@ -182,6 +188,13 @@ class Gateway:
                 raise web.HTTPNotFound()
             return web.FileResponse(target)
         user = request["user"]
+        if user and user["role"] != "admin" and not user["name"] and path not in {
+            "/studio-auth/me", "/studio-auth/bind-name", "/studio-auth/logout", "/studio-auth/login",
+            "/studio-auth/register", "/studio-auth/reset",
+        }:
+            return error("请刷新页面并绑定姓名后继续。", 403, "name_required")
+        if path.startswith("/studio-auth/"):
+            return await self.auth(request)
         if not user:
             return error("请先登录。", 401, "authentication_required")
         if path.startswith("/studio-agent/workbench/"):
@@ -226,6 +239,20 @@ class Gateway:
         if request.method != "POST":
             raise web.HTTPNotFound()
         data = await self.body(request)
+        if action == "bind-name":
+            if not user:
+                return error("请先登录。", 401)
+            if user["role"] == "admin":
+                return error("管理员无需绑定姓名。", 403)
+            if data.get("account") != user["id"]:
+                return error("当前账号已切换，请刷新页面。", 409)
+            name = account_name(data.get("name"))
+            if not name:
+                return error("请输入有效姓名，最多 64 个字符。")
+            account = self.store.bind_name(user["id"], name)
+            if account["name"] != name:
+                return error("此账号已绑定姓名，请刷新页面。", 409)
+            return web.json_response({"user": public_user(account)})
         if action == 'tasks/references':
             if not user:
                 return error('请先登录。', 401)
@@ -268,9 +295,12 @@ class Gateway:
         if action == "register":
             if email == "admin":
                 return error("此账号不可注册。")
+            name = account_name(data.get("name"))
+            if not name:
+                return error("请输入有效姓名，最多 64 个字符。")
             encoded = await asyncio.to_thread(password_hash, password)
             try:
-                account = self.store.create_user(email, encoded)
+                account = self.store.create_user(email, encoded, name=name)
             except sqlite3.IntegrityError:
                 return error("此邮箱已注册。", 409)
         elif action == "reset":

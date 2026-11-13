@@ -1,6 +1,7 @@
 export interface StudioUser {
   id: string;
   email: string;
+  name: string;
   role: string;
   is_admin: boolean;
 }

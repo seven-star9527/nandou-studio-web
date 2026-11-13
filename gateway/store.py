@@ -65,7 +65,10 @@ class Store:
         CREATE INDEX IF NOT EXISTS task_owner ON tasks(owner_id,started_at);
         CREATE INDEX IF NOT EXISTS artifact_task ON artifacts(task_id);
         """)
-        self.db.commit()
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            if "name" not in {row["name"] for row in self.db.execute("PRAGMA table_info(users)")}:
+                self.db.execute("ALTER TABLE users ADD COLUMN name TEXT NOT NULL DEFAULT ''")
 
     def close(self):
         self.db.close()
@@ -80,13 +83,18 @@ class Store:
     def user(self, email):
         return self.one("SELECT * FROM users WHERE email=?", (email,))
 
-    def create_user(self, email, encoded, role="user"):
+    def create_user(self, email, encoded, role="user", name=""):
         uid = uuid.uuid4().hex
         swarm_id = "local" if role == "admin" else "nd_" + uid
         with self.db:
-            self.db.execute("INSERT INTO users(id,email,password_hash,role,swarm_id,created_at) VALUES(?,?,?,?,?,?)",
-                            (uid, email, encoded, role, swarm_id, time.time()))
+            self.db.execute("INSERT INTO users(id,email,password_hash,role,swarm_id,created_at,name) VALUES(?,?,?,?,?,?,?)",
+                            (uid, email, encoded, role, swarm_id, time.time(), name))
         return self.user(email)
+
+    def bind_name(self, uid, name):
+        with self.db:
+            self.db.execute("UPDATE users SET name=? WHERE id=? AND name='' AND role!='admin'", (name, uid))
+            return self.one("SELECT * FROM users WHERE id=?", (uid,))
 
     def session(self, token):
         return self.one("SELECT u.* FROM login_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?",
@@ -175,11 +183,11 @@ class Store:
         return value
 
     def overview(self):
-        users = self.all("""SELECT u.id,u.email,u.created_at,u.last_seen,u.last_ip,
+        users = self.all("""SELECT u.id,u.email,u.name,u.role,u.created_at,u.last_seen,u.last_ip,
           COUNT(t.id) tasks,COALESCE(SUM(t.completed),0) images,
           CASE WHEN COUNT(t.id)=0 THEN 0 WHEN COUNT(t.credits)<COUNT(t.id) THEN NULL ELSE SUM(t.credits) END credits
           FROM users u LEFT JOIN tasks t ON t.owner_id=u.id GROUP BY u.id ORDER BY u.created_at""")
-        tasks = self.all("""SELECT t.id,u.email owner_email,t.model,t.status,t.requested,t.completed,t.started_at,t.seconds,t.credits,v.hidden_at
+        tasks = self.all("""SELECT t.id,u.email owner_email,u.name owner_name,u.role owner_role,t.model,t.status,t.requested,t.completed,t.started_at,t.seconds,t.credits,v.hidden_at
           FROM tasks t JOIN users u ON u.id=t.owner_id LEFT JOIN task_visibility v ON v.task_id=t.id AND v.viewer_id=t.owner_id ORDER BY t.started_at DESC""")
         summary = {"users": len(users), "tasks": len(tasks), "images": sum(t["completed"] for t in tasks),
                    "credits": None if any(t["credits"] is None for t in tasks) else sum(t["credits"] for t in tasks)}
