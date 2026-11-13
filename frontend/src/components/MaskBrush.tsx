@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import GlassTabs from './GlassTabs';
 
 export interface MaskStroke { mode:'keep'|'erase'|'heal'; radius:number; points:[number,number][] }
@@ -19,7 +19,10 @@ export default function MaskBrush({original,result,apply,cancel,heal=false}:Prop
   const current=useRef<MaskStroke | null>(null);
   const [mode,setMode]=useState<MaskStroke['mode']>('keep'), [radius,setRadius]=useState(heal ? .6 : 2);
   const [count,setCount]=useState(0),[error,setError]=useState(''),[ready,setReady]=useState(false);
-  const [zoomTarget,setZoomTarget]=useState(false), [zoomed,setZoomed]=useState(false);
+  const [zoom,setZoom]=useState(1),[hand,setHand]=useState(false),[space,setSpace]=useState(false);
+  const anchor=useRef<[number,number]>([.5,.5]);
+  const drag=useRef<{id:number,x:number,y:number,originX:number,originY:number}|null>(null);
+  const painting=useRef<number|null>(null);
   const crop=useRef({x:0,y:0,size:1});
   function render(){
     const frame=canvas.current, buffer=mask.current;
@@ -62,33 +65,78 @@ export default function MaskBrush({original,result,apply,cancel,heal=false}:Prop
     }).catch(cause=>{if(alive)setError(String(cause));});
     return ()=>{alive=false;};
   },[original,result]);
-  function point(e:PointerEvent<HTMLCanvasElement>):[number,number] {
-    const rect=e.currentTarget.getBoundingClientRect();
-    const bound=(n:number)=>Math.min(1,Math.max(0,n));
-    const area=crop.current;
-    return [area.x+area.size*bound((e.clientX-rect.left)/rect.width),area.y+area.size*bound((e.clientY-rect.top)/rect.height)];
+  const clamp=(v:number,max=1)=>Math.max(0,Math.min(max,v));
+  function position(x:number,y:number):[number,number]{
+    const r=canvas.current!.getBoundingClientRect();
+    return [clamp((x-r.left)/r.width),clamp((y-r.top)/r.height)];
   }
-  return <div className="mask-editor"><div className="work-controls">{!heal && <GlassTabs className="segmented work-tabs" aria-label="修边画笔">
-    <button className={mode==='keep'?'selected':''} onClick={()=>setMode('keep')}>恢复主体</button><button className={mode==='erase'?'selected':''} onClick={()=>setMode('erase')}>擦除背景</button></GlassTabs>}
-    <button className="quiet-button" aria-pressed={zoomTarget||zoomed} onClick={()=>{
-      if(zoomed){crop.current={x:0,y:0,size:1};setZoomed(false);render();}
-      else setZoomTarget(!zoomTarget);
-    }}>{zoomed?'查看全图':zoomTarget?'点击要放大的位置':'放大局部'}</button>
+  function point(x:number,y:number):[number,number]{
+    const [u,v]=position(x,y),area=crop.current;
+    return [area.x+area.size*u,area.y+area.size*v];
+  }
+  function magnify(factor:number,at=anchor.current){
+    if(current.current||drag.current)return;
+    const area=crop.current, size=Math.max(1/16,Math.min(1,area.size/factor));
+    crop.current={x:clamp(area.x+(area.size-size)*at[0],1-size),y:clamp(area.y+(area.size-size)*at[1],1-size),size};
+    setZoom(1/size);render();
+  }
+  function undo(){
+    if(current.current||drag.current)return;
+    strokes.current.pop();setCount(strokes.current.length);render();
+  }
+  useEffect(()=>{
+    const frame=canvas.current;
+    if(!frame||!ready)return;
+    frame.focus({preventScroll:true});
+    function wheel(e:WheelEvent){
+      e.preventDefault();anchor.current=position(e.clientX,e.clientY);
+      magnify(Math.exp(-Math.sign(e.deltaY)*.20));
+    }
+    const release=()=>{setSpace(false);drag.current=null;painting.current=null;current.current=null;};
+    window.addEventListener('blur',release);
+    frame.addEventListener('wheel',wheel,{passive:false});
+    return ()=>{frame.removeEventListener('wheel',wheel);window.removeEventListener('blur',release);};
+  },[ready]);
+  return <div className="mask-editor" onKeyDown={e=>{
+    if(e.target instanceof HTMLInputElement)return;
+    if(['+','=','-','0'].includes(e.key)){
+      e.preventDefault();magnify(e.key==='-'?1/1.5:e.key==='0'?1/16:1.5);
+    }else if(e.code==='Space' && e.target===canvas.current){e.preventDefault();setSpace(true);}
+    else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();undo();}
+  }} onKeyUp={e=>{if(e.code==='Space')setSpace(false);}}><div className="work-controls">{!heal && <GlassTabs className="segmented work-tabs" aria-label="修边画笔">
+    <button className={mode==='keep'&&!hand?'selected':''} onClick={()=>{setMode('keep');setHand(false);}}>恢复主体</button><button className={mode==='erase'&&!hand?'selected':''} onClick={()=>{setMode('erase');setHand(false);}}>擦除背景</button></GlassTabs>}
+    <button className="quiet-button" aria-label="缩小" disabled={zoom<=1} onClick={()=>magnify(1/1.5)}>−</button>
+    <button className="quiet-button" title="适应全图（0）" onClick={()=>magnify(1/16)}>{Math.round(zoom*100)}%</button>
+    <button className="quiet-button" aria-label="放大" disabled={zoom>=16} onClick={()=>magnify(1.5)}>＋</button>
+    <button className="quiet-button" aria-pressed={hand} onClick={()=>{setHand(!hand);canvas.current?.focus();}}>平移</button>
     <label>笔刷大小 <input type="range" min=".2" max="10" step=".2" value={radius} onChange={e=>setRadius(Number(e.target.value))}/></label>
-    <button className="quiet-button" disabled={!count} onClick={()=>{strokes.current.pop();setCount(strokes.current.length);render();}}>撤销一笔</button></div>
-    <div className="mask-stage work-preview checker"><canvas ref={canvas} aria-label={heal?"标记需要去除的污点":"在原图位置涂抹修正蒙版"} onPointerDown={e=>{
-      if(!ready||e.button!==0)return;
-      if(zoomTarget){
-        const [x,y]=point(e),size=.25;
-        crop.current={x:Math.max(0,Math.min(1-size,x-size/2)),y:Math.max(0,Math.min(1-size,y-size/2)),size};
-        setZoomTarget(false);setZoomed(true);render();return;
+    <button className="quiet-button" disabled={!count} onClick={undo}>撤销一笔</button></div>
+    <div className="mask-stage work-preview checker"><canvas tabIndex={0} ref={canvas} style={{cursor:space||hand?'grab':'crosshair'}} onBlur={()=>setSpace(false)} aria-label={heal?"标记需要去除的污点":"在原图位置涂抹修正蒙版"} onPointerDown={e=>{
+      if(!ready||drag.current||current.current)return;
+      e.currentTarget.focus({preventScroll:true});
+      if(e.button===1 || (e.button===0 && (space||hand))){
+        e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);
+        drag.current={id:e.pointerId,x:e.clientX,y:e.clientY,originX:crop.current.x,originY:crop.current.y};return;
       }
+      if(e.button!==0)return;
+      painting.current=e.pointerId;
       if(strokes.current.length>=200){setError('本次已达 200 笔，请先应用修边后继续。');return;}
       e.currentTarget.setPointerCapture(e.pointerId);
-      current.current={mode:heal?'heal':mode,radius:radius/100,points:[point(e)]};strokes.current.push(current.current);setCount(strokes.current.length);render();
-    }} onPointerMove={e=>{if(current.current){
+      current.current={mode:heal?'heal':mode,radius:radius/100,points:[point(e.clientX,e.clientY)]};strokes.current.push(current.current);setCount(strokes.current.length);render();
+    }} onPointerMove={e=>{
+      anchor.current=position(e.clientX,e.clientY);
+      const pan=drag.current;
+      if(pan?.id===e.pointerId){
+        const r=e.currentTarget.getBoundingClientRect(),size=crop.current.size;
+        crop.current={x:clamp(pan.originX-(e.clientX-pan.x)*size/r.width,1-size),y:clamp(pan.originY-(e.clientY-pan.y)*size/r.height,1-size),size};
+        render();return;
+      }
+      if(painting.current===e.pointerId && current.current){
       if(current.current.points.length>=120)current.current.points=current.current.points.filter((_,i)=>i%2===0);
-      current.current.points.push(point(e));render();
-    }}} onPointerUp={()=>{current.current=null;}} onPointerCancel={()=>{current.current=null;}}/></div>
-    {error&&<p role="alert">{error}</p>}<div className="work-controls"><small>{heal?'点选或涂过灰尘、污点，笔刷略大于瑕疵即可。':'淡色原图用于定位已去除的部分。'}</small><span className="work-spacer"/><button className="quiet-button" onClick={cancel}>{heal?'取消':'取消修边'}</button><button className="primary-button" disabled={!ready||!count} onClick={()=>apply(strokes.current)}>{heal?'修复标记区域':'应用修边'}</button></div></div>;
+      current.current.points.push(point(e.clientX,e.clientY));render();
+    }}} onLostPointerCapture={e=>{
+      if(drag.current?.id===e.pointerId)drag.current=null;
+      if(painting.current===e.pointerId){painting.current=null;current.current=null;}
+    }}/></div>
+    {error&&<p role="alert">{error}</p>}<div className="work-controls"><small>{heal?'点选或涂过灰尘、污点，笔刷略大于瑕疵即可。':'淡色原图用于定位已去除的部分。'} 滚轮或 ＋ / − 缩放，空格拖动或按住中键平移，0 查看全图。</small><span className="work-spacer"/><button className="quiet-button" onClick={cancel}>{heal?'取消':'取消修边'}</button><button className="primary-button" disabled={!ready||!count} onClick={()=>apply(strokes.current)}>{heal?'修复标记区域':'应用修边'}</button></div></div>;
 }

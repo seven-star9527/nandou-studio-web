@@ -7,7 +7,7 @@ export interface WorkImage { url: string; name: string; width?: number; height?:
 export const toolNames = {cutout: '透明底抠图', retouch: '主图精修', upscale: '高清放大'};
 export type QuickTool = keyof typeof toolNames;
 export interface QuickJob {
-  id: string; source: string; tool: QuickTool; option: string;
+  id: string; source: string; include?: [number,number][]; tool: QuickTool; option: string;
   status: 'processing' | 'completed' | 'failed'; error?: string; result?: WorkImage;
 }
 

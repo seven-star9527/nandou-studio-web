@@ -15,7 +15,7 @@ from .image_uploads import original_image_bytes, ImageUploadError
 from .image_preview import preview_path
 from .compare_board import CompareBoard
 from .board_video import upload_video, video_source
-from .quick_edits import RECIPES, correct_mask, cutout, heal_product_spots, product_retouch, retouch_or_enlarge, retouch_settings, upscale_size
+from .quick_edits import RECIPES, checked_points, correct_mask, cutout, heal_product_spots, product_retouch, retouch_or_enlarge, retouch_settings, upscale_size
 from .photocraft import PhotoCraftError, load_config
 from .agent_limits import AgentError
 
@@ -133,6 +133,7 @@ class Workbench:
             raise web.HTTPNotFound()
         result = self.info(user['id'], jid) if row['status']=='completed' else None
         return {'id':jid, 'status':row['status'], 'error':row['error'], 'result':result,
+                'include':(json.loads(row['mask_json']) if row['mask_json'] else {}).get('include',[]),
                 'source':row['source'], 'tool':row['tool'], 'option':row['option']}
 
     async def submit(self, user, data):
@@ -145,11 +146,17 @@ class Workbench:
         mask = data.get('mask')
         encoded = None
         base = None
+        points=data.get('include')
+        if points is not None and (tool!='cutout' or option not in ('include','pick')):
+            raise ValueError('unexpected subject points')
+        if tool=='cutout' and option in ('include','pick'):
+            checked_points(points)
+            encoded=json.dumps({'include':points},sort_keys=True,separators=(',',':'))
         if mask is not None:
             if tool not in ('cutout','retouch') or not isinstance(mask,dict):
                 raise ValueError('invalid mask')
             parent = self.job(user,identifier(mask.get('base')))
-            if parent['tool']!=tool or source!=parent['source'] or option!=parent['option'] or not parent['result']:
+            if (points or [])!=parent['include'] or parent['tool']!=tool or source!=parent['source'] or option!=parent['option'] or not parent['result']:
                 raise ValueError('invalid mask source')
             base = self.source(user,parent['result']['url'])
             strokes = mask.get('strokes')
@@ -165,7 +172,7 @@ class Workbench:
                 points_count += len(points)
                 if points_count>24000 or any(not isinstance(p,list) or len(p)!=2 or any(type(v) not in (float,int) or not math.isfinite(v) or not 0<=v<=1 for v in p) for p in points):
                     raise ValueError('invalid points')
-            encoded = json.dumps(mask,sort_keys=True,separators=(',',':'))
+            encoded = json.dumps({**mask, **({'include':points} if points else {})},sort_keys=True,separators=(',',':'))
         existing = self.store.one('SELECT owner_id,mask_json FROM studio_quick_jobs WHERE id=?', (jid,))
         if existing:
             previous = self.job(user, jid)
@@ -184,12 +191,12 @@ class Workbench:
         with self.store.db:
             self.store.db.execute("INSERT INTO studio_quick_jobs VALUES(?,?,?,?,?,'processing',NULL,unixepoch(),?)",
                                   (jid,user['id'],source,tool,option,encoded))
-        task = asyncio.create_task(self.process(user['id'],jid,path,tool,option,base,mask))
+        task = asyncio.create_task(self.process(user['id'],jid,path,tool,option,base,mask,points))
         self.running.add(task)
         task.add_done_callback(self.running.discard)
         return web.json_response(self.job(user,jid),status=202)
 
-    async def process(self, uid, jid, source, tool, option, base, mask):
+    async def process(self, uid, jid, source, tool, option, base, mask, points=None):
         folder = self.root / uid
         folder.mkdir(exist_ok=True)
         temp, final = folder / (jid + '.part'), folder / (jid + '.png')
@@ -200,7 +207,7 @@ class Workbench:
                 elif base is not None:
                     await asyncio.to_thread(correct_mask,source,base,temp,mask['strokes'])
                 elif tool == 'cutout':
-                    await cutout(self.cutout_model,source,temp)
+                    await cutout(self.cutout_model,source,temp,points,option=='pick',option=='hands')
                 elif tool == 'retouch':
                     await product_retouch(self.cutout_model,source,temp,option)
                 else:

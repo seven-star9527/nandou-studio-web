@@ -74,7 +74,7 @@ def tool(name, description, properties, required):
 
 
 TOOLS = [
-    tool("remove_background", "对已有图片本地抠主体，保持原尺寸并导出带真实透明像素的 PNG。用当前选图或对话中明确指定的版本。", {"ref_id": {"type":"string"}}, ["ref_id"]),
+    tool("remove_background", "对已有图片本地抠主体，保持原尺寸并导出带真实透明像素的 PNG。默认自动主体；商品与手选 hands 自动定位手部。要补选多个物件时根据已查看的原图，在每个要保留物体内部提供归一化坐标。include 补充自动主体，pick 仅保留点选物体。", {"ref_id": {"type":"string"},"selection":{"type":"string","enum":["auto","hands","include","pick"]},"points":{"type":"array","maxItems":8,"items":{"type":"array","minItems":2,"maxItems":2,"items":{"type":"number","minimum":0,"maximum":1}}}}, ["ref_id"]),
     tool("research_design", "按主题检索芝加哥艺术博物馆公版馆藏，阅读来源与描述，可用时附一件作品缩略图供分析。", {"topic": {"type":"string", "enum":DESIGN_TOPICS}}, ["topic"]),
     tool("find_prompt_examples", "从本平台提示词库检索相关创作案例，只借鉴构图与约束，不把案例中的商品参数当作用户事实。", {"keywords": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 4}}, ["keywords"]),
     tool("use_skill", "加载一个创作技能，生成前必须调用。", {"skill_id": {"type": "string", "enum": list(SKILLS)}}, ["skill_id"]),

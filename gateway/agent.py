@@ -36,6 +36,8 @@ DEFAULTS = {"model": "gpt-image-2.5-flare", "quality": "medium", "resolution": "
 RATIOS = {"1:1", "3:4", "4:3", "2:3", "3:2", "9:16", "16:9", "21:9"}
 MODELS = {"gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gemini-nano-banana-2.1"}
 TOOL_LABELS = {"research_design": "检索设计馆藏", "find_prompt_examples": "检索提示词案例", "use_skill": "加载创作技能", "update_plan": "更新创作计划", "generate_image": "生成图片", "inspect_images": "查看并检查图片", "ask_user": "确认关键信息", "finish_project": "完成本次创作", "list_edit_tools":"读取修图工具", "inspect_edit_document":"查看图层结构", "edit_image":"执行专业修图", "export_project":"导出可编辑工程"}
+TOOL_LABELS['retouch_product'] = '实拍商品主图精修'
+TOOL_LABELS['compose_product_cover'] = '制作可编辑商品封面'
 TOOL_LABELS['remove_background'] = '抠出主体并验证透明 PNG'
 
 
@@ -54,6 +56,34 @@ def direct_cutout(text):
         r"(?:[抠扣](?:成|出|掉)?(?:图|透明(?:层|底|背景|PNG)?|背景|主体)|"
         r"(?:去掉|去除|移除|删除)背景|(?:背景改为|背景改成|背景换成)透明)"
         r"(?:并?(?:导出|保存为|输出)?透明(?:背景|底)?(?:PNG)?|导出PNG)?", words, re.I))
+
+
+def direct_hand_cutout(text):
+    # Match standalone requests only. Extra edits, negations and multiple instructions need planning.
+    words=re.sub(r"[\s，,。！!、；;]+","",text)
+    keep=r"(?:保留|留下|带上)(?:手(?:部)?(?:和|与)?(?:画笔|笔|商品)?|(?:画笔|笔|商品)[和与]手(?:部)?)"
+    for pattern in (rf"(.+?){keep}",rf"{keep}(.+)"):
+        match=re.fullmatch(pattern,words)
+        if match and direct_cutout(match.group(1)):
+            return True
+    return False
+
+
+def direct_photo_action(text,mode):
+    if direct_cutout(text):
+        return 'remove_background',{}
+    if direct_hand_cutout(text):
+        return 'remove_background',{'selection':'hands'}
+    if mode=='retouch':
+        product=re.fullmatch(r'(?:请)?(画笔|颜料盒?|水彩本|玩具)(白底|保留背景)?(?:主图)?精修[。！! ]*',text.strip())
+        if product:
+            category={'画笔':'brush','颜料盒':'paint','颜料':'paint','水彩本':'paper','玩具':'toy'}[product[1]]
+            return 'retouch_product',{'category':category,'background':'white' if product[2]=='白底' else 'original'}
+        match=re.fullmatch(r'(?:请)?(?:制作|生成|做一张)?\s*(横版|竖版|方形|16:9|9:16|1:1)\s*(?:商品)?封面[，, ]*标题(?:为|是)?[：:]?\s*[「“]([^」”\n]{1,80})[」”][。！! ]*',text.strip())
+        if match:
+            ratio={'横版':'16:9','竖版':'9:16','方形':'1:1'}.get(match[1],match[1])
+            return 'compose_product_cover',{'ratio':ratio,'title':match[2]}
+    return None
 
 
 class OutputLengthLimit(AgentError):
@@ -295,7 +325,7 @@ class CreativeAgent:
         text = data.get("text", "")
         if not isinstance(text, str) or not 1 <= len(text.strip()) <= 8000:
             return web.json_response({"error": "每次需求请填写 1–8,000 个字符，较长内容请分批发送。"}, status=400)
-        if not direct_cutout(text) and not self.key():
+        if not direct_photo_action(text,data.get('agent','generate')) and not self.key():
             return web.json_response({"error": "创作助手尚未配置，请联系管理员。"}, status=503)
         if not isinstance(data.get("settings", {}), dict):
             raise ValueError("invalid settings")
@@ -410,7 +440,9 @@ class CreativeAgent:
         try:
             async with self.limit:
                 ctx = {"generated": 0, "skills": set(), "planned": False, "inspected": set(), "generated_refs": set(), "halt": False, "status": "awaiting_feedback", "hashes": set()}
-                if direct_cutout(text):
+                direct=direct_photo_action(text,opts.get('agent'))
+                if direct:
+                    operation,params=direct
                     target = list(refs)
                     if not target:
                         for event in reversed(self.store.view(cid,user)['events']):
@@ -424,13 +456,16 @@ class CreativeAgent:
                                 target = data['ref_ids']
                                 break
                     if len(target) != 1:
-                        emit('question', {'text':'请上传或选中一张要抠出主体的图片。', 'options':[]})
+                        emit('question', {'text':'请上传或选中一张要处理的图片。', 'options':[]})
                         self.store.status(tid, 'waiting_user')
                         return
-                    result = await self.execute('remove_background', {'ref_id':target[0]}, cid, tid, user, opts, ctx, [])
+                    result = await self.execute(operation, {'ref_id':target[0], **params}, cid, tid, user, opts, ctx, [])
                     if result.get('error'):
                         raise AgentError(result['error'])
-                    emit('assistant', {'text':f"已导出 {result['width']} × {result['height']} 透明 PNG，并核实了透明像素。可下载检查主体边缘。"})
+                    detail={'remove_background':'透明 PNG，已核实透明像素。',
+                            'retouch_product':'精修 PNG 和 PhotoCraft 工程。',
+                            'compose_product_cover':'封面 PNG，可下载工程编辑标题和商品图层。'}[operation]
+                    emit('assistant', {'text':f"已导出 {result['width']} × {result['height']} {detail}"})
                     self.store.status(tid, 'awaiting_feedback')
                     return
                 messages = [{"role": "system", "content": (EDIT_SYSTEM if retouch else SYSTEM) + "\n技能目录：" + json.dumps({k: v["description"] for k, v in skills.items()}, ensure_ascii=False) + ("\n本轮修图：保持原图尺寸与透明通道，除非用户明确要求更改。" if retouch else "\n本轮固定规格：" + json.dumps(opts))}]
@@ -604,9 +639,13 @@ class CreativeAgent:
         if name not in {t['function']['name'] for t in allowed}:
             return {'error':'当前智能体不支持此工具；不会调用其他智能体的付费能力。'}
         if name == 'remove_background':
-            result = await self.editing.cutout(cid, tid, user, args['ref_id'], ctx)
+            result = await self.editing.cutout(cid, tid, user, args['ref_id'], ctx,args.get('points'),args.get('selection','auto'))
             ctx['cutout_attempted'] = True
             return result
+        if retouch and name == 'retouch_product':
+            return await self.editing.product(cid,tid,user,args['ref_id'],args['category'],args['background'],args.get('center',False),ctx)
+        if retouch and name == 'compose_product_cover':
+            return await self.editing.cover(cid,tid,user,args['ref_id'],args['ratio'],args['title'],ctx)
         if retouch and name == 'list_edit_tools':
             return {'commands':await self.editing.tools(args['engine'], args.get('filter',''))}
         if retouch and name == 'inspect_edit_document':

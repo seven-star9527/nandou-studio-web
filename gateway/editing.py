@@ -14,6 +14,7 @@ from pathlib import Path
 from PIL import Image
 from .photocraft import PhotoCraft, PhotoCraftError, load_config
 from .agent_limits import AgentError
+from .quick_edits import checked_points, cutout, product_retouch, retouch_settings
 from .image_uploads import MAX_IMAGE_PIXELS, copy_processing_input
 
 PYTHON = {
@@ -23,6 +24,8 @@ PYTHON = {
     'image.flip':('翻转画布', '{axis:"horizontal"|"vertical"}'),
 }
 COMMANDS = {
+    'filter.cameraRaw':'Camera Raw 校正曝光、白平衡与纹理', 'paint.remove':'移除局部瑕疵',
+    'select.object':'点选或框选物体', 'select.colorRange':'选择颜色范围',
     'layer.removeBackground':'抠出主体并建立蒙版',
     'image.crop':'裁剪', 'image.imageSize':'图像大小', 'image.canvasSize':'画布大小',
     'image.perspectiveCrop':'透视裁剪', 'select.subject':'选择主体',
@@ -45,6 +48,13 @@ COMMANDS = {
     'paint.spotHealing':'污点修复', 'paint.cloneStamp':'仿制图章',
     'shape.create':'形状图层', 'layer.newFillLayer.solidColor':'纯色填充图层',
 }
+
+
+def cover_layout(ratio):
+    width,height={'16:9':(1280,720),'9:16':(1080,1920),'1:1':(1200,1200)}[ratio]
+    if ratio=='16:9':
+        return width,height,(660,648),[916,360]
+    return width,height,(round(width*.91),round(height*.66)),[width/2,height*.59]
 
 
 def validate_params(value, depth=0):
@@ -138,7 +148,14 @@ class Editing:
             # Only our ephemeral directory; never a user path.
             if folder.resolve().parent == self.root.resolve(): shutil.rmtree(folder)
 
-    async def cutout(self, cid, tid, user, aid, ctx):
+    async def cutout(self, cid, tid, user, aid, ctx, points=None, selection='auto'):
+        if selection not in ('auto','hands','include','pick') or (selection in ('auto','hands') and points is not None):
+            raise ValueError('invalid subject selection')
+        if selection!='auto':
+            if selection!='hands':
+                checked_points(points)
+            return await self.edit({'ref_id':aid, 'engine':'photocraft', 'steps':[], 'format':'png',
+                                    'cutout':True,'selection':selection,'points':points},cid,tid,user,ctx)
         asset = self.agent.resolve_asset(cid,user,aid)
         def already_isolated():
             with Image.open(asset['path']) as image:
@@ -155,6 +172,27 @@ class Editing:
         steps = [] if isolated else [{'command':'layer.removeBackground', 'params':{}}]
         engine = 'python' if isolated else 'photocraft'
         return await self.edit({'ref_id':aid, 'engine':engine, 'steps':steps, 'format':'png', 'cutout':True},
+                               cid,tid,user,ctx)
+
+    async def product(self,cid,tid,user,aid,category,background,center,ctx):
+        if type(center) is not bool:
+            raise ValueError('invalid product framing')
+        option='|'.join((category,background,'0','center' if center else 'frame'))
+        retouch_settings(option)
+        return await self.edit({'ref_id':aid,'engine':'photocraft','retouch':option,'steps':[],'format':'png'},
+                               cid,tid,user,ctx)
+
+    async def cover(self,cid,tid,user,aid,ratio,title,ctx):
+        if ratio not in ('16:9','9:16','1:1') or not isinstance(title,str) or not title.strip() or len(title)>80:
+            raise ValueError('封面需要有效的画幅和 1 至 80 字的标题。')
+        w,h,_,_=cover_layout(ratio)
+        wide=ratio=='16:9'
+        box=[round(w*.055),round(h*(.28 if wide else .115)),round(w*(.38 if wide else .89)),round(h*(.62 if wide else .25))]
+        # Reserve several lines, including space for a long unbroken CJK title.
+        size=min(58, max(20, int((box[2]*box[3]/(max(1,len(title))*1.65))**.5)))
+        steps=[{'command':'type.create','params':{'name':'封面标题','text':title.strip(),
+               'box':box,'x':box[0],'y':box[1], 'size':size,'color':'#22252b'}}]
+        return await self.edit({'ref_id':aid,'engine':'photocraft','cover':ratio,'steps':steps,'format':'png'},
                                cid,tid,user,ctx)
 
     def update(self,jid,status,completed=None,result=None):
@@ -245,7 +283,7 @@ class Editing:
         if ctx['generated']>=4:
             return {'error':'本轮已交付4个结果，请下一轮继续。'}
         asset,source=self.source(cid,user,args['ref_id'])
-        if args.get('cutout'):
+        if args.get('cutout') or args.get('cover') or args.get('retouch'):
             # Segment the selected visible composite, never just the active project layer.
             source = Path(asset['path'])
         if engine=='python' and source.suffix.lower()=='.pcraft':
@@ -276,6 +314,12 @@ class Editing:
         emit=lambda kind,data:self.agent.store.event(cid,tid,kind,data)
         backend={'python':'Python / Pillow','photocraft':'PhotoCraft MCP','desktop':'PhotoCraft 客户端'}[engine]
         plan=[{'title':s['title'],'tool':f"{backend} · {s['command']}"} for s in prepared]
+        if args.get('selection') in ('hands','pick','include'):
+            plan.insert(0,{'title':'识别点选主体','tool':'MobileSAM' if args['selection']=='pick' else '手掌检测 + BiRefNet + MobileSAM' if args['selection']=='hands' else 'BiRefNet + MobileSAM'})
+        if args.get('retouch'):
+            plan.insert(0,{'title':'按商品类目精修','tool':'南斗本地商品精修'})
+        if args.get('cover'):
+            plan.insert(0,{'title':'新建封面并放置商品','tool':'PhotoCraft · doc_new / doc_place'})
         plan.append({'title':f'导出 {fmt.upper()}','tool':f"{backend} · {'Image.save' if engine=='python' else 'doc_save'}"})
         emit('plan',{'summary':'保留原图，处理后另存新版本','steps':[p['title'] for p in plan],'operations':plan,'request_id':jid})
         emit('status',{'text':'正在等待修图执行器'})
@@ -292,7 +336,19 @@ class Editing:
                         async with DesktopLease(Path(self.config['token_file']).parent):
                             await self.run_mcp(folder,local,output,project,prepared,jid,emit,cid,user,True)
                 elif engine=='photocraft':
-                    await self.run_mcp(folder,local,output,project,prepared,jid,emit,cid,user,False)
+                    if args.get('selection') in ('hands','pick','include'):
+                        eid=emit('edit_step',{**plan[0],'status':'running','request_id':jid})
+                        subject=folder/'subject.png'
+                        await cutout(self.agent.g.workbench.cutout_model,local,subject,args.get('points'),args['selection']=='pick',args['selection']=='hands')
+                        self.agent.store.update_event(eid,{**plan[0],'status':'completed','request_id':jid})
+                        local=subject
+                    if args.get('retouch'):
+                        eid=emit('edit_step',{**plan[0],'status':'running','request_id':jid})
+                        retouched=folder/'retouched.png'
+                        await product_retouch(self.agent.g.workbench.cutout_model,local,retouched,args['retouch'])
+                        self.agent.store.update_event(eid,{**plan[0],'status':'completed','request_id':jid})
+                        local=retouched
+                    await self.run_mcp(folder,local,output,project,prepared,jid,emit,cid,user,False,args.get('cover'))
                 else:
                     self.update(jid,'running')
                     eid=emit('edit_step',{'title':' / '.join(p['title'] for p in plan),'tool':backend,'status':'running','request_id':jid})
@@ -324,7 +380,7 @@ class Editing:
             ctx.update(halt=True,status='failed')
             return {'error':str(exc) if isinstance(exc,(AgentError,PhotoCraftError)) else '修图未完成，请检查工具前置条件与服务状态。','status':state}
 
-    async def run_mcp(self,folder,local,output,project,steps,jid,emit,cid,user,desktop):
+    async def run_mcp(self,folder,local,output,project,steps,jid,emit,cid,user,desktop,cover=None):
         self.update(jid,'running')
         async with self.connection(folder,desktop) as mcp:
             if desktop:
@@ -332,7 +388,24 @@ class Editing:
                 # Never replace a document left behind by an uncertain prior request.
                 if sessions.get('documents') or sessions.get('session',{}).get('documents'):
                     raise AgentError('专用客户端仍有未清理文档，请管理员先核对；本轮未修改。')
-            await mcp.call('doc_open',path=str(local))
+            if cover:
+                event={'title':'新建封面并放置商品','tool':'PhotoCraft · doc_new / doc_place','request_id':jid}
+                eid=emit('edit_step',{**event,'status':'running'})
+                w,h,box,center=cover_layout(cover)
+                from PIL import ImageOps
+                def fit_photo():
+                    with Image.open(local) as image:
+                        # Bound the placed bitmap to its print size on this cover.
+                        image.draft('RGB',box)
+                        photo=ImageOps.exif_transpose(image).convert('RGBA')
+                        photo.thumbnail(box,Image.Resampling.LANCZOS)
+                        photo.save(folder/'product.png')
+                await asyncio.to_thread(fit_photo)
+                await mcp.call('doc_new',width=w,height=h,background='white',name='商品封面')
+                await mcp.call('doc_place',path=str(folder/'product.png'),scale=100,center=center)
+                self.agent.store.update_event(eid,{**event,'status':'completed'})
+            else:
+                await mcp.call('doc_open',path=str(local))
             await mcp.call('doc_save',path=str(folder/'checkpoint-0.pcraft'))
             for index,step in enumerate(steps,1):
                 tool='PhotoCraft 客户端' if desktop else 'PhotoCraft MCP'

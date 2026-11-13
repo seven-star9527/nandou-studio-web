@@ -60,6 +60,10 @@
 .compare-caption { flex:1; display:flex; align-items:center; gap:8px; padding:4px; }
 .compare-caption span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
 .compare-caption b { color:var(--glass-accent); }
+.work-preview:has(.subject-pick) { container-type:size; }
+.subject-pick { position:relative; height:auto; max-width:100%; max-height:100%; }
+.subject-pick img { cursor:crosshair; object-fit:fill; }
+.subject-pick span { pointer-events:none; position:absolute; transform:translate(-50%,-50%); width:20px; height:20px; display:grid; place-items:center; border:2px solid white; border-radius:50%; color:white; background:#30364a; box-shadow:0 1px 4px #0008; font-size:11px; }
 .mask-stage { min-height:260px; height:49vh; }
 .mask-stage canvas { display:block; max-width:100%; max-height:100%; width:auto; height:auto; touch-action:none; cursor:crosshair; }
 

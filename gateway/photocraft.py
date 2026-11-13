@@ -58,7 +58,7 @@ class PhotoCraft:
                     raise PhotoCraftError('PhotoCraft MCP 请求失败。')
                 return reply.get('result', {})
 
-    async def call(self, name, **arguments):
+    async def call(self, name, /, **arguments):
         result = await self.rpc('tools/call', {'name':name,'arguments':arguments})
         texts = [item.get('text','') for item in result.get('content',[]) if item.get('type')=='text']
         if result.get('isError'):

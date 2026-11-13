@@ -94,7 +94,7 @@ Copy-Item -Path frontend/dist/* -Destination server/SwarmUI/src/wwwroot/studio -
 快捷模板的实测预览采用独立静态素材包。将对应版本的「南斗模板预览素材」解压到 `frontend/public/`，使其中的 `template-previews/*.webp` 与 `prompt-library.json` 的 `preview` 路径对应，再构建前端。也可解压至同版本已部署的 `/studio/` 静态目录。当前验收配套文件为 `南斗模板预览素材-20261113.zip`（SHA-256：`c1f949bcd7ae5922e55162d953b4aedf1a1ef707e1de9665a27bf560282b49e1`）。发布后在模板详情检查样图和「仅用作参考图」。
 
 
-快捷抠图与主图精修的纯白背景使用本机 BiRefNet。将 [BiRefNet General Lite ONNX 权重](https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx) 放到网关根目录的 `models/birefnet-general-lite.onnx`，核对 MD5 为 `4fab47adc4ff364be1713e97b7e66334`。模型只在第一次处理时加载。画布视频上传需要网关进程能从 PATH 找到 ffprobe。
+快捷抠图与主图精修的纯白背景使用本机 BiRefNet。将 [BiRefNet General Lite ONNX 权重](https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx) 放到网关根目录的 `models/birefnet-general-lite.onnx`，核对 MD5 为 `4fab47adc4ff364be1713e97b7e66334`。模型只在第一次处理时加载。点选主体还需要将 [MobileSAM ONNX](https://huggingface.co/Acly/MobileSAM/tree/0d3b403339b4674a82493d5e97964dd78089ddc8) 的 `mobile_sam_image_encoder.onnx` 和 `sam_mask_decoder_multi.onnx` 放在同一目录。两者的 SHA-256 分别为 `580f5fb648ea1062c0aabc26217aed56921985f03f0cbbd852bba81d760cc749` 和 `8976b90a87ba50a6a72217a5ff994f7d25ce16f2229fcc1ed259e1294c622ffe`。「商品和手」另需 [MediaPipe 手掌检测模型](https://github.com/opencv/opencv_zoo/tree/main/models/palm_detection_mediapipe) 的 `palm_detection_mediapipe_2023feb.onnx`，SHA-256 为 `78ff51c38496b7fc8b8ebdb6cc8c1abb02fa6c38427c6848254cdaba57fcce7c`。画布视频上传需要网关进程能从 PATH 找到 ffprobe。
 
 在项目根目录自行创建 `.env`，填写 `APIMART_API_KEY` 与 `DEEPSEEK_API_KEY`。这两个值仅由服务端读取，不要写入浏览器配置或使用 `VITE_` 前缀。
 
