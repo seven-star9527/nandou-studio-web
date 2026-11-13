@@ -138,27 +138,37 @@ export function useStudio() {
     setSettings(previous => ({ ...previous, ratio, resolution, ...(cloudModel ? cloudDimensions(cloudModel, ratio, resolution) : dimensions(ratio, resolution, useReferences ? references[0] : undefined)) }));
   }, [references, cloudModel]);
 
-  const addReferences = useCallback(async (files: FileList | File[]) => {
-    setError('');
-    try {
-      const max = cloudModel ? referenceLimit(cloudModel) : config.maxReferences ?? 3;
-      if (files.length + references.length > max) throw new Error(`最多添加 ${max} 张参考图。`);
-      checkImageBatch(Array.from(files), references.map(reference => reference.dataUrl));
+  const pendingReads = useRef(Promise.resolve());
+  const addReferences = useCallback((files: FileList | File[]) => {
+    const batch = Array.from(files);
+    const max = cloudModel ? referenceLimit(cloudModel) : config.maxReferences ?? 3;
+    function validate(existing: ReferenceImage[]) {
+      if (batch.length + existing.length > max) throw new Error(`最多添加 ${max} 张参考图。`);
+      checkImageBatch(batch, existing.map(reference => reference.dataUrl));
+    }
+    pendingReads.current = pendingReads.current.then(async () => {
+      setError('');
+      validate(references);
       const additions: ReferenceImage[] = [];
-      for (const file of Array.from(files)) additions.push(await readReferenceImage(file));
-      setReferences(previous => [...previous, ...additions]);
-      const first = references[0] ?? additions[0];
-      if (!cloudModel && settings.ratio === 'smart') setSettings(previous => ({ ...previous, ...dimensions('smart', previous.resolution, first) }));
-    } catch (e) { setError(errorText(e)); }
-  }, [config.maxReferences, references, settings.ratio, cloudModel]);
+      for (const file of batch) additions.push(await readReferenceImage(file));
+      setReferences(existing => {
+        validate(existing);
+        const next = [...existing, ...additions];
+        if (!cloudModel) setSettings(previous => previous.ratio === 'smart'
+          ? { ...previous, ...dimensions('smart', previous.resolution, next[0]) } : previous);
+        return next;
+      });
+    }).catch(e => setError(errorText(e)));
+    return pendingReads.current;
+  }, [config.maxReferences, references, cloudModel, setReferences]);
 
   const appendReference = (reference: ReferenceImage) => {
     setReferences(previous => [...previous, reference]);
     if (!cloudModel && settings.ratio === 'smart' && !references.length) setSettings(previous => ({...previous, ...dimensions('smart', previous.resolution, reference)}));
   };
 
-  const removeReference = (id: string) => {
-    const next = references.filter(image => image.id !== id);
+  const removeReference = (id: string) => reorderReferences(references.filter(image => image.id !== id));
+  const reorderReferences = (next: ReferenceImage[]) => {
     setReferences(next);
     if (!cloudModel && settings.ratio === 'smart') setSettings(previous => ({ ...previous, ...dimensions('smart', previous.resolution, next[0]) }));
   };
@@ -332,7 +342,7 @@ export function useStudio() {
     settings, setSettings, references, prompt, setPrompt, minReferences, setTemplate, draftReady, draftError, history, job: displayJob, loadingHistory,
     cloudModel, cloudModels: cloud.capabilities?.models ?? [], cloudConfigured: Boolean(cloud.capabilities?.configured), cloudCapabilityError: cloud.capabilityError, cloudTasks: cloud.tasks,
     cloudAccount: cloud.account, accountLoading: cloud.accountLoading, accountError: cloud.accountError, refreshAccount: cloud.loadAccount, creditQuote,
-    connect, refreshHistory, hideTask, setGeometry, addReferences, appendReference, removeReference, selectModel, selectCloudModel, selectLocal, generate, stop, reuse,
+    connect, refreshHistory, hideTask, setGeometry, addReferences, appendReference, removeReference, reorderReferences, selectModel, selectCloudModel, selectLocal, generate, stop, reuse,
     modes: availableModes(models, config),
   };
 }

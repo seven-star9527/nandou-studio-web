@@ -337,6 +337,10 @@ class CreativeAgent:
         uploads = data.get("images", [])
         if not isinstance(refs, list) or any(not isinstance(aid, str) or not re.fullmatch(r"[a-f0-9]{32}", aid) for aid in refs) or not isinstance(uploads, list) or len(refs) + len(uploads) > 8:
             raise ValueError("invalid references")
+        count = len(refs) + len(uploads)
+        order = data.get("reference_order", list(range(count)))
+        if not isinstance(order, list) or len(order) != count or any(type(i) is not int for i in order) or sorted(order) != list(range(count)):
+            raise ValueError("invalid reference order")
         for aid in refs:
             self.resolve_asset(cid, user, aid)
         # Decode first; invalid uploads must not leave an accepted turn behind.
@@ -350,6 +354,7 @@ class CreativeAgent:
             path = self.uploads / (uuid.uuid4().hex + extension)
             path.write_bytes(binary)
             refs.append(self.store.asset(cid, name, path))
+        refs = [refs[index] for index in order]
         with self.g.store.db:
             self.g.store.db.execute("INSERT INTO agent_turns VALUES(?,?,?,?,?,'running',?,NULL)",
                 (tid, cid, text.strip(), json.dumps(opts), json.dumps(refs), time.time()))
