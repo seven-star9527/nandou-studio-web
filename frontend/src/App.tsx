@@ -154,7 +154,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         {surface==='canvas' ? <CanvasProjects key={project?.id??'projects'} adding={Boolean(board?.initial)} open={setProject}/> : <>
         <Composer settings={studio.settings} config={studio.config} params={studio.params} models={studio.models} prompt={studio.prompt} references={studio.references}
           editing={editing} setPrompt={studio.setPrompt} update={changes => studio.setSettings(previous => ({ ...previous, ...changes }))}
-          setGeometry={(ratio, resolution) => studio.setGeometry(ratio, resolution, editing)} addReferences={studio.addReferences} removeReference={studio.removeReference} selectModel={studio.selectModel}
+          setGeometry={(ratio, resolution) => studio.setGeometry(ratio, resolution, editing)} addReferences={studio.addReferences} reorderReferences={studio.reorderReferences} removeReference={studio.removeReference} selectModel={studio.selectModel}
           selectLocal={studio.selectLocal} selectCloud={studio.selectCloudModel} cloudModel={studio.cloudModel} cloudModels={studio.cloudModels} cloudConfigured={studio.cloudConfigured} cloudCapabilityError={studio.cloudCapabilityError}
           creditQuote={studio.creditQuote}
           polisher={<PromptPolisher client={studio.client} prompt={studio.prompt} setPrompt={studio.setPrompt} width={studio.settings.width} height={studio.settings.height} model={studio.cloudModel?.id ?? studio.settings.model} referenceCount={editing ? studio.references.length : 0} referenceIds={editing ? studio.references.map(reference => reference.id).join(',') : ''} busy={busy} />}

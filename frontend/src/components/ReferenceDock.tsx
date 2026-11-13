@@ -5,9 +5,13 @@ import ModalPortal from './ModalPortal';
 import { useModalDialog } from '../useModalDialog';
 import { IMAGE_UPLOAD_HINT } from '../image-upload-limits';
 
-export default function ReferenceDock({ references, add, remove, maxReferences, disabled = false }: {
-  references: ReferenceImage[]; add: () => void; remove: (id: string) => void; maxReferences: number; disabled?: boolean;
+export default function ReferenceDock({ references, add, paste, reorder, remove, maxReferences, disabled = false }: {
+  references: ReferenceImage[]; add: () => void; paste: (files: File[]) => Promise<void>; reorder: (images: ReferenceImage[]) => void;
+  remove: (id: string) => void; maxReferences: number; disabled?: boolean;
 }) {
+  const dock = useRef<HTMLDivElement>(null);
+  const dragged = useRef<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zoom, setZoom] = useState<number | 'fit'>('fit');
   const [hover, setHover] = useState<{ id: string; left: number; top: number; width: number } | null>(null);
@@ -16,6 +20,34 @@ export default function ReferenceDock({ references, add, remove, maxReferences, 
   const selectedIndex = references.findIndex(item => item.id === selectedId);
   const selected = references[selectedIndex];
   const hovered = references.find(item => item.id === hover?.id);
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const target = event.target;
+      if (disabled || selected || event.defaultPrevented || !event.clipboardData ||
+          document.querySelector('[aria-modal="true"]') || !dock.current?.getClientRects().length) return;
+      const composer = dock.current.closest('.composer, .agent-composer');
+      if (target instanceof Element && target.closest('input,textarea,[contenteditable="true"]') && !composer?.contains(target)) return;
+      const data = event.clipboardData;
+      const files = Array.from(data.files).filter(file => file.type.startsWith('image/'));
+      if (!files.length) {
+        for (const item of Array.from(data.items)) {
+          const file = item.kind === 'file' && item.type.startsWith('image/') ? item.getAsFile() : null;
+          if (file) files.push(file);
+        }
+      }
+      if (!files.length) return;
+      event.preventDefault();
+      void paste(files);
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [disabled, selected, paste]);
+  const move = (from: number, to: number) => {
+    if (disabled || from < 0 || to < 0 || to >= references.length || from === to) return;
+    const next = [...references];
+    next.splice(to, 0, next.splice(from, 1)[0]);
+    reorder(next);
+  };
   useEffect(() => {
     const hidePreview = () => setHover(null);
     window.addEventListener('scroll', hidePreview, true);
@@ -31,7 +63,7 @@ export default function ReferenceDock({ references, add, remove, maxReferences, 
   const changeZoom = (amount: number) => setZoom(value => Math.max(.1, Math.min(4, Math.round(((value === 'fit' ? fitScale() : value) + amount) * 100) / 100)));
   const next = (offset: number) => { setSelectedId(references[(selectedIndex + offset + references.length) % references.length].id); setZoom('fit'); };
   const showHover = (id: string, target: HTMLElement) => {
-    if (selected) return;
+    if (selected || dragged.current) return;
     const reference = references.find(item => item.id === id);
     if (!reference) return;
     const rect = (target.closest('.reference-dock') ?? target).getBoundingClientRect();
@@ -47,17 +79,24 @@ export default function ReferenceDock({ references, add, remove, maxReferences, 
     setHover({ id, width, left: Math.max(12, Math.min(innerWidth - width - 12, rect.left - 12)), top });
   };
   return <>
-    <div className={`reference-dock ${references.length ? 'has-references' : ''}`} style={{ '--reference-count': references.length, '--reference-expanded-width': `${(references.length + 1) * 44 + 16}px` } as CSSProperties} onMouseLeave={() => setHover(null)}>
+    <div ref={dock} className={`reference-dock ${references.length ? 'has-references' : ''}`} style={{ '--reference-count': references.length, '--reference-expanded-width': `${(references.length + 1) * 44 + 16}px` } as CSSProperties} onMouseLeave={() => setHover(null)}>
       <div className="reference-cards">
         {references.map((reference, index) => <div className="reference-card" key={reference.id} style={{ '--reference-index': index, '--reference-angle': `${index === 0 ? -8 : index % 2 ? 5 : -5}deg` } as CSSProperties}>
-          <button type="button" className="reference-thumbnail" aria-label={`查看参考图${index + 1}：${reference.name}`} title={`${reference.name} · ${reference.width}×${reference.height}px · 点击放大`}
+          <button type="button" className={`reference-thumbnail${overId === reference.id ? ' is-drop-target' : ''}`} aria-label={`查看参考图${index + 1}：${reference.name}`} title={`${reference.name} · ${reference.width}×${reference.height}px · 点击放大，左右拖动排序`}
+            draggable={!disabled && references.length > 1}
+            onDragStart={e => { dragged.current = reference.id; setHover(null); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('application/x-studio-reference', reference.id); }}
+            onDragOver={e => { if (dragged.current) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; setOverId(reference.id); } }}
+            onDrop={e => { if (dragged.current) { e.preventDefault(); e.stopPropagation(); move(references.findIndex(item => item.id === dragged.current), index); dragged.current = null; setOverId(null); } }}
+            onDragLeave={() => setOverId(null)}
+            onDragEnd={() => { dragged.current = null; setOverId(null); }}
+            onKeyDown={e => { if (e.altKey && ['ArrowLeft','ArrowRight'].includes(e.key)) { e.preventDefault(); move(index, index + (e.key === 'ArrowLeft' ? -1 : 1)); } }}
             onMouseEnter={event => showHover(reference.id, event.currentTarget)} onFocus={event => showHover(reference.id, event.currentTarget)} onBlur={() => setHover(null)}
             onClick={() => { setHover(null); setZoom('fit'); setSelectedId(reference.id); }}>
             <img src={reference.dataUrl} alt={`参考图${index + 1}`} draggable={false} /><span>{index + 1}</span>
           </button>
           <button type="button" disabled={disabled} className="reference-card-remove" aria-label={`移除参考图${index + 1}`} title="移除参考图" onClick={() => { setHover(null); remove(reference.id); }}><Icon name="close" size={11} /></button>
         </div>)}
-        <button type="button" className="reference-add" onClick={add} aria-label="上传参考图" disabled={disabled || references.length >= maxReferences} title={`添加参考图，最多${maxReferences}张；${IMAGE_UPLOAD_HINT}`}><Icon name="plus" size={22} /></button>
+        <button type="button" className="reference-add" onClick={add} aria-label="上传参考图" disabled={disabled || references.length >= maxReferences} title={`添加参考图（Ctrl+V 粘贴），最多${maxReferences}张；${IMAGE_UPLOAD_HINT}`}><Icon name="plus" size={22} /></button>
       </div>
       {references.length > 1 ? <span className="reference-count" aria-hidden="true">{references.length} 张</span> : null}
     </div>
