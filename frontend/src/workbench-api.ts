@@ -6,8 +6,9 @@ import { readReferenceImage } from './task-references';
 export interface WorkImage { url: string; name: string; width?: number; height?: number }
 export const toolNames = {cutout: '透明底抠图', retouch: '主图精修', upscale: '高清放大'};
 export type QuickTool = keyof typeof toolNames;
+export interface SubjectMark { x:number; y:number; mode:'keep'|'remove' }
 export interface QuickJob {
-  id: string; source: string; include?: [number,number][]; tool: QuickTool; option: string;
+  id: string; source: string; include?: [number,number][]; marks?:SubjectMark[]; tool: QuickTool; option: string;
   status: 'processing' | 'completed' | 'failed'; error?: string; result?: WorkImage;
 }
 

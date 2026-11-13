@@ -12,7 +12,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
 from .photocraft import PhotoCraft
 from .image_uploads import MAX_IMAGE_PIXELS
 
-RECIPES = {'cutout': ('transparent', 'hands', 'include', 'pick'), 'retouch': ('brush', 'paint', 'paper', 'toy'), 'upscale': ('2', '4', 'fit')}
+RECIPES = {'cutout': ('transparent', 'hands', 'include', 'pick', 'subjects'), 'retouch': ('brush', 'paint', 'paper', 'toy'), 'upscale': ('2', '4', 'fit')}
 
 
 def retouch_settings(option):
@@ -326,8 +326,84 @@ def palm_centers(model_dir, visible):
     return points
 
 
-def include_objects(model_dir, visible, points, mask):
-    """Each click adds one object to the original product matte, even when they overlap."""
+def checked_subject_marks(marks):
+    if not isinstance(marks,list) or not 1<=len(marks)<=8:
+        raise ValueError('请在主体内部点选 1 至 8 个位置。')
+    for mark in marks:
+        if not isinstance(mark,dict) or set(mark)!={'mode','x','y'} or mark['mode'] not in ('keep','remove'):
+            raise ValueError('无效的主体选点。')
+        checked_points([[mark['x'],mark['y']]])
+    return marks
+
+
+def join_subject_mattes(base, added, pixels):
+    """Bridge narrow gaps between two foreground mattes only where the source differs from background."""
+    import numpy as np
+    union=ImageChops.lighter(base,added)
+    # Work at encoder resolution. Close cracks, while protecting genuine background visible between objects.
+    hard=union.point(lambda v: 255 if v>=128 else 0)
+    a=base.point(lambda v: 255 if v>=128 else 0)
+    b=added.point(lambda v: 255 if v>=128 else 0)
+    selected=np.asarray(b)>0
+    if np.count_nonzero(selected & (np.asarray(a)==0)) < .05*np.count_nonzero(selected):
+        return union  # An already retained object has no second silhouette to reconnect.
+    reach=ImageFilter.MaxFilter(51)
+    close=hard.filter(reach).filter(ImageFilter.MinFilter(51))
+    near_both=ImageChops.darker(ImageChops.subtract(a,b).filter(reach),ImageChops.subtract(b,a).filter(reach))
+    result=np.asarray(union).copy()
+    ys,xs=np.where((np.asarray(near_both)>0)&(result<255))
+    if not len(xs):
+        return union
+
+    # Sample real exterior background, excluding the crack itself. Require several agreeing samples
+    # to classify a pixel as background; a single stray foreground sample is insufficient.
+    exterior=np.asarray(ImageChops.lighter(near_both,close).filter(ImageFilter.MaxFilter(11)))==0
+    enclosed=np.asarray(close)>0
+    h,w=exterior.shape
+    angles=np.arange(16)*np.pi/8
+    offsets=np.unique(np.rint(np.concatenate([np.column_stack((np.sin(angles),np.cos(angles)))*r
+                       for r in (8,16,32,64,120)])).astype(int),axis=0)
+    for begin in range(0,len(xs),2048):
+        y,x=ys[begin:begin+2048],xs[begin:begin+2048]
+        sy=y[:,None]+offsets[:,0]
+        sx=x[:,None]+offsets[:,1]
+        valid=(sy>=0)&(sx>=0)&(sy<h)&(sx<w)
+        sy,sx=sy.clip(0,h-1),sx.clip(0,w-1)
+        valid &= exterior[sy,sx]
+        dist=np.max(np.abs(pixels[y,x,None]-pixels[sy,sx]),axis=2)
+        gap=np.partition(np.where(valid,dist,255.),2,axis=1)[:,2]
+        # On a consistent studio background, occasional mask misses in the exterior
+        # samples must not veto a real foreground pixel at the contact.
+        agreement=((dist<15)&valid).sum(axis=1)/np.maximum(1,valid.sum(axis=1))
+        samples=pixels[sy,sx]
+        count=np.maximum(1,valid.sum(axis=1,keepdims=True))
+        center=(samples*valid[:,:,None]).sum(axis=1)/count
+        spread=np.max(np.abs(samples-center[:,None]),axis=2)
+        stable=((spread<19)&valid).sum(axis=1)>=.75*count[:,0]
+        distance_to_center=np.max(np.abs(pixels[y,x]-center),axis=1)
+        gap=np.where(stable & (agreement<.18),np.maximum(gap,distance_to_center-5),gap)
+        solid=np.where(valid.sum(axis=1)>=3,np.clip((gap-10)/18,0,1),enclosed[y,x])
+        result[y,x]=np.maximum(result[y,x],np.uint8(np.rint(solid*255)))
+    return Image.fromarray(result)
+
+
+def subtract_subject(base, subject, point):
+    """When the picked mask describes most of one isolated foreground island, remove its edges too."""
+    import numpy as np
+    region=base.point(lambda v: 255 if v>=128 else 0)
+    if region.getpixel(point):
+        ImageDraw.floodfill(region,point,128)
+        island=np.asarray(region)==128
+        picked=np.asarray(subject)>=128
+        overlap=np.count_nonzero(picked & island)
+        if overlap>=.62*np.count_nonzero(island) and overlap>=.9*np.count_nonzero(picked):
+            contour=Image.fromarray(np.uint8(island)*255).filter(ImageFilter.MaxFilter(7))
+            subject=ImageChops.lighter(subject,contour)
+    return ImageChops.darker(base,ImageOps.invert(subject))
+
+
+def include_objects(model_dir, visible, marks, mask):
+    """Encode once, then apply the requested object selections in click order."""
     import numpy as np
     scale=1024/max(visible.size)
     size=tuple(max(1,round(v*scale)) for v in visible.size)
@@ -337,8 +413,8 @@ def include_objects(model_dir, visible, points, mask):
         decoder=subject_session(model_dir/'sam_mask_decoder_multi.onnx')
         embedding=encoder.run(None,{'input_image':pixels})[0]
         base=mask.resize(size,Image.Resampling.BILINEAR)
-        for x,y in points:
-            px,py=x*(size[0]-1),y*(size[1]-1)
+        for mark in marks:
+            px,py=mark['x']*(size[0]-1),mark['y']*(size[1]-1)
             logits,scores=decoder.run(['masks','iou_predictions'],{
                 'image_embeddings':embedding,'point_coords':np.float32([[[px,py],[0,0]]]),
                 'point_labels':np.float32([[1,-1]]),'mask_input':np.zeros((1,1,256,256),np.float32),
@@ -347,14 +423,20 @@ def include_objects(model_dir, visible, points, mask):
                 region=logits[0,index]
                 if region[round(py),round(px)]>0 and (region>0).mean()<.94:
                     alpha=255/(1+np.exp(-np.clip(region*1.8,-50,50)))
-                    base=ImageChops.lighter(base,Image.fromarray(np.uint8(np.rint(alpha))))
+                    subject=Image.fromarray(np.uint8(np.rint(alpha)))
+                    if mark['mode']=='remove':
+                        base=subtract_subject(base,subject,(round(px),round(py)))
+                    elif base.getbbox() is None:
+                        base=subject
+                    else:
+                        base=join_subject_mattes(base,subject,pixels)
                     break
             else:
                 raise ValueError('这个点没有识别到独立主体，请点在主体内部再试。')
     return base
 
 
-def segment_subject(model_path, source, output, points=None, only_picked=False, hands=False):
+def segment_subject(model_path, source, output, points=None, only_picked=False, hands=False, marks=None):
     import numpy as np
     original = upright(source)
     source_alpha = original.getchannel('A')
@@ -362,8 +444,10 @@ def segment_subject(model_path, source, output, points=None, only_picked=False, 
     visible = Image.alpha_composite(Image.new('RGBA', original.size, 'white'), original)
     if hands:
         points=palm_centers(model_path.parent,visible)
+    if points:
+        marks=[{'x':x,'y':y,'mode':'keep'} for x,y in checked_points(points)]
     if only_picked:
-        checked_points(points)
+        checked_subject_marks(marks)
         mask=Image.new('L',(1024,1024))
     else:
         rgb = visible.convert('RGB').resize((1024, 1024), Image.Resampling.LANCZOS)
@@ -377,20 +461,20 @@ def segment_subject(model_path, source, output, points=None, only_picked=False, 
                 session.get_inputs()[0].name: tensor.transpose(2, 0, 1)[None]
             })[0].squeeze()
         probability = 1 / (1 + np.exp(-np.clip(logits, -60, 60)))
-        if (probability.max() < .85 or probability.min() > .15) and not points:
+        if (probability.max() < .85 or probability.min() > .15) and not marks:
             raise ValueError('未能可靠区分商品和背景，请换一张主体更清楚的图片。')
         mask = Image.fromarray(np.rint(probability * 255).astype('uint8'))
-    if points:
+    if marks:
         if not only_picked and probability.min()>.15:
             mask=Image.new('L',mask.size)
-        mask=include_objects(model_path.parent,visible,checked_points(points),mask)
+        mask=include_objects(model_path.parent,visible,checked_subject_marks(marks),mask)
     coarse = mask.resize(original.size, Image.Resampling.LANCZOS)
     alpha = ImageChops.darker(source_alpha, refine_edges(original, coarse))
     if alpha.getextrema()[1] < 128:
-        raise ValueError('未识别到可见商品。')
+        raise ValueError('没有剩余的可见主体，请撤销移除点或补选要保留的物体。' if marks else '未识别到可见商品。')
     original.putalpha(alpha)
     original.save(output, format='PNG', icc_profile=original.info.get('icc_profile'))
 
 
-async def cutout(model_path, source, output, points=None, only_picked=False, hands=False):
-    await asyncio.to_thread(segment_subject, model_path, source, output, points, only_picked, hands)
+async def cutout(model_path, source, output, points=None, only_picked=False, hands=False, marks=None):
+    await asyncio.to_thread(segment_subject, model_path, source, output, points, only_picked, hands, marks)

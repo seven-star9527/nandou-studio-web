@@ -15,7 +15,7 @@ from .image_uploads import original_image_bytes, ImageUploadError
 from .image_preview import preview_path
 from .compare_board import CompareBoard
 from .board_video import upload_video, video_source
-from .quick_edits import RECIPES, checked_points, correct_mask, cutout, heal_product_spots, product_retouch, retouch_or_enlarge, retouch_settings, upscale_size
+from .quick_edits import RECIPES, checked_points, checked_subject_marks, correct_mask, cutout, heal_product_spots, product_retouch, retouch_or_enlarge, retouch_settings, upscale_size
 from .photocraft import PhotoCraftError, load_config
 from .agent_limits import AgentError
 
@@ -132,8 +132,9 @@ class Workbench:
         if not row:
             raise web.HTTPNotFound()
         result = self.info(user['id'], jid) if row['status']=='completed' else None
+        instructions=json.loads(row['mask_json']) if row['mask_json'] else {}
         return {'id':jid, 'status':row['status'], 'error':row['error'], 'result':result,
-                'include':(json.loads(row['mask_json']) if row['mask_json'] else {}).get('include',[]),
+                'include':instructions.get('include',[]),'marks':instructions.get('marks',[]),
                 'source':row['source'], 'tool':row['tool'], 'option':row['option']}
 
     async def submit(self, user, data):
@@ -146,6 +147,12 @@ class Workbench:
         mask = data.get('mask')
         encoded = None
         base = None
+        marks=data.get('marks')
+        if marks is not None and (tool,option)!=('cutout','subjects'):
+            raise ValueError('unexpected subject marks')
+        if option=='subjects':
+            checked_subject_marks(marks)
+            encoded=json.dumps({'marks':marks},sort_keys=True,separators=(',',':'))
         points=data.get('include')
         if points is not None and (tool!='cutout' or option not in ('include','pick')):
             raise ValueError('unexpected subject points')
@@ -153,10 +160,10 @@ class Workbench:
             checked_points(points)
             encoded=json.dumps({'include':points},sort_keys=True,separators=(',',':'))
         if mask is not None:
-            if tool not in ('cutout','retouch') or not isinstance(mask,dict):
+            if tool not in ('cutout','retouch') or not isinstance(mask,dict) or set(mask)!={'base','strokes'}:
                 raise ValueError('invalid mask')
             parent = self.job(user,identifier(mask.get('base')))
-            if (points or [])!=parent['include'] or parent['tool']!=tool or source!=parent['source'] or option!=parent['option'] or not parent['result']:
+            if (marks or [])!=parent['marks'] or (points or [])!=parent['include'] or parent['tool']!=tool or source!=parent['source'] or option!=parent['option'] or not parent['result']:
                 raise ValueError('invalid mask source')
             base = self.source(user,parent['result']['url'])
             strokes = mask.get('strokes')
@@ -166,13 +173,13 @@ class Workbench:
             for stroke in strokes:
                 if not isinstance(stroke,dict) or stroke.get('mode') not in (('heal',) if tool=='retouch' else ('keep','erase')):
                     raise ValueError('invalid stroke')
-                radius, points = stroke.get('radius'), stroke.get('points')
-                if type(radius) not in (float,int) or not .001<=radius<=.15 or not isinstance(points,list) or not points:
+                radius, path_points = stroke.get('radius'), stroke.get('points')
+                if type(radius) not in (float,int) or not .001<=radius<=.15 or not isinstance(path_points,list) or not path_points:
                     raise ValueError('invalid brush')
-                points_count += len(points)
-                if points_count>24000 or any(not isinstance(p,list) or len(p)!=2 or any(type(v) not in (float,int) or not math.isfinite(v) or not 0<=v<=1 for v in p) for p in points):
+                points_count += len(path_points)
+                if points_count>24000 or any(not isinstance(p,list) or len(p)!=2 or any(type(v) not in (float,int) or not math.isfinite(v) or not 0<=v<=1 for v in p) for p in path_points):
                     raise ValueError('invalid points')
-            encoded = json.dumps({**mask, **({'include':points} if points else {})},sort_keys=True,separators=(',',':'))
+            encoded = json.dumps({**mask, **({'include':points} if points else {}), **({'marks':marks} if marks else {})},sort_keys=True,separators=(',',':'))
         existing = self.store.one('SELECT owner_id,mask_json FROM studio_quick_jobs WHERE id=?', (jid,))
         if existing:
             previous = self.job(user, jid)
@@ -191,12 +198,12 @@ class Workbench:
         with self.store.db:
             self.store.db.execute("INSERT INTO studio_quick_jobs VALUES(?,?,?,?,?,'processing',NULL,unixepoch(),?)",
                                   (jid,user['id'],source,tool,option,encoded))
-        task = asyncio.create_task(self.process(user['id'],jid,path,tool,option,base,mask,points))
+        task = asyncio.create_task(self.process(user['id'],jid,path,tool,option,base,mask,points,marks))
         self.running.add(task)
         task.add_done_callback(self.running.discard)
         return web.json_response(self.job(user,jid),status=202)
 
-    async def process(self, uid, jid, source, tool, option, base, mask, points=None):
+    async def process(self, uid, jid, source, tool, option, base, mask, points=None, marks=None):
         folder = self.root / uid
         folder.mkdir(exist_ok=True)
         temp, final = folder / (jid + '.part'), folder / (jid + '.png')
@@ -207,7 +214,7 @@ class Workbench:
                 elif base is not None:
                     await asyncio.to_thread(correct_mask,source,base,temp,mask['strokes'])
                 elif tool == 'cutout':
-                    await cutout(self.cutout_model,source,temp,points,option=='pick',option=='hands')
+                    await cutout(self.cutout_model,source,temp,points,option=='pick',option=='hands',marks)
                 elif tool == 'retouch':
                     await product_retouch(self.cutout_model,source,temp,option)
                 else:
