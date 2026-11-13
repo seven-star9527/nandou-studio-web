@@ -338,6 +338,119 @@ def refine_selected_edges(original, coarse):
     return result
 
 
+def studio_edge_detail(original, coarse, matte, allow_extension=True):
+    """Refit boundary pixels against a locally uniform backdrop, including sub-mask-width bristles."""
+    import numpy as np
+    radius = max(3, min(35, round(max(original.size) / 190)))
+    # Compute support at model scale; use the camera pixels for all colour and opacity estimates.
+    ratio = min(1, 1024 / max(coarse.size))
+    small = coarse.resize(tuple(max(1, round(n*ratio)) for n in coarse.size), Image.Resampling.BILINEAR)
+    extent = small.point(lambda v: 255 if v>10 else 0).filter(ImageFilter.MaxFilter(7))
+    core = small.point(lambda v: 255 if v>245 else 0).filter(ImageFilter.MinFilter(7))
+    band = ImageChops.subtract(extent, core).resize(coarse.size, Image.Resampling.NEAREST)
+    angle = np.arange(12)*np.pi/6
+    directions = np.column_stack((np.sin(angle),np.cos(angle)))
+    def offsets(radii):
+        return np.unique(np.rint(np.concatenate([directions*r for r in radii])).astype(int), axis=0)
+    far = offsets([radius, 2*radius, 3*radius])
+    detail = offsets([1, max(2,radius/9), max(3,radius/4)])
+    thumbnail = np.asarray(original.resize(small.size, Image.Resampling.BILINEAR).convert("RGB"))
+    backdrop = thumbnail[np.asarray(small)<5][::8]
+    if not len(backdrop):
+        return matte
+    neutral = np.median(backdrop,axis=0)
+    uniform = np.mean(np.max(abs(backdrop-neutral),axis=1)<20)>.85
+    if not uniform or neutral.max()-neutral.min()>32 or original.getextrema()[3][0] != 255:
+        return matte
+    camera = original.convert('RGB')
+    alpha = matte.copy()
+    for top in range(0, coarse.height, 512):
+        for left in range(0, coarse.width, 512):
+            box = (left,top,min(left+512,coarse.width),min(top+512,coarse.height))
+            yy,xx = np.nonzero(np.asarray(band.crop(box)))
+            if not len(xx):
+                continue
+            pad = 3*radius
+            tile = (max(0,left-pad),max(0,top-pad),min(coarse.width,box[2]+pad),min(coarse.height,box[3]+pad))
+            patch = camera.crop(tile)
+            # Smooth only the colour estimate; keep original pixel detail in the exported object.
+            rgb = np.asarray(patch.filter(ImageFilter.GaussianBlur(.85)), dtype=np.float32)
+            light = patch.convert('L')
+            ridge = np.asarray(light.filter(ImageFilter.GaussianBlur(max(1,radius/8))),dtype=np.float32) - np.asarray(light,dtype=np.float32)
+            prior = np.asarray(coarse.crop(tile))
+            result = np.asarray(alpha.crop(box)).copy()
+            colours = np.asarray(original.crop(box)).copy()
+            h,w = prior.shape
+            for start in range(0,len(xx),2048):
+                j,i = yy[start:start+2048],xx[start:start+2048]
+                y,x = j+top-tile[1],i+left-tile[0]
+                def neighbours(offset):
+                    return ((y[:,None]+offset[:,0]).clip(0,h-1),(x[:,None]+offset[:,1]).clip(0,w-1))
+                by,bx = neighbours(far)
+                samples = rgb[by,bx]
+                valid = prior[by,bx]<8
+                count = valid.sum(axis=1)
+                # A compact background cluster is required; skip gradients, textures and ambiguous selections.
+                bg = (samples*valid[:,:,None]).sum(axis=1)/np.maximum(1,count[:,None])
+                spread = np.max(abs(samples-bg[:,None]),axis=2)
+                stable = (count>=7) & (((spread<10)&valid).sum(axis=1)>=.85*count)
+                near = (np.max(abs(samples-neutral),axis=2)<25)&valid
+                n = near.sum(axis=1)
+                local = (samples*near[:,:,None]).sum(axis=1)/np.maximum(n[:,None],1)
+                fallback = ~stable & (n>=3)
+                bg[fallback] = local[fallback]
+                stable |= fallback
+                if not stable.any():
+                    continue
+                ny,nx = neighbours(detail)
+                # Use the actual contrast of the nearby fibre or surface. An opaque, thin
+                # bristle can have no fully opaque seed in the model's low-resolution matte.
+                distances = np.max(abs(rgb[ny,nx]-bg[:,None]),axis=2)
+                peak = np.percentile(distances,90,axis=1)
+                signal = np.max(abs(rgb[y,x]-bg),axis=1)
+                # A grey cast shadow beside a coloured fibre differs mainly in brightness.
+                # Where nearby fibre pixels show colour separation, measure chroma as well.
+                shifts = bg[:,None]-rgb[ny,nx]
+                chroma = shifts.max(axis=2)-shifts.min(axis=2)
+                fibre = np.max(chroma,axis=1)
+                shift = bg-rgb[y,x]
+                tint = shift.max(axis=1)-shift.min(axis=1)
+                colour_edge = (fibre>24)&(np.max(abs(bg-neutral),axis=1)<26)
+
+                a = np.clip((signal-5)/np.maximum(16,.91*peak-5),0,1)
+                a = np.where(np.min(distances,axis=1)>18,1,a)
+                tint_alpha = np.clip((tint-4)/np.maximum(18,.85*fibre-4),0,1)
+                a = np.where(colour_edge & (signal<65), np.minimum(a,tint_alpha), a)
+                # Chroma survives a soft shadow on a neutral backdrop. Nearby colour or
+                # very dark shaft pixels support extension beyond the original matte.
+                saturated = np.clip((tint-7)/20,0,1)
+                dark = np.clip((signal-56)/60,0,1)
+                seed = np.maximum(prior[y,x],result[j,i]).astype(float)/255
+                a = np.minimum(a, np.maximum.reduce([saturated,dark,seed]))
+                neutral_shadow = (tint<12)&(signal<50)&(peak<56)
+                a = np.where(neutral_shadow,0,a)
+                # A well-separated, coloured surface is opaque right up to the boundary.
+                a = np.maximum(a,np.clip((tint-14)/22,0,1)*np.clip((np.min(distances,axis=1)-9)/10,0,1))
+                # Fine tips can taper below a model pixel. A narrow dark ridge in the original
+                # supports the terminal filament even when neighbouring background is in shadow.
+                filament = np.clip((ridge[y,x]-5)/24,0,1)*np.clip((signal-8)/24,0,1)
+                a = np.maximum(a, filament)
+                a = a*a*(3-2*a)
+                # Only extend across a small miss. Never restore a distant excluded subject.
+                a = np.where((prior[y,x]<3)&(result[j,i]<3)&(peak<24),0,a)
+                if not allow_extension:
+                    a = np.minimum(a,np.maximum(prior[y,x],result[j,i])/255.)
+                result[j[stable],i[stable]] = np.uint8(np.rint(255*a[stable]))
+                partial = stable & (a>0) & (a<1)
+                if partial.any():
+                    # Remove the photographed background's contribution to a partially covered pixel.
+                    recovered = bg + (colours[j,i,:3]-bg)/np.maximum(.12,a[:,None])
+                    colours[j[partial],i[partial],:3] = np.uint8(np.rint(recovered[partial].clip(0,255)))
+            alpha.paste(Image.fromarray(result),box)
+            original.paste(Image.fromarray(colours),box)
+    return alpha
+
+
 def checked_points(points):
     import math
     if not isinstance(points,list) or not 1<=len(points)<=8 or any(
@@ -527,7 +640,9 @@ def segment_subject(model_path, source, output, points=None, only_picked=False, 
         mask=include_objects(model_path.parent,visible,checked_subject_marks(marks),mask)
     coarse = mask.resize(original.size, Image.Resampling.LANCZOS)
     refine = refine_selected_edges if marks else refine_edges
-    alpha = ImageChops.darker(source_alpha, refine(original, coarse))
+    matte = refine(original, coarse)
+    extend = not any(mark['mode']=='remove' for mark in (marks or []))
+    alpha = ImageChops.darker(source_alpha, studio_edge_detail(original, coarse, matte, extend))
     if alpha.getextrema()[1] < 128:
         raise ValueError('没有剩余的可见主体，请撤销移除点或补选要保留的物体。' if marks else '未识别到可见商品。')
     original.putalpha(alpha)
