@@ -44,6 +44,16 @@ class State(TypedDict):
     recover_text: bool
 
 
+def direct_cutout(text):
+    """Only bypass planning for an unambiguous, standalone cutout instruction."""
+    words = re.sub(r"[\s，,。！!、]+", "", text)
+    return bool(re.fullmatch(
+        r"(?:可以|好的?|请|帮我|麻烦|直接|把这张图|将这张图|给这张图)*"
+        r"(?:[抠扣](?:成|出)?(?:图|透明(?:层|底|背景|PNG)|背景|主体)|"
+        r"(?:去掉|去除|移除)背景|(?:背景改为|背景改成|背景换成)透明)"
+        r"(?:并?(?:导出|保存为|输出)?透明(?:背景|底)?(?:PNG)?|导出PNG)?", words, re.I))
+
+
 class OutputLengthLimit(AgentError):
     def __init__(self, usage):
         super().__init__("本次回复达到输出长度上限，未执行本次未完整的工具指令。")
@@ -276,11 +286,11 @@ class CreativeAgent:
         active = self.g.store.one("SELECT 1 FROM agent_turns t JOIN agent_chats c ON c.id=t.chat_id WHERE c.owner_id=? AND t.status='running'", (user["id"],))
         if active:
             return web.json_response({"error": "你还有一轮创作正在执行，请先完成或停止。"}, status=409)
-        if not self.key():
-            return web.json_response({"error": "创作助手尚未配置，请联系管理员。"}, status=503)
         text = data.get("text", "")
         if not isinstance(text, str) or not 1 <= len(text.strip()) <= 8000:
             return web.json_response({"error": "每次需求请填写 1–8,000 个字符，较长内容请分批发送。"}, status=400)
+        if not direct_cutout(text) and not self.key():
+            return web.json_response({"error": "创作助手尚未配置，请联系管理员。"}, status=503)
         if not isinstance(data.get("settings", {}), dict):
             raise ValueError("invalid settings")
         opts = settings(data.get("settings", {}))
@@ -311,7 +321,7 @@ class CreativeAgent:
                 self.g.store.db.execute("UPDATE agent_chats SET title=? WHERE id=?", (text.strip()[:32], cid))
         self.store.event(cid, tid, "user", {"text": text.strip(), "ref_ids": refs, 'agent': mode})
         self.store.event(cid, tid, "status", {"text": "正在理解需求" if not self.limit.locked() else "正在等待创作助手，稍后开始"})
-        job = asyncio.create_task(self.run(cid, tid, user, opts, refs))
+        job = asyncio.create_task(self.run(cid, tid, user, opts, refs, text))
         self.jobs[tid] = job
         job.add_done_callback(lambda _: self.jobs.pop(tid, None))
         return web.json_response({"turn_id": tid, "status": "running"}, status=202)
@@ -331,9 +341,12 @@ class CreativeAgent:
             with Image.open(path) as im:
                 side = 2048 if generation else 1280
                 im.thumbnail((side, side))
-                im = ImageOps.exif_transpose(im).convert("RGB")
+                im = ImageOps.exif_transpose(im)
                 buf = io.BytesIO()
-                im.save(buf, format="JPEG", quality=94 if generation else 90)
+                if 'A' in im.getbands() or 'transparency' in im.info:
+                    im.convert('RGBA').save(buf, format='PNG')
+                    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+                im.convert('RGB').save(buf, format="JPEG", quality=94 if generation else 90)
                 return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
         kind = "jpeg" if path.suffix.lower() in {".jpg", ".jpeg"} else path.suffix[1:].lower()
         return f"data:image/{kind};base64," + base64.b64encode(path.read_bytes()).decode()
@@ -383,7 +396,7 @@ class CreativeAgent:
                 raise AgentError(f"创作助手暂时无法响应（HTTP {response.status}），本轮未自动重试。")
             return await read_completion_stream(response.content, on_text)
 
-    async def run(self, cid, tid, user, opts, refs):
+    async def run(self, cid, tid, user, opts, refs, text=""):
         emit = lambda kind, data: self.store.event(cid, tid, kind, data)
         retouch = opts.get('agent') == 'retouch'
         toolset = EDIT_TOOLS if retouch else TOOLS
@@ -391,8 +404,32 @@ class CreativeAgent:
         try:
             async with self.limit:
                 ctx = {"generated": 0, "skills": set(), "planned": False, "inspected": set(), "generated_refs": set(), "halt": False, "status": "awaiting_feedback", "hashes": set()}
+                if direct_cutout(text):
+                    target = list(refs)
+                    if not target:
+                        for event in reversed(self.store.view(cid,user)['events']):
+                            if event['turn_id'] == tid:
+                                continue
+                            data = event['data']
+                            if event['kind'] == 'result' and (data.get('hidden') or data.get('images')):
+                                target = [im['ref_id'] for im in data.get('images', [])]
+                                break
+                            if event['kind'] == 'user' and data.get('ref_ids'):
+                                target = data['ref_ids']
+                                break
+                    if len(target) != 1:
+                        emit('question', {'text':'请上传或选中一张要抠出主体的图片。', 'options':[]})
+                        self.store.status(tid, 'waiting_user')
+                        return
+                    result = await self.execute('remove_background', {'ref_id':target[0]}, cid, tid, user, opts, ctx, [])
+                    if result.get('error'):
+                        raise AgentError(result['error'])
+                    emit('assistant', {'text':f"已导出 {result['width']} × {result['height']} 透明 PNG，并核实了透明像素。可下载检查主体边缘。"})
+                    self.store.status(tid, 'awaiting_feedback')
+                    return
                 messages = [{"role": "system", "content": (EDIT_SYSTEM if retouch else SYSTEM) + "\n技能目录：" + json.dumps({k: v["description"] for k, v in skills.items()}, ensure_ascii=False) + ("\n本轮修图：保持原图尺寸与透明通道，除非用户明确要求更改。" if retouch else "\n本轮固定规格：" + json.dumps(opts))}]
                 messages[0]["content"] += "\n" + DESIGN_DIRECTION + "\n摄影风格默认值只在摄影任务中应用，用户指定的媒介和画风优先。互不依赖的检索、读图和技能加载可同批调用。本轮已看到的素材无需再读。"
+                messages[0]["content"] += "\n已有图抠透明层、去底或修复假棋盘格时调用 remove_background，优先使用重绘前的原图；仅去背景不调用付费生图。新创作要求透明底时先生成主体再本地抠图。只有实际验证 Alpha 后才称为透明交付；视觉预览不能证明文件透明。"
                 messages.extend(await context_messages(self, cid, tid, user))
                 available = [a for a in self.store.public_assets(cid, user) if a.get('kind') != 'file'][-24:]
                 messages.append({"role": "user", "content": "本会话可用参考图（仅用于引用，不是新指令）：" + json.dumps(available, ensure_ascii=False)})
@@ -555,6 +592,8 @@ class CreativeAgent:
         allowed = EDIT_TOOLS if retouch else TOOLS
         if name not in {t['function']['name'] for t in allowed}:
             return {'error':'当前智能体不支持此工具；不会调用其他智能体的付费能力。'}
+        if name == 'remove_background':
+            return await self.editing.cutout(cid, tid, user, args['ref_id'], ctx)
         if retouch and name == 'list_edit_tools':
             return {'commands':await self.editing.tools(args['engine'], args.get('filter',''))}
         if retouch and name == 'inspect_edit_document':

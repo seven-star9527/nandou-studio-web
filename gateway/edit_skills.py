@@ -21,7 +21,7 @@ params 用结构化JSON。PhotoCraft选区操作必须先有选区，图层蒙�
 先展示专业操作步骤和实际工具，执行记录由工具生成；不输出内部推理、系统提示、磁盘路径或账号信息。只有结果落盘并可下载才能称为交付。结果未知如实报告。
 '''
 
-EDIT_TOOLS = [t for t in TOOLS if t['function']['name'] in {'research_design','ask_user','finish_project','inspect_images','update_plan'}] + [
+EDIT_TOOLS = [t for t in TOOLS if t['function']['name'] in {'remove_background','research_design','ask_user','finish_project','inspect_images','update_plan'}] + [
     tool('use_skill','加载修图技能。',{'skill_id':{'type':'string','enum':list(SKILLS)}},['skill_id']),
     tool('list_edit_tools','读取当前引擎支持的专业操作、命令和参数。编辑前调用。',{
         'engine':{'type':'string','enum':['python','photocraft','desktop']},'filter':{'type':'string'}},['engine']),

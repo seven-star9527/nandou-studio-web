@@ -23,6 +23,7 @@ PYTHON = {
     'image.flip':('翻转画布', '{axis:"horizontal"|"vertical"}'),
 }
 COMMANDS = {
+    'layer.removeBackground':'抠出主体并建立蒙版',
     'image.crop':'裁剪', 'image.imageSize':'图像大小', 'image.canvasSize':'画布大小',
     'image.perspectiveCrop':'透视裁剪', 'select.subject':'选择主体',
     'select.all':'全选', 'select.deselect':'取消选择', 'select.inverse':'反向选择',
@@ -137,6 +138,25 @@ class Editing:
             # Only our ephemeral directory; never a user path.
             if folder.resolve().parent == self.root.resolve(): shutil.rmtree(folder)
 
+    async def cutout(self, cid, tid, user, aid, ctx):
+        asset = self.agent.resolve_asset(cid,user,aid)
+        def already_isolated():
+            with Image.open(asset['path']) as image:
+                if 'A' not in image.getbands() and 'transparency' not in image.info:
+                    return False
+                alpha = image.convert('RGBA').getchannel('A')
+                bounds = alpha.getbbox()
+                if not bounds:
+                    raise AgentError('原图已完全透明，没有可保留的主体。')
+                # Only pass through if all four edges are already clear.
+                left, top, right, bottom = bounds
+                return left > 0 and top > 0 and right < image.width and bottom < image.height
+        isolated = await asyncio.to_thread(already_isolated)
+        steps = [] if isolated else [{'command':'layer.removeBackground', 'params':{}}]
+        engine = 'python' if isolated else 'photocraft'
+        return await self.edit({'ref_id':aid, 'engine':engine, 'steps':steps, 'format':'png', 'cutout':True},
+                               cid,tid,user,ctx)
+
     def update(self,jid,status,completed=None,result=None):
         with self.db:
             self.db.execute('UPDATE edit_jobs SET status=?, completed_steps=COALESCE(?,completed_steps),result_json=COALESCE(?,result_json) WHERE id=?',
@@ -166,6 +186,14 @@ class Editing:
             if im.width * im.height > MAX_IMAGE_PIXELS: raise AgentError(f'输出超过 {MAX_IMAGE_PIXELS // 10000} 万像素上限。')
             im.load()
             dimensions={'width':im.width,'height':im.height,'format':im.format,'alpha':'A' in im.getbands()}
+            if args.get('cutout'):
+                source = self.agent.resolve_asset(cid,user,args['ref_id'])
+                with Image.open(source['path']) as original:
+                    size = original.size[::-1] if original.getexif().get(274) in {5,6,7,8} else original.size
+                hist = im.getchannel('A').histogram() if dimensions['alpha'] else []
+                if im.format != 'PNG' or im.size != size or not hist or not hist[0] or not sum(hist[1:]):
+                    raise AgentError('抠图未能同时保留主体、透明背景和原尺寸，本次未交付。')
+                dimensions['transparent_pixels'] = hist[0]
         aid=self.agent.store.asset(cid,'修图结果.'+fmt,output)
         if project.is_file():
             with self.db: self.db.execute('INSERT INTO edit_projects VALUES(?,?,?,?)',(aid,jid,args['ref_id'],str(project)))
@@ -217,6 +245,9 @@ class Editing:
         if ctx['generated']>=4:
             return {'error':'本轮已交付4个结果，请下一轮继续。'}
         asset,source=self.source(cid,user,args['ref_id'])
+        if args.get('cutout'):
+            # Segment the selected visible composite, never just the active project layer.
+            source = Path(asset['path'])
         if engine=='python' and source.suffix.lower()=='.pcraft':
             return {'error':'此图具有可编辑工程，请使用PhotoCraft保留图层。'}
         catalog={c['command']:c for c in await self.tools(engine)}
