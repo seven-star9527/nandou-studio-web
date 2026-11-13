@@ -1,7 +1,7 @@
 import { AUTH_REQUIRED_EVENT } from './auth';
 
 export interface AgentSettings { model: string; quality: string; resolution: string; ratio: string; count: string; platform: string; scene: string; style: string; }
-export interface AgentChat { id: string; title: string; owner_id: string; owner_email: string; hidden_at?: number; status?: string; updated_at: number; }
+export interface AgentChat { cover_id?: string | null; picture_count?: number; id: string; title: string; owner_id: string; owner_email: string; hidden_at?: number; status?: string; updated_at: number; }
 export interface AgentAsset { id: string; name: string; url: string; task_id?: string; width?: number; height?: number; kind?: 'image' | 'file'; }
 export interface AgentEvent { id: number; turn_id: string; kind: string; at: number; data: {
   text?: string; summary?: string; steps?: string[]; options?: string[]; title?: string; id?: string;
@@ -25,5 +25,5 @@ export async function agentRequest<T>(path: string, data?: object, signal?: Abor
 }
 
 export function agentStatus(status?: string) {
-  return ({ running: '创作中', waiting_user: '等待补充', awaiting_feedback: '等待反馈', completed: '已完成', stopped: '已停止', failed: '需要处理', interrupted: '已中断' } as Record<string, string>)[status ?? ''] ?? '新对话';
+  return ({ running: '创作中', waiting_user: '等待补充', awaiting_feedback: '等待反馈', completed: '已完成', stopped: '已停止', failed: '需要处理', interrupted: '已中断' } as Record<string, string>)[status ?? ''] ?? '新任务';
 }

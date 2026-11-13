@@ -19,11 +19,11 @@ const modelDescriptions: Record<string, string> = {
   'gpt-image-2.5-sunburst': '参考图编辑优先，适合保留商品后调整场景',
 };
 
-export default function Composer({ settings, config, params, models, prompt, references, editing, setEditing, setPrompt, update,
+export default function Composer({ settings, config, params, models, prompt, references, editing, setPrompt, update,
   setGeometry, addReferences, removeReference, selectModel, selectLocal, selectCloud, cloudModel, cloudModels, cloudConfigured, cloudCapabilityError, creditQuote, polisher, generate, busy, ready }: {
   settings: GenerationSettings; config: DeploymentConfig; params: ParamSchema[]; models: Model[];
   prompt: string; references: ReferenceImage[]; editing: boolean;
-  setEditing: (value: boolean) => void; setPrompt: (value: string) => void;
+  setPrompt: (value: string) => void;
   update: (changes: Partial<GenerationSettings>) => void;
   setGeometry: (ratio: RatioId, resolution: ResolutionId) => void;
   addReferences: (files: FileList | File[]) => Promise<void>; removeReference: (id: string) => void;
@@ -63,20 +63,18 @@ export default function Composer({ settings, config, params, models, prompt, ref
 
   useDismissibleLayer(Boolean(panel), composer, closePanel);
 
-  const chooseFiles = async (files: FileList | File[]) => { if (files.length) setEditing(true); await addReferences(files); };
-  const submit = () => { setPanel(null); generate(); };
+  const chooseFiles = addReferences;
+  const supported = !cloudModel || cloudModel.operations.includes(editing ? 'edit' : 'generate');
+  const canSubmit = ready && !busy && Boolean(prompt.trim()) && supported;
+  const submit = () => { if (canSubmit) {setPanel(null); generate();} };
 
   return <>
-    <GlassTabs className="creation-tabs segmented" role="tablist" aria-label="创作方式">
-      <button role="tab" aria-selected={!editing} disabled={Boolean(cloudModel && !cloudModel.operations.includes('generate'))} className={!editing ? 'selected' : ''} onClick={() => setEditing(false)}>图片生成</button>
-      <button role="tab" aria-selected={editing} disabled={Boolean(cloudModel && !cloudModel.operations.includes('edit'))} className={editing ? 'selected' : ''} onClick={() => setEditing(true)}>参考图编辑</button>
-    </GlassTabs>
     <div className={`composer ${dragging ? 'is-dragging' : ''}`} ref={composer}
       onDragOver={event => { event.preventDefault(); setDragging(true); }}
       onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
       onDrop={event => { event.preventDefault(); setDragging(false); if (event.dataTransfer.files.length) void chooseFiles(event.dataTransfer.files); }}>
       <div className="prompt-row">
-        <ReferenceDock references={editing ? references : []} add={() => fileInput.current?.click()} remove={removeReference} maxReferences={maxReferences} />
+        <ReferenceDock references={references} add={() => fileInput.current?.click()} remove={removeReference} maxReferences={maxReferences} />
         <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={event => { if (event.target.files) void chooseFiles(event.target.files); event.target.value = ''; }} />
         <div className="prompt-content">
           <textarea ref={promptInput} aria-label="图像提示词" value={prompt} onChange={event => setPrompt(event.target.value)}
@@ -127,11 +125,12 @@ export default function Composer({ settings, config, params, models, prompt, ref
         </div>
         <div className="generation-actions"><GenerationQuote local={!cloudModel} quote={creditQuote.quote} loading={creditQuote.loading} error={creditQuote.error} descriptionId={quoteDescriptionId} />
         {polisher}
-        <button className="generate-button" onClick={submit} disabled={!ready || busy || !prompt.trim() || (editing && !references.length)} title={busy ? '正在生成' : '生成图像 · Ctrl / ⌘ + Enter'} aria-label={busy ? '生成中' : '生成图像'} aria-describedby={quoteDescriptionId}>
+        <button className="generate-button" onClick={submit} disabled={!canSubmit} title={busy ? '正在生成' : '生成图像 · Ctrl / ⌘ + Enter'} aria-label={busy ? '生成中' : '生成图像'} aria-describedby={quoteDescriptionId}>
           <Icon name={busy ? 'spark' : 'arrow'} size={22} className={busy ? 'spinning' : 'send-arrow'} />
         </button>
         </div>
       </div>
     </div>
+    {!supported && <p className="panel-note" role="status">{editing?'当前模型仅支持文字生成，请移除参考图或更换模型。':'请添加参考图，或选择支持文字生成的模型。'}</p>}
   </>;
 }

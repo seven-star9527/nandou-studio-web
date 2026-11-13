@@ -92,3 +92,8 @@ html[data-theme=light] :is(.form-field,.scene-manager>p) { color:var(--glass-mut
 html[data-theme=light] .scene-manager { border-color:var(--glass-line); }
 html[data-theme=light] .polish-comparison pre { background:var(--glass-control); color:var(--glass-muted); border-color:var(--glass-line); }
 html[data-theme=light] .agent-skill-picker>header { background:transparent; }
+
+html[data-theme=light] .library-detail>p { color:#425971; }
+html[data-theme=light] .template-sources a { color:#255780; }
+.library-template[aria-pressed=true] { outline:1px solid var(--glass-accent); outline-offset:-2px; }
+.library-template[aria-pressed=true] strong::after { content:' ✓'; }

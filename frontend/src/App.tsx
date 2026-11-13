@@ -7,16 +7,24 @@ import { ThemeToggle } from './theme';
 import AgentWorkspace from './components/AgentWorkspace';
 import { flushSync } from 'react-dom';
 import { IMAGE_UPLOAD_HINT } from './image-upload-limits';
+import CompareBoard from './components/CompareBoard';
+import QuickEdit from './components/QuickEdit';
+import type { Artwork } from './types';
+import { workRequest, toolNames, type QuickTool, type WorkImage } from './workbench-api';
 import Composer from './components/Composer';
-import History, { isBusy } from './components/History';
+import History, { GenerationStatus, isBusy } from './components/History';
 import Icon from './components/Icon';
 import ScenePresets from './components/ScenePresets';
 import PromptLibrary from './components/PromptLibrary';
-import { dimensions } from './resolution-policy';
+import CanvasProjects, { type CanvasProject } from './components/CanvasProjects';
 import { useStudio } from './useStudio';
 import CloudCreditsAccount from './components/CloudCreditsAccount';
 import PromptPolisher from './components/PromptPolisher';
 import ShowcaseGallery from './components/ShowcaseGallery';
+import { loadStudioImage } from './task-references';
+import { checkImageBatch } from './image-upload-limits';
+import { RATIOS } from './resolution-policy';
+import type { ChooseTemplate } from './components/TemplateActions';
 import { referenceLimit } from './cloud-contract';
 import AuthGate, { type AuthWorkspace } from './components/AuthGate';
 import AdminUsage from './components/AdminUsage';
@@ -63,45 +71,111 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
       setTimeout(() => observer.disconnect(), 1000);
     }
   };
-  const { editing, setEditing } = studio;
+  const editing = studio.references.length > 0;
+  const [surface,setSurface] = useState<'image'|'canvas'>('image');
+  const [project,setProject] = useState<CanvasProject|null>(null);
+  const [edits, setEdits] = useState<Artwork[]>([]);
+  const [editHistoryError, setEditHistoryError] = useState('');
+  const refreshEdits = async () => {
+    try { setEdits(await workRequest<Artwork[]>('history')); setEditHistoryError(''); }
+    catch (cause) { setEditHistoryError(String(cause)); }
+  };
+  useEffect(() => { void refreshEdits(); }, []);
+  const [board, setBoard] = useState<{initial?:WorkImage} | null>(null);
+  const openBoard = (initial?:WorkImage) => { setQuick(null); void refreshEdits(); setBoard({initial});selectWorkspace('studio');setSurface('canvas');setProject(null);window.scrollTo(0,0); };
+  const [quick, setQuick] = useState<{tool:QuickTool; source?:WorkImage} | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth >= 1150);
+  const [previousPrompt,setPreviousPrompt] = useState<{before:string;minimum:number;applied:string; added?:string; geometry?:Pick<typeof studio.settings,'ratio'|'width'|'height'|'resolution'>; appliedRatio?:string}|null>(null);
+  const [templateNotice,setTemplateNotice] = useState('');
+  const applyTemplate = (text:string,minimum=0) => {
+    setTemplateNotice('');
+    setPreviousPrompt({before:studio.prompt,minimum:studio.minReferences,applied:text});
+    studio.setTemplate(text,minimum);
+    requestAnimationFrame(()=>{
+      const field=document.querySelector<HTMLTextAreaElement>('.composer textarea');
+      const slot=/【[^】]+】/.exec(text);
+      field?.focus({preventScroll:true});
+      if(slot)field?.setSelectionRange(slot.index,slot.index+slot[0].length);
+    });
+  };
+  const chooseTemplate: ChooseTemplate = async (choice, onlyImage, signal) => {
+    const reference = choice.image ? await loadStudioImage(choice.image, choice.title + ' · 样图') : undefined;
+    if (signal.aborted) return;
+    if (reference) {
+      const limit = studio.cloudModel ? referenceLimit(studio.cloudModel) : studio.config.maxReferences ?? 3;
+      if (studio.references.length >= limit) throw new Error(`当前最多使用 ${limit} 张参考图，请先移除一张。`);
+      checkImageBatch([], [...studio.references.map(r=>r.dataUrl), reference.dataUrl]);
+      studio.appendReference(reference);
+    }
+    let note = '已添加参考图';
+    if (!onlyImage) {
+      applyTemplate(choice.prompt,choice.minimum);
+      const supportsRatio = studio.cloudModel ? studio.cloudModel.ratios.includes(choice.ratio)
+        : RATIOS.some(r=>r.id===choice.ratio);
+      if (supportsRatio) studio.setGeometry(choice.ratio, studio.settings.resolution);
+      const ratio = supportsRatio ? choice.ratio : studio.settings.ratio;
+      setPreviousPrompt({before:studio.prompt, minimum:studio.minReferences, applied:choice.prompt, added:reference?.id, geometry:{ratio:studio.settings.ratio,width:studio.settings.width,height:studio.settings.height,resolution:studio.settings.resolution}, appliedRatio:ratio});
+      note = `已套用「${choice.title}」 · ${ratio}${supportsRatio?'':'（沿用当前比例）'}${reference?' · 已带入样图':''}`;
+    }
+    setTemplateNotice(note);
+    requestAnimationFrame(()=>{
+      const field=document.querySelector<HTMLTextAreaElement>('.composer textarea');
+      field?.focus({preventScroll:true});field?.scrollIntoView({block:'center',behavior:'instant'});
+    });
+  };
   const busy = isBusy(studio.job);
   const connectedLabel = studio.connecting ? '连接中' : studio.connected ? '已连接' : '未连接';
-  const changeEditing = (value: boolean) => {
-    setEditing(value);
-    if (!studio.cloudModel && studio.settings.ratio === 'smart') studio.setSettings(previous => ({ ...previous, ...dimensions('smart', previous.resolution, value ? studio.references[0] : undefined) }));
-  };
-  const chooseCloud = (id: string) => { studio.selectCloudModel(id); setEditing(studio.cloudModels.find(model => model.id === id)?.preferredOperation === 'edit'); };
   return <div className="app-shell">
     <header className="app-header"><a className="brand" href="/studio/" aria-label="Nandou Studio 首页"><img className="brand-logo" src={`${import.meta.env.BASE_URL}brand/nandou-mark-on-dark.svg`} width="34" height="34" alt="" /><span>Nandou Studio</span></a>
       <GlassTabs className="workspace-mode-switch" role="navigation" aria-label="创作模式"><button className={workspace === 'studio' ? 'active' : ''} onClick={event => void setWorkspace('studio', event.detail > 0)}>图片创作</button><button className={workspace === 'agent' ? 'active' : ''} onClick={event => void setWorkspace('agent', event.detail > 0)}>Agent 创作</button></GlassTabs>
-      <div className="header-actions"><ThemeToggle/><CloudCreditsAccount account={studio.cloudAccount} loading={studio.accountLoading} error={studio.accountError} refresh={() => void studio.refreshAccount()} /><button className={`connection ${studio.connected ? 'connected' : ''}`} onClick={() => { if (!busy) void studio.connect(); }} disabled={studio.connecting || busy} title="重新连接图像服务"><span className={`connection-dot ${studio.connecting ? 'spinning' : ''}`} />{connectedLabel}</button><div className="studio-account"><span className="studio-account-identity" title={user.email}><span>{user.email}</span>{user.is_admin ? <small>管理员</small> : null}</span>{user.is_admin && adminEntry ? <AdminUsage /> : null}<button className="account-logout-button" onClick={() => void logout()}>退出</button></div></div>
+      <div className="header-actions"><nav className="studio-doc-links" aria-label="帮助与更新"><a href={workspace==='agent'?'/studio/agent-guide.html':'/studio/agent-guide.html#studio-canvas'}>使用指南</a><a href="/studio/changelog.html">更新日志</a></nav><ThemeToggle/><CloudCreditsAccount account={studio.cloudAccount} loading={studio.accountLoading} error={studio.accountError} refresh={() => void studio.refreshAccount()} /><button className={`connection ${studio.connected ? 'connected' : ''}`} onClick={() => { if (!busy) void studio.connect(); }} disabled={studio.connecting || busy} title="重新连接图像服务"><span className={`connection-dot ${studio.connecting ? 'spinning' : ''}`} />{connectedLabel}</button><div className="studio-account"><span className="studio-account-identity" title={user.email}><span>{user.email}</span>{user.is_admin ? <small>管理员</small> : null}</span>{user.is_admin && adminEntry ? <AdminUsage /> : null}<button className="account-logout-button" onClick={() => void logout()}>退出</button></div></div>
     </header>
-    {workspace === 'agent' ? <AgentWorkspace user={user} client={studio.client} refreshAccount={studio.refreshAccount} /> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <main>
-      <section className="creation-section" aria-labelledby="creation-title">
+    {workspace === 'agent' ? <AgentWorkspace onQuick={source=>setQuick({tool:'cutout',source})} compare={openBoard} user={user} client={studio.client} refreshAccount={studio.refreshAccount} /> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <div className={`studio-layout ${historyOpen ? '' : 'rail-closed'}`}>
+      <aside className="creation-rail" aria-label="创作记录侧栏"><button className="icon-button rail-toggle" title={historyOpen ? '收起创作记录' : '展开创作记录'} aria-label={historyOpen ? '收起创作记录' : '展开创作记录'} aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)}><Icon name="panel" size={19}/></button>
+      <div hidden={!historyOpen}><History compare={openBoard} onQuick={source => setQuick({tool:'cutout',source})} isAdmin={user.is_admin || user.role === 'admin'} hideTask={async id => { await studio.hideTask(id,user.is_admin); await refreshEdits(); }} currentUserId={user.id} artworks={[...edits,...studio.history].sort((a,b) => (Date.parse(b.generatedAt ?? '')||0)-(Date.parse(a.generatedAt ?? '')||0))} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError || editHistoryError} refresh={() => { void studio.refreshHistory(); void refreshEdits(); }} stop={() => void studio.stop()} reuse={async (artwork, signal)=>{
+        await studio.reuse(artwork,signal);
+        if(signal.aborted)return;
+        setSurface('image');setTemplateNotice('');setPreviousPrompt(null);
+        requestAnimationFrame(()=>document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus());
+      }} /></div></aside>
+      <main className="studio-content"><section className="creation-section" aria-labelledby="creation-title">
         {studio.draftError ? <div className="service-notice" role="status">{studio.draftError}</div> : null}
         <div className="title-pattern" aria-hidden="true" />
-        <h1 id="creation-title">让想象，成为图像</h1>
+        <h1 id="creation-title">你好，今天想要创作什么？</h1>
+        <GlassTabs className="creation-tabs segmented" role="tablist" aria-label="创作方式" onKeyDown={e=>{
+          if(!['ArrowRight','ArrowLeft','Home','End'].includes(e.key))return;
+          e.preventDefault();
+          const next = e.key==='Home'?'image':e.key==='End'?'canvas':surface==='image'?'canvas':'image';
+          const target=e.currentTarget.querySelectorAll('button')[next==='image'?0:1];
+          target.click();target.focus();
+        }}>
+          {(['image','canvas'] as const).map(t=><button key={t} role="tab" aria-selected={surface===t} className={surface===t?'selected':''} onClick={()=>{setSurface(t);if(t==='image')setBoard(null);}}>{t==='image'?'图片生成':'画布'}</button>)}
+        </GlassTabs>
+        {surface==='canvas' ? <CanvasProjects key={project?.id??'projects'} adding={Boolean(board?.initial)} open={setProject}/> : <>
         <Composer settings={studio.settings} config={studio.config} params={studio.params} models={studio.models} prompt={studio.prompt} references={studio.references}
-          editing={editing} setEditing={changeEditing} setPrompt={studio.setPrompt} update={changes => studio.setSettings(previous => ({ ...previous, ...changes }))}
+          editing={editing} setPrompt={studio.setPrompt} update={changes => studio.setSettings(previous => ({ ...previous, ...changes }))}
           setGeometry={(ratio, resolution) => studio.setGeometry(ratio, resolution, editing)} addReferences={studio.addReferences} removeReference={studio.removeReference} selectModel={studio.selectModel}
-          selectLocal={studio.selectLocal} selectCloud={chooseCloud} cloudModel={studio.cloudModel} cloudModels={studio.cloudModels} cloudConfigured={studio.cloudConfigured} cloudCapabilityError={studio.cloudCapabilityError}
+          selectLocal={studio.selectLocal} selectCloud={studio.selectCloudModel} cloudModel={studio.cloudModel} cloudModels={studio.cloudModels} cloudConfigured={studio.cloudConfigured} cloudCapabilityError={studio.cloudCapabilityError}
           creditQuote={studio.creditQuote}
           polisher={<PromptPolisher client={studio.client} prompt={studio.prompt} setPrompt={studio.setPrompt} width={studio.settings.width} height={studio.settings.height} model={studio.cloudModel?.id ?? studio.settings.model} referenceCount={editing ? studio.references.length : 0} referenceIds={editing ? studio.references.map(reference => reference.id).join(',') : ''} busy={busy} />}
-          generate={() => studio.generate(editing)} busy={busy} ready={studio.ready} />
+          generate={() => studio.generate(editing)} busy={busy} ready={studio.ready && studio.references.length>=studio.minReferences} />
+        {studio.job && (busy || !historyOpen) && <div className="composer-status"><GenerationStatus job={studio.job} stop={()=>void studio.stop()}/>{!busy && <button className="quiet-button" onClick={()=>setHistoryOpen(true)}>查看创作记录</button>}</div>}
+        {studio.references.length<studio.minReferences && <p className="panel-note">此提示词还需 {studio.minReferences-studio.references.length} 张参考图。</p>}
         {editing && studio.references.length > 0 ? <p className="edit-notice">{IMAGE_UPLOAD_HINT}。较大原图会另建缩图作为生图参考；原尺寸精修请使用修图 Agent。</p> : null}
         {studio.error ? <div className="error-banner" role="alert"><span>{studio.error}</span><button className="icon-button" onClick={() => studio.setError('')} aria-label="关闭错误提示"><Icon name="close" size={15} /></button></div> : null}
         {!studio.cloudModel && studio.connected && !studio.settings.model ? <div className="service-notice" role="status">服务已连接，正在等待 Qwen-Image-2.1 模型就绪。<button onClick={() => void studio.connect()}>刷新模型</button></div> : null}
         {!studio.cloudModel && studio.connected && studio.settings.model && (studio.configurationError || !studio.backendReady || !studio.localReady) ? <div className="service-notice" role="status"><span>{studio.configurationError || (!studio.localReady ? '模型组件正在下载或尚未就绪，请稍后刷新连接。' : '图像服务尚未就绪，请稍后刷新连接。')}</span><button onClick={() => void studio.connect()}>刷新连接</button></div> : null}
         {studio.cloudModel && !studio.cloudConfigured ? <div className="service-notice" role="status"><span>APIMart 云模型待配置。请在服务端配置密钥后刷新连接。</span><button onClick={() => void studio.connect()}>刷新连接</button></div> : null}
-        <ScenePresets currentPrompt={studio.prompt} apply={text => { studio.setPrompt(text); if (text.includes('参考图')) changeEditing(true); }} />
-        <div className="library-entry"><PromptLibrary referenceCount={studio.references.length} apply={(text, minReferences) => { studio.setPrompt(text); if (minReferences > 0) changeEditing(true); }} /></div>
+        <ScenePresets currentPrompt={studio.prompt} apply={applyTemplate} />
+        <div className="library-entry"><PromptLibrary referenceCount={studio.references.length} apply={chooseTemplate} /></div>
+        {templateNotice && <p className="panel-note template-notice" role="status">{templateNotice} <button onClick={()=>{setHistoryOpen(true);requestAnimationFrame(()=>document.querySelector<HTMLElement>('.rail-toggle')?.focus());}}>出图位置：创作记录</button></p>}
+        {previousPrompt && previousPrompt.applied===studio.prompt && <button className="scene-add" onClick={()=>{studio.setTemplate(previousPrompt.before,previousPrompt.minimum);if(previousPrompt.added)studio.removeReference(previousPrompt.added);if(previousPrompt.geometry && previousPrompt.appliedRatio===studio.settings.ratio && previousPrompt.geometry.resolution===studio.settings.resolution)studio.setSettings(old=>({...old,...previousPrompt.geometry}));setPreviousPrompt(null);setTemplateNotice('');}}>撤销套用</button>}</>}
       </section>
-      <ShowcaseGallery apply={(prompt, referenceEdit) => { studio.setPrompt(prompt); changeEditing(referenceEdit); window.scrollTo({ top: 0, behavior: 'smooth' }); }} addReference={async file => {
-        const limit = studio.cloudModel ? referenceLimit(studio.cloudModel) : studio.config.maxReferences ?? 3;
-        if (studio.references.length >= limit) throw new Error(`最多添加${limit}张参考图，请先移除一张。`);
-        changeEditing(true); await studio.addReferences([file]);
-      }} />
-      <History isAdmin={user.is_admin || user.role === 'admin'} hideTask={id => studio.hideTask(id, user.is_admin)} currentUserId={user.id} artworks={studio.history} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError} refresh={() => void studio.refreshHistory()} stop={() => void studio.stop()} reuse={studio.reuse} />
-    </main>}
+      {surface==='image' && <><section className="work-entry" aria-label="快捷修图"><div className="work-heading"><h2>快捷修图</h2></div><div className="work-tiles">{(Object.keys(toolNames) as QuickTool[]).map(tool =>
+        <button className="quiet-button" key={tool} onClick={() => setQuick({tool})}><Icon name={tool==='cutout'?'image':tool==='retouch'?'brush':'expand'} />{toolNames[tool]}<Icon name="arrow" size={16}/></button>)}</div></section>
+      <ShowcaseGallery apply={chooseTemplate} hasReferences={editing} /></>}
+    </main></div>}
+    {quick && <QuickEdit compare={openBoard} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => {setQuick(null);void refreshEdits();}} />}
+    {project && <CompareBoard key={project.id} studio={studio} onEditComplete={refreshEdits} project={project} initial={board?.initial} close={() => {setProject(null);setBoard(null);}} />}
   </div>;
 }

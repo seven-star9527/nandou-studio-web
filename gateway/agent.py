@@ -21,6 +21,7 @@ os.environ["LANGCHAIN_TRACING_V2"] = "false"
 from langgraph.graph import StateGraph, START, END
 
 from .agent_skills import SYSTEM, SKILLS, SOURCES, TOOLS, DESIGN_DIRECTION, DESIGN_TOPICS, POSTER_LAYOUTS, SERIES_LAYOUT
+from .image_preview import preview_path
 from .agent_store import AgentStore
 from .agent_context import context_messages, SUMMARY_RULES
 from .agent_vision import compact_vision
@@ -240,6 +241,10 @@ class CreativeAgent:
             path = Path(asset["path"]).resolve()
             if not path.is_file() or not any(path.is_relative_to(p.resolve()) for p in [self.uploads, self.g.results, self.g.output, self.editing.root]):
                 raise web.HTTPNotFound()
+            if request.query.get('preview') == '1':
+                if path.suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp'}:
+                    raise web.HTTPNotFound()
+                path = await preview_path(path, self.g.root / 'runtime/image-previews')
             response = web.FileResponse(path, headers={'Cache-Control':'private, no-store', 'X-Content-Type-Options':'nosniff'})
             if path.suffix.lower() in {'.pcraft','.psd'}:
                 response.headers['Content-Disposition'] = 'attachment; filename="nandou-project' + path.suffix.lower() + '"'

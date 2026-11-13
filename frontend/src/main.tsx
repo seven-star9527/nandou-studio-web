@@ -5,6 +5,7 @@ import './commerce.css';
 import './studio-refresh.css';
 import './liquid-glass.css';
 import '../public/theme.css';
+import './workbench.css';
 import { ThemeProvider } from './theme';
 
 createRoot(document.getElementById('root')!).render(<ThemeProvider><App /></ThemeProvider>);

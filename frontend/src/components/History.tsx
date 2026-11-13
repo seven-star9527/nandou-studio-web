@@ -1,3 +1,4 @@
+import { ownImageUrl, type WorkImage } from '../workbench-api';
 import GlassTabs from './GlassTabs';
 import GlassSelect from './GlassSelect';
 import { useEffect, useRef, useState } from 'react';
@@ -29,11 +30,11 @@ const PHASES: Record<Job['phase'], string> = {
 };
 export function isBusy(job: Job | null) { return Boolean(job && ['connecting', 'queued', 'loading', 'generating', 'stopping'].includes(job.phase)); }
 
-function ArtworkImage({ artwork }: { artwork: Artwork }) {
+function ArtworkImage({ artwork, thumbnail = false }: { artwork: Artwork; thumbnail?: boolean }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [artwork.url]);
   return failed ? <span className="image-unavailable"><Icon name="image" size={30} /><span>图像暂时无法预览</span><small>{artwork.locallySaved === false ? '可尝试打开远程原图，或刷新记录重新转存。' : '请刷新记录或检查图像服务。'}</small></span>
-    : <img src={artwork.url} alt={artwork.prompt || '生成图像'} loading="lazy" onError={() => setFailed(true)} />;
+    : <img src={thumbnail && artwork.source === 'quick' ? artwork.url + '?preview=1' : artwork.url} alt={artwork.prompt || '生成图像'} loading="lazy" onError={() => setFailed(true)} />;
 }
 
 function DownloadLink({ artwork, compact = false }: { artwork: Artwork; compact?: boolean }) {
@@ -45,7 +46,7 @@ function DownloadLink({ artwork, compact = false }: { artwork: Artwork; compact?
   </a>;
 }
 
-function GenerationStatus({ job, stop, remove }: { job: Job; stop: () => void; remove?: () => void }) {
+export function GenerationStatus({ job, stop, remove }: { job: Job; stop: () => void; remove?: () => void }) {
   const [now, setNow] = useState(Date.now());
   const busy = isBusy(job);
   const queueWaiting = job.queue?.state === 'queued' && ['queued', 'stopping'].includes(job.phase);
@@ -75,7 +76,9 @@ function GenerationStatus({ job, stop, remove }: { job: Job; stop: () => void; r
   </div>;
 }
 
-export default function History({ artworks, cloudTasks, job, loading, error, refresh, stop, reuse, hideTask, currentUserId, isAdmin = false }: {
+export default function History({ compare, onQuick, artworks, cloudTasks, job, loading, error, refresh, stop, reuse, hideTask, currentUserId, isAdmin = false }: {
+  compare: (image:WorkImage) => void;
+  onQuick: (image:WorkImage) => void;
   artworks: Artwork[]; job: Job | null; loading: boolean; error: string;
   cloudTasks: CloudTask[];
   refresh: () => void; stop: () => void; reuse: (artwork: Artwork, signal: AbortSignal) => Promise<void>;
@@ -161,20 +164,20 @@ export default function History({ artworks, cloudTasks, job, loading, error, ref
       <button role="tab" aria-selected={filter === 'current'} className={filter === 'current' ? 'selected' : ''} onClick={() => setFilter('current')} title="仅展示本页面打开后生成的作品">本次生成</button>
     </GlassTabs>
     <button className="history-refresh-button" onClick={refresh} disabled={loading} aria-label="刷新创作记录" title="刷新创作记录"><Icon name="refresh" size={16} className={loading ? 'spinning' : ''} /><span>{loading ? '读取中' : '刷新'}</span></button></div>
-    {isAdmin ? <div className="history-admin-filters" aria-label="作品筛选"><label className="history-audit-toggle"><input type="checkbox" checked={showRemoved} onChange={e => setShowRemoved(e.target.checked)}/>显示我已删除的记录</label>
+    {isAdmin ? <details className="rail-filters"><summary>筛选作品{hasFilters ? ' · 已筛选' : ''}</summary><div className="history-admin-filters" aria-label="作品筛选"><label className="history-audit-toggle"><input type="checkbox" checked={showRemoved} onChange={e => setShowRemoved(e.target.checked)}/>显示我已删除的记录</label>
       <GlassSelect label="账号" value={filters.owner} onChange={owner => setFilters(previous => ({...previous, owner}))} options={[{value:'',label:'全部账号'}, ...[...owners].map(([value,label]) => ({value,label}))]} />
       <GlassSelect label="模型" value={filters.model} onChange={model => setFilters(previous => ({...previous, model}))} options={[{value:'',label:'全部模型'}, ...modelOptions.map(value => ({value,label:historyModelLabel(value)}))]} />
       <GlassSelect label="时间" value={String(filters.days)} onChange={days => setFilters(previous => ({...previous, days:Number(days)}))} options={[{value:'0',label:'全部时间'},{value:'1',label:'最近 24 小时'},{value:'7',label:'最近 7 天'},{value:'30',label:'最近 30 天'}]} />
       <GlassSelect label="状态" value={filters.status} onChange={status => setFilters(previous => ({...previous, status:status as HistoryFilters['status']}))} options={[{value:'all',label:'全部状态'},{value:'completed',label:'已生成'},{value:'active',label:'进行中 / 待确认'},{value:'failed',label:'失败 / 已取消'}]} />
       {hasFilters ? <button className="text-button" onClick={() => setFilters(INITIAL_HISTORY_FILTERS)}>清除筛选</button> : null}
-    </div> : null}
+    </div></details> : null}
     {job ? <GenerationStatus job={job} stop={stop} remove={canHide(job.id) ? () => askRemove(job.id) : undefined} /> : null}
     {attentionTasks.length ? <div className="cloud-task-list">{attentionTasks.map(task => <div key={task.request_id}><span>{task.model}{isAdmin && task.studio_owner_email ? ` · ${task.studio_owner_email}` : ''}{isAdmin && task.studio_hidden_at ? ' · 用户已移除' : ''}</span><strong>{({ uploading: '上传参考图中', submitting: '提交结果待确认', submitted: '已提交', pending: '后台等待中', processing: '后台生成中', outcome_unknown: '结果待确认', failed: '历史任务失败', cancelled: '已取消', completed: '本地缓存未完整' } as Record<string, string>)[task.status]}</strong>{canHide(task.studio_task_id ?? task.request_id) && isTerminalTask(task) ? <button onClick={() => askRemove(task.studio_task_id ?? task.request_id)}>移除记录</button> : <button onClick={refresh} disabled={loading}>刷新记录</button>}<HistoryTime value={task.created_utc} />{task.error || task.poll_error || cloudDelivery(task).message ? <p>{task.error ?? cloudDelivery(task).message ?? task.poll_error}</p> : null}{isTerminalTask(task) ? <small>刷新不会重试生成。{taskCostLabel(task.credits_cost ?? undefined, true)}</small> : null}</div>)}</div> : null}
     {error ? <p className="history-error" role="alert">创作记录读取失败：{error}</p> : null}
     {visible.length ? <div className="artwork-grid">
       {visible.map(artwork => <article className="artwork" key={artwork.id}>
         <button className="artwork-open" onClick={() => setSelected(artwork)} aria-label={`查看图像 ${artwork.prompt.slice(0, 30) || '创作记录'}`}>
-          <ArtworkImage artwork={artwork} />
+          <ArtworkImage artwork={artwork} thumbnail />
           <span className="artwork-expand"><Icon name="expand" size={20} /></span>
         </button>
         <div className="artwork-info"><p>{artwork.prompt || '生成图像'}</p><HistoryTime value={artwork.generatedAt} />{isAdmin ? <span className="artwork-owner">{artwork.ownerEmail ?? '历史管理员作品'}{artwork.hiddenAt ? <em>用户已移除</em> : null}</span> : null}<div><span>{artwork.width && artwork.height ? `${artwork.width} × ${artwork.height}` : '图像'}</span><span className="artwork-card-actions"><DownloadLink artwork={artwork} compact />{canHide(artwork.taskId) ? <button onClick={() => askRemove(artwork.taskId!)} title="从我的记录中移除整个任务" aria-label="删除任务记录" className="history-delete-button"><Icon name="trash" size={15} /><span>删除</span></button> : null}</span></div>{artwork.source === 'cloud' ? <p className="task-cost">{taskCostLabel(artwork.taskCreditsCost, artwork.taskCostSettled)}</p> : null}{artwork.source === 'cloud' && artwork.locallySaved === false ? <p className="delivery-warning">{artwork.downloadError ?? '本地缓存未完成；远程原图可能到期，请及时保存。'}</p> : null}</div>
@@ -192,9 +195,9 @@ export default function History({ artworks, cloudTasks, job, loading, error, ref
           <dl><dt>提交时间</dt><dd><HistoryTime value={selected.generatedAt} /></dd>{historyTimestamp(selected.completedAt) ? <><dt>完成时间</dt><dd><HistoryTime value={selected.completedAt} label="完成时间" /></dd></> : null}{selected.width && selected.height ? <><dt>尺寸</dt><dd>{selected.width} × {selected.height} px</dd></> : null}{selected.seed != null ? <><dt>种子</dt><dd>{selected.seed}</dd></> : null}{selected.steps != null ? <><dt>步数</dt><dd>{selected.steps}</dd></> : null}{selected.duration != null ? <><dt>{selected.source === 'cloud' ? '生成耗时' : '请求耗时'}</dt><dd>{selected.duration.toFixed(1)} 秒</dd></> : null}{selected.model ? <><dt>模型</dt><dd>{selected.model}</dd></> : null}{selected.source === 'cloud' ? <><dt>任务积分</dt><dd>{taskCostLabel(selected.taskCreditsCost, selected.taskCostSettled)}</dd></> : null}</dl>
           {selected.source === 'cloud' ? <p className={selected.locallySaved ? 'delivery-saved' : 'delivery-warning'}>{selected.locallySaved ? '原图已保存到本地。' : selected.downloadError ?? '本地缓存未完成；远程结果可能到期。可刷新创作记录重试转存。'}</p> : null}
           {isAdmin ? <p className="artwork-owner">所属账号：{selected.ownerEmail ?? '历史管理员作品'}{selected.hiddenAt ? ' · 用户已移除' : ''}</p> : null}
-          {selected.taskId ? <TaskReferences taskId={selected.taskId} /> : null}
+          {selected.source !== 'quick' && selected.taskId ? <TaskReferences taskId={selected.taskId} /> : null}
           {retryError && <p className="history-error" role="alert">{retryError}</p>}
-          <div className="detail-actions"><DownloadLink artwork={selected} /><button className="quiet-button" disabled={retrying} onClick={() => void retrySelected()}>{retrying ? '正在读取…' : '再试一次'}</button>{canHide(selected.taskId) ? <button className="quiet-button" onClick={() => askRemove(selected.taskId!)}><Icon name="trash" size={15} />移除任务</button> : null}</div>
+          <div className="detail-actions"><DownloadLink artwork={selected} />{ownImageUrl(selected.url) && !selected.hiddenAt && (!isAdmin || selected.ownerId === currentUserId) && <><button className="quiet-button" onClick={() => { setSelected(null); compare({url:selected.url,name:selected.prompt || '创作图片'}); }}>加入对比画布</button><button className="quiet-button" onClick={() => { setSelected(null); onQuick({url:selected.url,name:selected.prompt || '创作图片',width:selected.width,height:selected.height}); }}>快捷修图</button></>}{selected.source !== 'quick' && <button className="quiet-button" disabled={retrying} onClick={() => void retrySelected()}>{retrying ? '正在读取…' : '再试一次'}</button>}{canHide(selected.taskId) ? <button className="quiet-button" onClick={() => askRemove(selected.taskId!)}><Icon name="trash" size={15} />移除任务</button> : null}</div>
           {selected.metadata ? <details><summary>生成信息</summary><pre>{selected.metadata}</pre></details> : null}
         </div>
       </section>

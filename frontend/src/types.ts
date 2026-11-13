@@ -52,7 +52,7 @@ export interface Artwork {
   id: string; url: string; prompt: string; width?: number; height?: number;
   seed?: string; model?: string; steps?: number; metadata?: string;
   generatedAt?: string; completedAt?: string; duration?: number; current?: boolean; batchIndex?: number;
-  source?: 'local' | 'cloud';
+  source?: 'local' | 'cloud' | 'quick';
   locallySaved?: boolean; downloadError?: string; mimeType?: string;
   taskCreditsCost?: number; taskCostSettled?: boolean;
   taskId?: string; ownerId?: string; ownerEmail?: string; hiddenAt?: string;
@@ -104,5 +104,5 @@ export interface CloudTask {
 export interface PromptTemplate {
   id: string; title: string; category: string; description: string; prompt: string; tags: string[];
   operations: CloudOperation[]; minReferences: number; recommended: { ratio: string; resolution: string; model?: string };
-  sources: { title: string; url: string }[]; steps?: string[];
+  sources: { title: string; url: string }[]; steps?: string[]; preview?: string;
 }

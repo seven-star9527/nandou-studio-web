@@ -74,7 +74,7 @@ function AccountForm({ adminEntry, accept }: { adminEntry: boolean; accept: (use
         <div className="auth-form-footer">{mode === 'login' ? <button type="button" disabled={busy} onClick={event => changeMode('reset', event.detail === 0)}>忘记密码？</button> : <button type="button" disabled={busy} onClick={event => changeMode('login', event.detail === 0)}>返回登录</button>}</div>
       </form>
       <div className="auth-privacy"><span /><p>每个账号独立保存创作记录</p></div>
-    </section><p className="auth-footnote">让想象，成为图像</p></main>
+    </section><p className="auth-footnote">你好，今天想要创作什么？</p></main>
   </div>;
 }
 

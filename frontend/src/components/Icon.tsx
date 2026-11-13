@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 
-export type IconName = 'arrow' | 'chevron' | 'plus' | 'close' | 'image' | 'emptyImage' | 'cube' | 'settings' | 'link' | 'download' | 'refresh' | 'flower' | 'poster' | 'brush' | 'check' | 'stop' | 'spark' | 'expand' | 'trash';
+export type IconName = 'arrow' | 'chevron' | 'plus' | 'close' | 'image' | 'emptyImage' | 'cube' | 'settings' | 'link' | 'download' | 'refresh' | 'flower' | 'poster' | 'brush' | 'check' | 'stop' | 'spark' | 'expand' | 'trash' | 'video' | 'text' | 'panel' | 'layers' | 'arrange' | 'cutout';
 const paths: Record<IconName, React.ReactNode> = {
   arrow: <><path d="M4 12h16M14 6l6 6-6 6" /></>,
   chevron: <path d="m6 9 6 6 6-6" />,
@@ -20,6 +20,12 @@ const paths: Record<IconName, React.ReactNode> = {
   stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
   spark: <path d="M12 2c1.7 6.3 3.7 8.3 10 10-6.3 1.7-8.3 3.7-10 10C10.3 15.7 8.3 13.7 2 12c6.3-1.7 8.3-3.7 10-10Z" />,
   expand: <><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" /></>,
+  video: <><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m10 9 5 3-5 3z"/></>,
+  text: <path d="M4 7V4h16v3M12 4v16m-4 0h8"/>,
+  panel: <><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></>,
+  layers: <><path d="m12 3 10 5-10 5L2 8l10-5Zm-9 10 9 5 9-5M3 17l9 5 9-5"/></>,
+  arrange: <><rect x="3" y="4" width="7" height="16" rx="2"/><rect x="14" y="4" width="7" height="16" rx="2"/></>,
+  cutout: <><circle cx="6" cy="7" r="3"/><circle cx="6" cy="17" r="3"/><path d="m8.5 8.6 12 10M8.5 15.4l12-11"/></>,
   trash: <><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" /></>,
 };
 export default function Icon({ name, size = 20, style, className }: { name: IconName; size?: number; style?: CSSProperties; className?: string }) {
