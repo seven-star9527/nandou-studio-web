@@ -338,6 +338,74 @@ def refine_selected_edges(original, coarse):
     return result
 
 
+def suppress_shaft_shadows(camera, coarse, alpha, background):
+    """Trace a hard dark edge from exterior background through a cast shadow along both image axes."""
+    import numpy as np
+    radius = max(6, min(100, round(max(camera.size)/76)))
+    low = np.asarray(camera.convert('L').filter(ImageFilter.GaussianBlur(.9)))
+    chroma = np.asarray(camera)
+    prior = np.asarray(coarse)
+    out = np.asarray(alpha).copy()
+    for vertical in (False, True):
+        grey = low.T if vertical else low
+        mask = prior.T if vertical else prior
+        result = out.T if vertical else out
+        rgb = chroma.swapaxes(0,1) if vertical else chroma
+        for direction in (1,-1):
+            g, c, a, pixels = grey[:,::direction], mask[:,::direction], result[:,::direction], rgb[:,::direction]
+            width = g.shape[1]
+            for row in range(0,len(g),192):
+                slab = c[row:row+192]
+                ys,xs = np.where((slab[:,1:]>=128)&(slab[:,:-1]<128))
+                for start in range(0,len(xs),2048):
+                    y = row+ys[start:start+2048]
+                    x = xs[start:start+2048]+1
+                    positions = x[:,None]+np.arange(-radius,radius+1)
+                    def at(offset):
+                        return g[y[:,None],(positions+offset).clip(0,width-1)].astype(np.float32)
+                    # On a dark physical edge the luminance falls sharply, then stays dark inside.
+                    exterior = at(-4)
+                    inside = at(4)
+                    step = exterior-inside
+                    score = np.minimum(step,exterior-at(8))
+                    # Prefer the outer edge of the shaft, retaining specular stripes inside.
+                    ok=(score>36)&(inside<105)&(exterior>80)&(positions>=8)&(positions<width-9)
+                    ok &= (g[y,(x-radius-2).clip(0,width-1)][:,None].astype(float)>exterior-14)
+                    # Constrain to a shadow with the neutral hue of the studio backdrop.
+                    sample=pixels[y[:,None],(positions-4).clip(0,width-1)].astype(float)
+                    ok &= (sample.max(axis=2)-sample.min(axis=2)<22)
+                    # A cast shadow is darker than the studio background. A bright reflection
+                    # or a thin, coloured tip is not evidence to cut into the product.
+                    # Discard internal reflections before ranking candidates. A reflection can
+                    # have more contrast than the contour, but reaching it crosses dark material.
+                    floor = np.minimum.accumulate(at(0),axis=1)
+                    floor = np.concatenate([np.full((len(y),4),255),floor[:,:-4]],axis=1)
+                    ok &= floor>=inside+4
+                    ok &= abs(positions-x[:,None])<=max(8,radius//2)
+                    edge=np.argmax(np.where(ok,score-np.abs(positions-x[:,None])*.9,-1000),axis=1)
+                    chosen=positions[np.arange(len(y)),edge]
+                    inner_rgb=pixels[y,(chosen+4).clip(0,width-1)].astype(float)
+                    valid=ok.any(axis=1) & (np.ptp(inner_rgb,axis=1)<24)
+                    valid &= g[y,(chosen-4).clip(0,width-1)] < np.mean(background)-18
+                    valid &= c[y,(chosen+12).clip(0,width-1)]>=170
+                    if not valid.any():
+                        continue
+                    y,x,edge=y[valid],x[valid],positions[np.arange(len(y)),edge][valid]
+                    # Trace from transparent exterior; a neighbouring brush must break the trace.
+                    start_x=(x-radius).clip(0,width-1)
+                    outside=c[y,start_x]<16
+                    yy,ee,ss=y[outside],edge[outside],start_x[outside]
+                    for line,bound,begin in zip(yy,ee,ss):
+                        if bound<=begin+6: continue
+                        outer=float(g[line,bound-4]);inner=float(g[line,bound+4])
+
+                        a[line,begin:bound-3]=0
+                        strip=slice(bound-3,bound+4)
+                        fraction=np.clip((outer-g[line,strip].astype(float))/max(1,outer-inner),0,1)
+                        a[line,strip]=np.minimum(a[line,strip],np.rint(255*fraction).astype(np.uint8))
+    return Image.fromarray(out)
+
+
 def studio_edge_detail(original, coarse, matte, allow_extension=True):
     """Refit boundary pixels against a locally uniform backdrop, including sub-mask-width bristles."""
     import numpy as np
@@ -448,7 +516,7 @@ def studio_edge_detail(original, coarse, matte, allow_extension=True):
                     colours[j[partial],i[partial],:3] = np.uint8(np.rint(recovered[partial].clip(0,255)))
             alpha.paste(Image.fromarray(result),box)
             original.paste(Image.fromarray(colours),box)
-    return alpha
+    return suppress_shaft_shadows(camera,coarse,alpha,neutral)
 
 
 def checked_points(points):
