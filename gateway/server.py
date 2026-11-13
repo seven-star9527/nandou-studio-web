@@ -371,9 +371,8 @@ class Gateway:
             result = await self.upstream_api(owner, endpoint, {"request_id": task["id"]})
             if result.get("request_id"):
                 self.save_cloud(owner, result)
-            else:
-                result = json.loads(task["record_json"])
-            return web.json_response(self.store.public_task(result, self.store.task(task["id"])))
+            latest = self.store.task(task["id"])
+            return web.json_response(self.store.public_task(json.loads(latest["record_json"]), latest))
         if endpoint == "ListStudioCloudTasks":
             await self.synchronize(user)
             tasks = self.store.all("SELECT id FROM tasks WHERE kind='cloud' ORDER BY started_at DESC")
@@ -432,6 +431,9 @@ class Gateway:
         old = self.store.task(tid)
         if old and old["owner_id"] != owner["id"]:
             raise ValueError("global task collision")
+        if old and old["status"] in TERMINAL and record.get("status") not in TERMINAL:
+            # A concurrent list read can finish after the terminal status was recorded.
+            return
         if not old:
             self.store.claim(tid, owner["id"], "cloud", record.get("model"), record.get("parameters", {}).get("n"))
             try:

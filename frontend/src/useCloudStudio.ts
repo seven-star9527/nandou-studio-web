@@ -66,6 +66,28 @@ export function useCloudStudio(client: SwarmClient, receiveArtwork: (artwork: Ar
     if (readFailures) throw new Error(`${readFailures} 个云任务的状态尚未确认，请稍后刷新记录。不会重新提交生成。`);
     return [...latest.values()].filter(task => !hidden.current.has(task.studio_task_id ?? task.request_id));
   }, [client, acceptTask, loadAccount]);
+  // Keep background rows in sync even when this browser did not submit the task.
+  const backgroundIds = tasks.filter(task => !task.studio_hidden_at && !['completed','failed','cancelled'].includes(task.status)
+    && task.request_id !== (waiting.current ? active.current?.id : undefined)).map(task => task.request_id).sort().join(',');
+  useEffect(() => {
+    if (!backgroundIds) return;
+    let cancelled = false;
+    let timer: number;
+    const check = async () => {
+      if (document.visibilityState === 'visible') {
+        for (const id of backgroundIds.split(',')) {
+          if (cancelled) return;
+          try {
+            const task = await client.cloudTask(id);
+            if (!cancelled) acceptTask(task);
+          } catch { /* Preserve the last known state until a successful read. */ }
+        }
+      }
+      if (!cancelled) timer = window.setTimeout(check, 15000);
+    };
+    timer = window.setTimeout(check, 15000);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [backgroundIds, client, acceptTask]);
   const generate = async (request: CloudRequest) => {
     window.clearTimeout(pollTimer.current);
     active.current = { id: request.request_id, started: Date.now(), requested: request.n, completed: 0, phase: 'connecting', source: 'cloud' };

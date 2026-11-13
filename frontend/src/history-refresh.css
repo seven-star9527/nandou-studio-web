@@ -40,3 +40,8 @@
 @media(max-width:760px){.history-section .artwork-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.history-section .history-toolbar{gap:8px;flex-wrap:wrap}.history-section .history-heading{flex:1}.history-section .history-heading h2{font-size:18px}.history-section .history-tabs{width:165px}.history-refresh-button{padding:8px}.history-section .artwork-info{padding:11px 11px 8px}}
 @media(max-width:680px){.app-shell .history-section{padding:22px 20px 0;margin-top:25px}.history-section .history-toolbar{gap:12px}.history-section .history-heading{flex:1 1 calc(100% - 70px);order:0}.history-section .history-tabs{order:2;width:178px}.history-section .history-refresh-button{order:1}.history-section .empty-history{min-height:202px;padding:24px 17px}.history-section .empty-history h3{font-size:15px}.history-section .empty-history p{font-size:11px}.history-admin-filters{gap:9px}.history-admin-filters label{min-width:calc(50% - 9px);max-width:100%}.history-section .cloud-task-list>div{padding:12px}.history-section .cloud-task-list>div>span{overflow-wrap:anywhere}}
 @media(max-width:420px){.history-section .artwork-grid{grid-template-columns:1fr}.history-section .artwork-open{aspect-ratio:4/3}}
+
+.history-task-summary { margin-block:10px; }
+.history-task-summary summary { width:fit-content; color:var(--glass-muted); cursor:pointer; font-size:12px; padding:5px 0; }
+.artwork-detail { min-width:0; overflow-wrap:anywhere; }
+.artwork-detail .detail-actions { flex-wrap:wrap; }

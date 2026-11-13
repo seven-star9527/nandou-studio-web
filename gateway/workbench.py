@@ -75,8 +75,15 @@ class Workbench:
         if not isinstance(url, str) or len(url) > 2048 or '?' in url or '#' in url:
             raise web.HTTPNotFound()
         if url.startswith(MEDIA):
-            row = self.media(user['id'], identifier(url[len(MEDIA):]))
-            path = self.root / user['id'] / (row['id'] + row['extension'])
+            mid = identifier(url[len(MEDIA):])
+            uid = user['id']
+            if user['role'] == 'admin':
+                # Only published quick-edit results are part of the all-accounts history.
+                task = self.store.task(mid)
+                if task and task['kind'] == 'quick':
+                    uid = task['owner_id']
+            row = self.media(uid, mid)
+            path = self.root / uid / (row['id'] + row['extension'])
         elif url.startswith('/studio-agent/assets/'):
             aid = identifier(url.split('/')[-1])
             asset = self.store.one('SELECT a.chat_id FROM agent_assets a JOIN agent_chats c ON c.id=a.chat_id WHERE a.id=? AND c.owner_id=? AND c.hidden_at IS NULL', (aid, user['id']))
@@ -93,8 +100,8 @@ class Workbench:
                 raw = '/View/' + user['swarm_id'] + '/' + raw[len('/Output/'):]
             if not raw.startswith(('/View/', '/studio-results/')):
                 raise web.HTTPNotFound()
-            row = self.store.visible_artifact(raw, {**user, 'role':'user'})
-            if not row:
+            row = self.store.visible_artifact(raw, user)
+            if not row or row['hidden_at']:
                 raise web.HTTPNotFound()
             path = Path(row['disk_path']).resolve()
             if not any(path.is_relative_to(root.resolve()) for root in (self.g.output, self.g.results)):
