@@ -281,6 +281,63 @@ def refine_edges(original, coarse):
     return result
 
 
+def refine_selected_edges(original, coarse):
+    """Fit the upsampled silhouette to the original colours along the matte boundary."""
+    import numpy as np
+    result = coarse.copy()
+    radius = max(4, min(48, round(max(original.size) / 160)))
+    kernel = 2 * radius + 1
+
+    def box_sum(values):
+        for axis in (0, 1):
+            pad = [(0, 0)] * values.ndim
+            pad[axis] = (radius + 1, radius)
+            sums = np.pad(values, pad, mode='edge').cumsum(axis=axis, dtype=np.float64)
+            values = sums[kernel:] - sums[:-kernel] if axis == 0 else sums[:, kernel:] - sums[:, :-kernel]
+        return values
+
+    for y in range(0, original.height, 512):
+        for x in range(0, original.width, 512):
+            right, bottom = min(x + 512, original.width), min(y + 512, original.height)
+            box = (max(0, x-radius), max(0, y-radius), min(original.width, right+radius), min(original.height, bottom+radius))
+            tile = coarse.crop(box)
+            if tile.getextrema() in ((0, 0), (255, 255)):
+                continue
+            alpha = np.asarray(tile, dtype=np.float32) / 255
+            rgb = np.asarray(original.crop(box).convert('RGB'), dtype=np.float32)
+            def sample(mask):
+                count = box_sum(mask.astype(np.float32))
+                colour = box_sum(rgb * mask[:, :, None]) / np.maximum(1, count[:, :, None])
+                return colour, count
+
+            # A hard SAM boundary may sit several original pixels inside or outside the object.
+            # Keep those uncertain pixels out of both colour samples.
+            soft = np.asarray(tile.filter(ImageFilter.GaussianBlur(max(1, radius/4))), dtype=np.float32)/255
+            fg, nf = sample(soft >= .97)
+            bg, nb = sample(soft <= .03)
+            delta = fg - bg
+            contrast = (delta * delta).sum(axis=2)
+            raw_projection = ((rgb-bg)*delta).sum(axis=2)/np.maximum(1,contrast)
+            projected = raw_projection.clip(0,1)
+            # Suppress sensor noise in the estimate; opaque skin texture stays in the source RGB.
+            smooth = Image.fromarray(np.uint8(np.rint(projected*255))).filter(ImageFilter.GaussianBlur(1.2))
+            edge_alpha = np.clip((np.asarray(smooth, dtype=np.float32)/255 - .10)/.66, 0, 1)
+            # Darker shading inside an opaque object can extend beyond the sampled foreground colour.
+            # Measure colour-line fit before clamping, so that shading does not punch holes in the edge.
+            residual = np.linalg.norm(rgb-bg-raw_projection[:, :, None]*delta, axis=2)
+            evidence = np.maximum(np.clip(1-residual/32,0,1),
+                                  np.clip((raw_projection-.55)/.25,0,1)*np.clip(1-residual/100,0,1))
+            # Trust colour matting only where both sides are sampled and the two-colour model fits.
+            confidence = np.clip((np.sqrt(contrast)-12)/22, 0, 1) * evidence
+            confidence *= np.clip(np.minimum(nf, nb) / (.1 * kernel**2), 0, 1)
+            # Limit updates to the transition. Protect solid product details (e.g. lettering).
+            band = np.clip(np.minimum(soft, 1-soft)/.03, 0, 1)
+            values = alpha + band * confidence * (edge_alpha-alpha)
+            dx, dy = x-box[0], y-box[1]
+            result.paste(Image.fromarray(np.uint8(np.rint(values[dy:dy+bottom-y,dx:dx+right-x]*255))), (x,y))
+    return result
+
+
 def checked_points(points):
     import math
     if not isinstance(points,list) or not 1<=len(points)<=8 or any(
@@ -469,7 +526,8 @@ def segment_subject(model_path, source, output, points=None, only_picked=False, 
             mask=Image.new('L',mask.size)
         mask=include_objects(model_path.parent,visible,checked_subject_marks(marks),mask)
     coarse = mask.resize(original.size, Image.Resampling.LANCZOS)
-    alpha = ImageChops.darker(source_alpha, refine_edges(original, coarse))
+    refine = refine_selected_edges if marks else refine_edges
+    alpha = ImageChops.darker(source_alpha, refine(original, coarse))
     if alpha.getextrema()[1] < 128:
         raise ValueError('没有剩余的可见主体，请撤销移除点或补选要保留的物体。' if marks else '未识别到可见商品。')
     original.putalpha(alpha)

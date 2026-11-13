@@ -24,7 +24,11 @@ export default function MaskBrush({original,result,apply,cancel,heal=false}:Prop
   const drag=useRef<{id:number,x:number,y:number,originX:number,originY:number}|null>(null);
   const painting=useRef<number|null>(null);
   const crop=useRef({x:0,y:0,size:1});
+  const paintFrame=useRef(0);
   function render(){
+    if(!paintFrame.current)paintFrame.current=requestAnimationFrame(()=>{paintFrame.current=0;draw();});
+  }
+  function draw(){
     const frame=canvas.current, buffer=mask.current;
     if(!frame||!buffer||!pair.current.length)return;
     const [source,base]=pair.current;
@@ -63,7 +67,7 @@ export default function MaskBrush({original,result,apply,cancel,heal=false}:Prop
       buffer.height=canvas.current.height=Math.max(1,Math.round(images[0].height*ratio));
       render();setReady(true);
     }).catch(cause=>{if(alive)setError(String(cause));});
-    return ()=>{alive=false;};
+    return ()=>{alive=false;cancelAnimationFrame(paintFrame.current);paintFrame.current=0;};
   },[original,result]);
   const clamp=(v:number,max=1)=>Math.max(0,Math.min(max,v));
   function position(x:number,y:number):[number,number]{
@@ -90,7 +94,8 @@ export default function MaskBrush({original,result,apply,cancel,heal=false}:Prop
     frame.focus({preventScroll:true});
     function wheel(e:WheelEvent){
       e.preventDefault();anchor.current=position(e.clientX,e.clientY);
-      magnify(Math.exp(-Math.sign(e.deltaY)*.20));
+      const unit=e.deltaMode===1?16:e.deltaMode===2?frame!.clientHeight:1;
+      magnify(Math.exp(-Math.max(-480,Math.min(480,e.deltaY*unit))*.0015));
     }
     const release=()=>{setSpace(false);drag.current=null;painting.current=null;current.current=null;};
     window.addEventListener('blur',release);

@@ -45,17 +45,30 @@ function Pane({label,image,backdrop='',view,empty,update,marks,onPick,onSize,onF
     const ratio=next/view.zoom;
     update({zoom:next,x:clamp(ux+(.5*box.width-p.x)/(g.width*ratio),0,1),y:clamp(uy+(.5*box.height-p.y)/(g.height*ratio),0,1)});
   }
-  const wheel=useRef<(e:WheelEvent)=>void>(()=>{});
-  useLayoutEffect(()=>{wheel.current=e=>{
-    if(!image)return;
-    e.preventDefault();
-    zoomAt(view.zoom*Math.exp(-clamp(e.deltaY*(e.deltaMode===1?16:1),-240,240)*.003),local(e.clientX,e.clientY));
+  const wheelFrame=useRef(0);
+  const pendingWheel=useRef({delta:0,x:0,y:0});
+  const applyWheel=useRef(()=>{});
+  useLayoutEffect(()=>{applyWheel.current=()=>{
+    const {delta,x,y}=pendingWheel.current;
+    pendingWheel.current.delta=0;
+    wheelFrame.current=0;
+    zoomAt(view.zoom*Math.exp(-delta*.0015),local(x,y));
   };});
   useEffect(()=>{
-    const node=frame.current!,handler=(e:WheelEvent)=>wheel.current(e);
-    node.addEventListener('wheel',handler,{passive:false});
-    return ()=>node.removeEventListener('wheel',handler);
-  },[]);
+    const node=frame.current!;
+    if(!image)return;
+    function wheel(e:WheelEvent){
+      e.preventDefault();
+      const unit=e.deltaMode===1?16:e.deltaMode===2?node.clientHeight:1;
+      pendingWheel.current={delta:pendingWheel.current.delta+clamp(e.deltaY*unit,-480,480),x:e.clientX,y:e.clientY};
+      if(!wheelFrame.current)wheelFrame.current=requestAnimationFrame(()=>applyWheel.current());
+    }
+    node.addEventListener('wheel',wheel,{passive:false});
+    return ()=>{
+      node.removeEventListener('wheel',wheel);
+      cancelAnimationFrame(wheelFrame.current);wheelFrame.current=0;pendingWheel.current.delta=0;
+    };
+  },[image?.url]);
   function key(e:KeyboardEvent<HTMLDivElement>){
     if(!image)return;
     if(e.code==='Space'){e.preventDefault();setSpace(true);return;}
@@ -95,10 +108,10 @@ function Pane({label,image,backdrop='',view,empty,update,marks,onPick,onSize,onF
       onBlur={()=>setSpace(false)} onPointerDown={down} onPointerMove={move} onPointerUp={up}
       onLostPointerCapture={()=>{gesture.current=null;setDragging(false);}}
       onDoubleClick={e=>{if(!onPick && image)zoomAt(view.zoom>1?1:Math.max(2,1/g.fit),local(e.clientX,e.clientY));}}>
-      {image?<div className="detail-image" style={{width:g.width,height:g.height,left:g.left,top:g.top}}>
+      {image?<div className="detail-image" style={{width:image.width||1,height:image.height||1,transform:`translate3d(${g.left}px,${g.top}px,0) scale(${g.fit*view.zoom})`}}>
         <img src={image.url} alt={label} draggable={false} onLoad={e=>onSize?.(e.currentTarget.naturalWidth,e.currentTarget.naturalHeight)}/>
-        {marks?.map(({mode,x,y},i)=><span className={'subject-mark '+mode} key={i} style={{left:100*x+'%',top:100*y+'%'}}>{mode==='keep'?'＋':'−'}{i+1}</span>)}
-      </div>:empty}
+        </div>:empty}
+      {image && marks?.map(({mode,x,y},i)=><span className={'subject-mark '+mode} key={i} style={{left:0,top:0,transform:`translate3d(${g.left+g.width*x}px,${g.top+g.height*y}px,0) translate(-50%,-50%)`}}>{mode==='keep'?'＋':'−'}{i+1}</span>)}
     </div></figure>;
 }
 
@@ -109,6 +122,17 @@ export default function QuickPreview({source,result,backdrop,marks,onPick,onSize
   const [view,setView]=useState(initialView);
   const [sourceFit,setSourceFit]=useState(1),[resultFit,setResultFit]=useState(1);
   const fit=result?resultFit:sourceFit,maxZoom=Math.max(16,4/sourceFit,4/fit);
+  const [percent,setPercent]=useState(100);
+  const latestPercent=useRef(100);
+  const displayTimer=useRef(0);
+  const displayPercent=Math.round(view.zoom*fit*100);
+  useLayoutEffect(()=>{
+    latestPercent.current=displayPercent;
+    if(!displayTimer.current)displayTimer.current=window.setTimeout(()=>{
+      displayTimer.current=0;setPercent(latestPercent.current);
+    },75);
+  },[displayPercent]);
+  useEffect(()=>()=>window.clearTimeout(displayTimer.current),[]);
   const shared={view,update:setView,maxZoom};
   function scale(zoom:number){setView(v=>({...v,zoom:clamp(zoom,1,maxZoom)}));}
   return <><div className="work-pair">
@@ -117,7 +141,7 @@ export default function QuickPreview({source,result,backdrop,marks,onPick,onSize
     <Pane {...shared} label="处理结果" image={result} backdrop={backdrop} onFitScale={setResultFit} empty={<span>{busy&&source?'正在处理…':'等待处理'}</span>}/>
   </div>{source && <div className="work-controls preview-tools" role="group" aria-label="对照预览缩放">
     <button className="quiet-button" aria-label="缩小预览" disabled={view.zoom<=1} onClick={()=>scale(view.zoom/1.5)}>−</button>
-    <output title={result?'结果图显示比例':'原图显示比例'}>{Math.round(view.zoom*fit*100)}%</output>
+    <output title={result?'结果图显示比例':'原图显示比例'}>{percent}%</output>
     <button className="quiet-button" aria-label="放大预览" disabled={view.zoom>=maxZoom} onClick={()=>scale(view.zoom*1.5)}>＋</button>
     <button className="quiet-button" title="按实际像素查看（1）" onClick={()=>scale(1/fit)}>查看 100%</button>
     <button className="quiet-button" onClick={()=>setView(initialView)}>适应窗口</button>

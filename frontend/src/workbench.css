@@ -60,7 +60,7 @@
 .compare-caption b { color:var(--glass-accent); }
 .work-preview.detail-preview { position:relative; overflow:hidden; touch-action:none; user-select:none; }
 .detail-preview:focus-visible { outline:2px solid var(--glass-accent); outline-offset:-2px; }
-.detail-image { position:absolute; }
+.detail-image { position:absolute; top:0; left:0; transform-origin:0 0; will-change:transform; }
 .detail-image img { width:100%; height:100%; max-width:none; max-height:none; }
 .subject-mark { pointer-events:none; position:absolute; transform:translate(-50%,-50%); padding:1px 5px; border:1.5px solid white; border-radius:12px; color:white; background:#365e70; box-shadow:0 1px 4px #0008; font-size:11px; }
 .subject-mark.remove { background:#94474e; }
