@@ -37,7 +37,7 @@ function Reader({ guide, close }: {guide: Guide; close: () => void}) {
   return <ModalPortal><motion.div className="modal-backdrop document-backdrop" initial={{opacity: 0}} animate={{opacity: 1}} exit={{opacity: 0}} transition={{duration: reduced ? 0 : .3}} onClick={close}>
     <motion.section ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={guide.title} className="document-reader modal" style={{transformOrigin: guide.origin}}
       initial={{opacity: 0, transform: reduced ? 'none' : 'translateY(40px) scale(.86)'}} animate={{opacity: 1, transform: 'translateY(0px) scale(1)'}} exit={{opacity: 0, transform: reduced ? 'none' : 'translateY(32px) scale(.9)', transition:{duration: reduced ? 0 : .28}}} transition={{duration: reduced ? 0 : .48, ease: [.22,1,.36,1]}} onClick={e => e.stopPropagation()}>
-      <header><div><Icon name="poster" size={18}/><strong>{guide.title}</strong><span>阅读指南 · 创作草稿已保留</span></div><button data-autofocus className="icon-button" onClick={close} aria-label="关闭文档"><Icon name="close" size={20}/></button></header>
+      <header><div><Icon name="poster" size={18}/><strong>{guide.title}</strong></div><button data-autofocus className="icon-button" onClick={close} aria-label="关闭文档"><Icon name="close" size={20}/></button></header>
       {!ready ? <div className="document-loading" role="status">正在准备阅读内容…</div> : null}
       <iframe ref={frame} src={guide.url} title={guide.title} onLoad={loaded} />
     </motion.section>

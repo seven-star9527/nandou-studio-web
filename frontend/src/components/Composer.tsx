@@ -89,7 +89,7 @@ export default function Composer({ settings, config, params, models, prompt, ref
               <Icon name="cube" size={18} /><span className="model-name">{cloudModel?.label ?? `Qwen-Image-2.1 · ${mode?.label ?? '本地'}`}</span><Icon name="chevron" size={13} />
             </button>
             <AnimatePresence>{panel === 'model' ? <motion.div key="model" {...panelMotion} data-motion-layer className="model-panel popover" role="dialog" aria-label="选择模型">
-              <p className="popover-heading">选择模型</p>
+              <div className="model-menu-heading"><p className="popover-heading">选择模型</p><a href="/studio/model-guide.html">模型怎么选</a></div>
               {!modes.length ? <button className={`model-option ${!cloudModel ? 'selected' : ''}`} onClick={() => { selectLocal(); setPanel(null); }}><span><strong>Qwen-Image-2.1 · 本地</strong><small>模型准备中</small></span>{!cloudModel ? <Icon name="check" size={17} /> : null}</button> : null}
               {modes.length ? modes.map(item => <button key={item.id} className={`model-option ${!cloudModel && item.model === settings.model ? 'selected' : ''}`} onClick={() => { selectModel(item.model); setPanel(null); }}>
                 <span><strong>Qwen-Image-2.1 · {item.label}</strong><small>{modelDescriptions[item.id] ?? modelDescriptions.original}</small></span>{!cloudModel && item.model === settings.model ? <Icon name="check" size={17} /> : null}

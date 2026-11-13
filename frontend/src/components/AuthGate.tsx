@@ -59,7 +59,7 @@ function AccountForm({ adminEntry, accept }: { adminEntry: boolean; accept: (use
     <header className="auth-header"><Brand /><ThemeToggle/></header>
     <main className="auth-main"><section className="auth-card" aria-labelledby="auth-title">
       <div className="auth-card-mark" aria-hidden="true"><Icon name="spark" size={28} /></div>
-      <p className="auth-eyebrow">NANDOU STUDIO</p><motion.h1 id="auth-title" key={mode} initial={{opacity: .5, transform: reduced ? 'none' : 'translateY(4px)'}} animate={{opacity: 1, transform: 'translateY(0px)'}} transition={{duration: .2}}>{title}</motion.h1>
+      <motion.h1 id="auth-title" key={mode} initial={{opacity: .5, transform: reduced ? 'none' : 'translateY(4px)'}} animate={{opacity: 1, transform: 'translateY(0px)'}} transition={{duration: .2}}>{title}</motion.h1>
       <p className="auth-intro">{mode === 'reset' ? '填写已注册邮箱，设置新的登录密码。' : '登录后开始创作，任务与作品保存在你的账号中。'}</p>
       {mode !== 'reset' ? <GlassTabs className="auth-tabs" aria-label="账号操作"><button type="button" className={mode === 'login' ? 'selected' : ''} aria-pressed={mode === 'login'} disabled={busy} onClick={event => changeMode('login', event.detail === 0)}>登录</button><button type="button" className={mode === 'register' ? 'selected' : ''} aria-pressed={mode === 'register'} disabled={busy} onClick={event => changeMode('register', event.detail === 0)}>注册账号</button></GlassTabs> : null}
       <form onSubmit={event => void submit(event)}>
@@ -73,7 +73,6 @@ function AccountForm({ adminEntry, accept }: { adminEntry: boolean; accept: (use
         <button className="auth-submit" type="submit" disabled={busy}>{busy ? '正在处理…' : mode === 'register' ? '注册并进入创意工坊' : mode === 'reset' ? '保存新密码' : '进入创意工坊'}{!busy ? <Icon name="arrow" size={18} /> : null}</button>
         <div className="auth-form-footer">{mode === 'login' ? <button type="button" disabled={busy} onClick={event => changeMode('reset', event.detail === 0)}>忘记密码？</button> : <button type="button" disabled={busy} onClick={event => changeMode('login', event.detail === 0)}>返回登录</button>}</div>
       </form>
-      <div className="auth-privacy"><span /><p>每个账号独立保存创作记录</p></div>
     </section><p className="auth-footnote">你好，今天想要创作什么？</p></main>
   </div>;
 }

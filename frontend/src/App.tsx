@@ -20,7 +20,6 @@ import CanvasProjects, { type CanvasProject } from './components/CanvasProjects'
 import { useStudio } from './useStudio';
 import CloudCreditsAccount from './components/CloudCreditsAccount';
 import PromptPolisher from './components/PromptPolisher';
-import ShowcaseGallery from './components/ShowcaseGallery';
 import { loadStudioImage } from './task-references';
 import { checkImageBatch } from './image-upload-limits';
 import { RATIOS } from './resolution-policy';
@@ -128,9 +127,9 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
   return <div className="app-shell">
     <header className="app-header"><a className="brand" href="/studio/" aria-label="Nandou Studio 首页"><img className="brand-logo" src={`${import.meta.env.BASE_URL}brand/nandou-mark-on-dark.svg`} width="34" height="34" alt="" /><span>Nandou Studio</span></a>
       <GlassTabs className="workspace-mode-switch" role="navigation" aria-label="创作模式"><button className={workspace === 'studio' ? 'active' : ''} onClick={event => void setWorkspace('studio', event.detail > 0)}>图片创作</button><button className={workspace === 'agent' ? 'active' : ''} onClick={event => void setWorkspace('agent', event.detail > 0)}>Agent 创作</button></GlassTabs>
-      <div className="header-actions"><nav className="studio-doc-links" aria-label="帮助与更新"><a href={workspace==='agent'?'/studio/agent-guide.html':'/studio/agent-guide.html#studio-canvas'}>使用指南</a><a href="/studio/changelog.html">更新日志</a></nav><ThemeToggle/><CloudCreditsAccount account={studio.cloudAccount} loading={studio.accountLoading} error={studio.accountError} refresh={() => void studio.refreshAccount()} /><button className={`connection ${studio.connected ? 'connected' : ''}`} onClick={() => { if (!busy) void studio.connect(); }} disabled={studio.connecting || busy} title="重新连接图像服务"><span className={`connection-dot ${studio.connecting ? 'spinning' : ''}`} />{connectedLabel}</button><div className="studio-account"><span className="studio-account-identity" title={user.email}><span>{user.email}</span>{user.is_admin ? <small>管理员</small> : null}</span>{user.is_admin && adminEntry ? <AdminUsage /> : null}<button className="account-logout-button" onClick={() => void logout()}>退出</button></div></div>
+      <div className="header-actions"><nav className="studio-doc-links" aria-label="帮助与更新"><a href={workspace==='agent'?'/studio/agent-guide.html':'/studio/agent-guide.html#quick-tools'}>使用指南</a><a href="/studio/changelog.html">更新日志</a></nav><ThemeToggle/><CloudCreditsAccount account={studio.cloudAccount} loading={studio.accountLoading} error={studio.accountError} refresh={() => void studio.refreshAccount()} /><button className={`connection ${studio.connected ? 'connected' : ''}`} onClick={() => { if (!busy) void studio.connect(); }} disabled={studio.connecting || busy} title="重新连接图像服务"><span className={`connection-dot ${studio.connecting ? 'spinning' : ''}`} />{connectedLabel}</button><div className="studio-account"><span className="studio-account-identity" title={user.email}><span>{user.email}</span>{user.is_admin ? <small>管理员</small> : null}</span>{user.is_admin && adminEntry ? <AdminUsage /> : null}<button className="account-logout-button" onClick={() => void logout()}>退出</button></div></div>
     </header>
-    {workspace === 'agent' ? <AgentWorkspace onQuick={source=>setQuick({tool:'cutout',source})} compare={openBoard} user={user} client={studio.client} refreshAccount={studio.refreshAccount} /> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <div className={`studio-layout ${historyOpen ? '' : 'rail-closed'}`}>
+    {workspace === 'agent' ? <AgentWorkspace cloudConfigured={studio.cloudConfigured} onQuick={source=>setQuick({tool:'cutout',source})} compare={openBoard} user={user} client={studio.client} refreshAccount={studio.refreshAccount} /> : !studio.draftReady ? <div className="service-notice">正在恢复创作草稿…</div> : <div className={`studio-layout ${historyOpen ? '' : 'rail-closed'}`}>
       <aside className="creation-rail" aria-label="创作记录侧栏"><button className="icon-button rail-toggle" title={historyOpen ? '收起创作记录' : '展开创作记录'} aria-label={historyOpen ? '收起创作记录' : '展开创作记录'} aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)}><Icon name="panel" size={19}/></button>
       <div hidden={!historyOpen}><History compare={openBoard} onQuick={source => setQuick({tool:'cutout',source})} isAdmin={user.is_admin || user.role === 'admin'} hideTask={async id => { await studio.hideTask(id,user.is_admin); await refreshEdits(); }} currentUserId={user.id} artworks={[...edits,...studio.history].sort((a,b) => (Date.parse(b.generatedAt ?? '')||0)-(Date.parse(a.generatedAt ?? '')||0))} cloudTasks={studio.cloudTasks} job={studio.job} loading={studio.loadingHistory} error={studio.historyError || editHistoryError} refresh={() => { void studio.refreshHistory(); void refreshEdits(); }} stop={() => void studio.stop()} reuse={async (artwork, signal)=>{
         await studio.reuse(artwork,signal);
@@ -166,14 +165,20 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         {!studio.cloudModel && studio.connected && !studio.settings.model ? <div className="service-notice" role="status">服务已连接，正在等待 Qwen-Image-2.1 模型就绪。<button onClick={() => void studio.connect()}>刷新模型</button></div> : null}
         {!studio.cloudModel && studio.connected && studio.settings.model && (studio.configurationError || !studio.backendReady || !studio.localReady) ? <div className="service-notice" role="status"><span>{studio.configurationError || (!studio.localReady ? '模型组件正在下载或尚未就绪，请稍后刷新连接。' : '图像服务尚未就绪，请稍后刷新连接。')}</span><button onClick={() => void studio.connect()}>刷新连接</button></div> : null}
         {studio.cloudModel && !studio.cloudConfigured ? <div className="service-notice" role="status"><span>APIMart 云模型待配置。请在服务端配置密钥后刷新连接。</span><button onClick={() => void studio.connect()}>刷新连接</button></div> : null}
+        <section className="work-entry" aria-labelledby="quick-title">
+          <h2 id="quick-title">快捷修图</h2>
+          <div className="work-tiles">{(Object.keys(toolNames) as QuickTool[]).map(tool =>
+            <button className="quiet-button" key={tool} onClick={() => setQuick({tool})}>
+              <span className={`work-tile-icon ${tool}`}><Icon name={tool==='cutout'?'cutout':tool==='retouch'?'brush':'expand'} size={24}/></span>
+              {toolNames[tool]}<Icon name="arrow" size={16}/>
+            </button>
+          )}</div>
+        </section>
         <ScenePresets currentPrompt={studio.prompt} apply={applyTemplate} />
         <div className="library-entry"><PromptLibrary referenceCount={studio.references.length} apply={chooseTemplate} /></div>
         {templateNotice && <p className="panel-note template-notice" role="status">{templateNotice} <button onClick={()=>{setHistoryOpen(true);requestAnimationFrame(()=>document.querySelector<HTMLElement>('.rail-toggle')?.focus());}}>出图位置：创作记录</button></p>}
         {previousPrompt && previousPrompt.applied===studio.prompt && <button className="scene-add" onClick={()=>{studio.setTemplate(previousPrompt.before,previousPrompt.minimum);if(previousPrompt.added)studio.removeReference(previousPrompt.added);if(previousPrompt.geometry && previousPrompt.appliedRatio===studio.settings.ratio && previousPrompt.geometry.resolution===studio.settings.resolution)studio.setSettings(old=>({...old,...previousPrompt.geometry}));setPreviousPrompt(null);setTemplateNotice('');}}>撤销套用</button>}</>}
       </section>
-      {surface==='image' && <><section className="work-entry" aria-label="快捷修图"><div className="work-heading"><h2>快捷修图</h2></div><div className="work-tiles">{(Object.keys(toolNames) as QuickTool[]).map(tool =>
-        <button className="quiet-button" key={tool} onClick={() => setQuick({tool})}><Icon name={tool==='cutout'?'image':tool==='retouch'?'brush':'expand'} />{toolNames[tool]}<Icon name="arrow" size={16}/></button>)}</div></section>
-      <ShowcaseGallery apply={chooseTemplate} hasReferences={editing} /></>}
     </main></div>}
     {quick && <QuickEdit compare={openBoard} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => {setQuick(null);void refreshEdits();}} />}
     {project && <CompareBoard key={project.id} studio={studio} onEditComplete={refreshEdits} project={project} initial={board?.initial} close={() => {setProject(null);setBoard(null);}} />}

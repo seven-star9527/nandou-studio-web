@@ -184,7 +184,7 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
       </article>)}
     </div> : null}
     {empty ? <div className={`empty-history empty-${empty.kind}`} role="status"><div className="empty-history-art"><Icon name={empty.kind === 'loading' ? 'refresh' : empty.kind === 'active' ? 'spark' : 'emptyImage'} size={46} className={empty.kind === 'loading' ? 'spinning' : ''} /></div>
-      <h3>{empty.title}</h3><p>{empty.description}</p>
+      <h3>{empty.title}</h3>{empty.description && <p>{empty.description}</p>}
       {empty.kind === 'current-with-history' ? <button className="quiet-button" onClick={() => setFilter('all')}>查看全部作品 <Icon name="arrow" size={15} /></button> : empty.kind === 'error' ? <button className="quiet-button" onClick={refresh}>重新读取</button> : empty.kind === 'filtered' ? <button className="quiet-button" onClick={() => setFilters(INITIAL_HISTORY_FILTERS)}>清除筛选</button> : null}
     </div> : null}
     {selected ? <ModalPortal><div className="modal-backdrop artwork-backdrop" onClick={() => setSelected(null)}>

@@ -37,7 +37,7 @@ export function emptyHistoryState(input: { scope: HistoryScope; loading: boolean
   if (isActiveJob(input.job)) return { kind: 'active', title: input.job?.phase === 'queued' ? '正在等待生成' : '作品正在生成中', description: input.job?.phase === 'queued' ? '任务已进入队列，轮到后会自动开始，无需重复提交。' : '完成后的图片会直接出现在这里，无需重复提交。' } as const;
   if (input.filtered) return { kind: 'filtered', title: '没有符合条件的记录', description: '调整筛选条件，查看其他创作。' } as const;
   if (input.scope === 'current') return { kind: input.allCount ? 'current-with-history' : 'current', title: '本次尚未生成作品', description: '这里仅展示本页面打开后生成的作品；历史作品保留在“全部”中。' } as const;
-  return { kind: 'all', title: '开始你的第一次创作', description: '输入提示词或添加参考图，生成后会保存在这里。' } as const;
+  return { kind: 'all', title: '暂无创作记录', description: '' } as const;
 }
 
 /** Refreshes are authoritative for successful sources, retaining only an in-flight task absent from the response. */
