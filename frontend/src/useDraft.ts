@@ -31,7 +31,7 @@ async function writeDraft(key: string, value: unknown) {
   if (pending.get(key) === current) pending.delete(key);
 }
 
-export function useDraft<T extends object>(key: string, initial: T) {
+export function useDraft<T extends object>(key: string, initial: T, restore?: (key: string, saved: T) => T) {
   const fallback = useRef(initial);
   const [snapshot, setSnapshot] = useState<{key: string; value: T; ready: boolean}>({ key, value: initial, ready: false });
   const [error, setError] = useState('');
@@ -40,16 +40,19 @@ export function useDraft<T extends object>(key: string, initial: T) {
   const values = useRef(new Map<string, T>());
   useEffect(() => {
     let alive = true;
-    void readDraft<T>(key).then(value => { if (alive) { const restored = {...fallback.current, ...value}; values.current.set(key, restored); setSnapshot({key, value: restored, ready: true}); } })
+    void readDraft<T>(key).then(value => { if (alive) { const saved = {...fallback.current, ...value}; const restored = restore ? restore(key, saved) : saved; values.current.set(key, restored); setSnapshot({key, value: restored, ready: true}); } })
       .catch(() => { if (alive) { setError('浏览器草稿缓存不可用，关闭页面后可能丢失未发送内容。'); setSnapshot({key, value: fallback.current, ready: true}); } });
     return () => { alive = false; };
-  }, [key]);
+  }, [key, restore]);
   const setValue = useCallback((action: SetStateAction<T>) => {
     const previous = values.current.get(key) ?? (current.current.key === key ? current.current.value : fallback.current);
     const value = typeof action === 'function' ? (action as (p:T)=>T)(previous) : action;
     values.current.set(key, value);
     const next = {key, value, ready: true}; if (activeKey.current === key) { current.current = next; setSnapshot(next); }
-    void writeDraft(key, value).catch(() => setError('草稿暂未保存到浏览器，请勿关闭页面。'));
+    return writeDraft(key, value).then(() => true, () => {
+      setError('草稿暂未保存到浏览器，请勿关闭页面。');
+      return false;
+    });
   }, [key]);
   return [snapshot.key === key ? snapshot.value : fallback.current, setValue, snapshot.key === key && snapshot.ready, error] as const;
 }

@@ -9,13 +9,13 @@
 .reference-card{position:absolute;top:10px;left:calc(8px + min(var(--reference-index),2)*7px);width:48px;height:64px;transform:rotate(var(--reference-angle));transform-origin:50% 85%;z-index:calc(20 - var(--reference-index));transition:left .3s cubic-bezier(.4,0,.2,1),transform .3s cubic-bezier(.4,0,.2,1),opacity .2s}
 .reference-card:nth-child(n+4){opacity:0;pointer-events:none}
 .reference-dock:hover .reference-card,.reference-dock:focus-within .reference-card{left:calc(8px + var(--reference-index)*44px);transform:rotate(var(--reference-angle));opacity:1;pointer-events:auto}
-.reference-dock .reference-card:hover,.reference-dock .reference-card:focus-within{z-index:25;transform:translateY(-3px) rotate(var(--reference-angle)) scale(1.04)}
+.reference-dock .reference-card:hover,.reference-dock .reference-card:focus-within{z-index:25}
 .reference-thumbnail{position:relative;width:48px;height:64px;padding:0;border:1px solid #ffffff28;border-radius:4px;background:#242b2d;display:block;overflow:hidden;box-shadow:0 3px 8px #0002}
 .reference-thumbnail:hover,.reference-thumbnail:focus-visible{border-color:#b6ecf0}
 .reference-thumbnail img{width:100%;height:100%;object-fit:cover;display:block}
 .reference-thumbnail>span{position:absolute;bottom:2px;left:3px;font-size:9px;line-height:14px;padding:0 3px;border-radius:3px;background:#102025b8;color:#fff}
-.reference-card-remove{position:absolute;top:-6px;right:-6px;border:1px solid #7c8b8e66;background:#252e31;color:#d2dfe2;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;opacity:0;z-index:2;padding:0}
-.reference-dock:hover .reference-card-remove,.reference-dock:focus-within .reference-card-remove{opacity:1}
+.reference-card-remove{position:absolute;top:0;right:0;visibility:hidden;border:1px solid #7c8b8e66;background:#252e31;color:#d2dfe2;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;opacity:0;z-index:2;padding:0}
+.reference-dock:hover .reference-card-remove,.reference-dock:focus-within .reference-card-remove{opacity:1;visibility:visible;transition:visibility 0s .3s}
 .reference-add{position:absolute;left:8px;top:10px;width:48px;height:64px;display:flex;align-items:center;justify-content:center;border-radius:4px;border:1px solid #ffffff0b;background:#303739;color:#a9b9be;transform:rotate(-8deg);transition:left .3s cubic-bezier(.4,0,.2,1),transform .3s cubic-bezier(.4,0,.2,1),background .15s;z-index:0}
 .reference-dock:not(.has-references):hover .reference-add,.reference-dock:not(.has-references):focus-within .reference-add{transform:translateY(-3px) rotate(-3deg) scale(1.05);background:#3d4b50;border-color:#b5e8f060;color:#d9f7fa}
 .reference-dock .reference-add:hover:not(:disabled),.reference-dock .reference-add:focus-visible{background:#43565c;border-color:#b5e8f080;color:#e4fbfd}
@@ -33,3 +33,5 @@
 @media(max-width:680px){.composer .generation-actions .quote-control{flex:1;min-width:0}.composer .quote-button{max-width:100%;white-space:normal;text-align:left;line-height:1.5}.composer .quote-button span{overflow:visible;text-overflow:clip;overflow-wrap:anywhere}}
 @media(max-width:380px){.polish-control .polish-entry{width:34px;padding:0;justify-content:center}.polish-control .polish-entry>span{display:none}}
 @media(prefers-reduced-motion:reduce){.reference-dock,.reference-cards,.reference-card,.reference-add,.generate-button,.showcase-open>img,.showcase-hover{transition:none!important}}
+
+@media(prefers-reduced-motion:reduce){.reference-dock .reference-card-remove{transition:none}}

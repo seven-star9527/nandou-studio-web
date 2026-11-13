@@ -28,6 +28,22 @@ type Upload = { id: string; name: string; data_url: string; width: number; heigh
 type AgentDraft = { agent?: 'generate' | 'retouch'; text: string; uploads: Upload[]; refs: AgentAsset[]; skills?: {id: string; title: string}[]; submission?: { chatId: string; requestId: string } };
 const EMPTY_DRAFT: AgentDraft = {text: '', uploads: [], refs: []};
 
+// IndexedDB can abort an in-flight large draft write when the page reloads.
+function removedReferences(key: string): string[] {
+  const saved: unknown = JSON.parse(localStorage.getItem(key + ':removed') ?? '[]');
+  return Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : [];
+}
+
+function withoutReferences(draft: AgentDraft, ids: string[]): AgentDraft {
+  return {...draft, uploads: draft.uploads.filter(image => !ids.includes(image.id)),
+    refs: draft.refs.filter(image => !ids.includes(image.id))};
+}
+
+function restoreAgentDraft(key: string, saved: AgentDraft): AgentDraft {
+  try { return withoutReferences(saved, removedReferences(key)); }
+  catch { return saved; }
+}
+
 function ImagePreview({ image, close }: { image: { url: string; name: string }; close: () => void }) {
   const dialog = useRef<HTMLDivElement>(null); useModalDialog(true, dialog, close);
   return <ModalPortal><div className="modal-backdrop agent-image-backdrop" onClick={close}><div className="agent-image-dialog" ref={dialog} role="dialog" aria-modal="true" aria-label="查看图片" tabIndex={-1} onClick={e => e.stopPropagation()}>
@@ -40,7 +56,8 @@ export default function AgentWorkspace({ user, client, refreshAccount }: { user:
   const [chats, setChats] = useState<AgentChat[]>([]);
   const [cid, setCid] = useState(() => { try { return sessionStorage.getItem(`nandou-agent-chat:${user.id}`) ?? ''; } catch { return ''; } });
   const [view, setView] = useState<AgentView | null>(null);
-  const [draft, setDraft, draftReady, draftError] = useDraft<AgentDraft>(accountStorageKey(`draft:agent:${cid || 'new'}`), EMPTY_DRAFT);
+  const draftKey = accountStorageKey(`draft:agent:${cid || 'new'}`);
+  const [draft, setDraft, draftReady, draftError] = useDraft<AgentDraft>(draftKey, EMPTY_DRAFT, restoreAgentDraft);
   const {text, uploads, refs, skills = []} = draft;
   const [selectedAgent, setSelectedAgent] = useState<'generate' | 'retouch'>(() => { try { return sessionStorage.getItem(accountStorageKey('agent:selected')) === 'retouch' ? 'retouch' : 'generate'; } catch { return 'generate'; } });
   const agentMode = draft.agent ?? selectedAgent;
@@ -173,6 +190,18 @@ export default function AgentWorkspace({ user, client, refreshAccount }: { user:
     try { await agentRequest(`chats/${chat.id}/hide`, {}); if (cid === chat.id) selectChat(''); await loadList(); }
     catch (e) { setError(e instanceof Error ? e.message : '移除失败'); }
   }
+  async function removeReference(id: string) {
+    const key = draftKey + ':removed';
+    let marker: string | undefined;
+    try {
+      marker = JSON.stringify([...new Set([...removedReferences(draftKey), id])]);
+      localStorage.setItem(key, marker);
+    } catch { /* IndexedDB still saves the updated draft if localStorage is unavailable. */ }
+    const stored = await setDraft(current => withoutReferences(current, [id]));
+    try {
+      if (stored && marker && localStorage.getItem(key) === marker) localStorage.removeItem(key);
+    } catch { /* Restoring the same removal again is harmless. */ }
+  }
   function reuse(id: string) {
     const image = asset(id); if (!image || readOnly || active) return;
     if (refs.length + uploads.length >= 8) { setError('每轮最多 8 张参考图。'); return; }
@@ -217,7 +246,7 @@ export default function AgentWorkspace({ user, client, refreshAccount }: { user:
         {error ? <div className="agent-error" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="关闭提示"><Icon name="close" size={14} /></button></div> : null}
         {config && !config.configured ? <p className="agent-note">创作助手尚未配置，请联系管理员。</p> : null}
         <form ref={form} className={`agent-composer ${readOnly ? 'readonly' : ''}`} onSubmit={e => { e.preventDefault(); void send(); }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (!active && !readOnly) void addFiles(e.dataTransfer.files); }}>
-          <div className="agent-input-row"><ReferenceDock references={[...uploads.map(u=>({id:u.id,name:u.name,dataUrl:u.data_url,width:u.width,height:u.height})), ...refs.map(r=>({id:r.id,name:r.name,dataUrl:r.url,width:r.width??1024,height:r.height??1024}))]} add={()=>fileInput.current?.click()} remove={id=>{setUploads(items=>items.filter(x=>x.id!==id));setRefs(items=>items.filter(x=>x.id!==id));}} maxReferences={8} disabled={active || readOnly || uploading}/><div className="agent-prompt-content"><AnimatePresence initial={false}>{skills.length > 0 && <motion.div key="skills" className="agent-selected-skills" role="group" aria-label="已选创作技能" initial={{opacity:0,height:0}} animate={{opacity:1,height:"auto"}} exit={{opacity:0,height:0}} transition={{duration:reducedMotion ? 0 : .22}}><span className="agent-selected-skills-label">创作技能</span>{skills.map(s => <span className="agent-skill-token" key={s.id} title={currentSkills.find(item => item.id === s.id)?.description}><span className="agent-skill-token-icon"><Icon name="brush" size={14}/></span><span>{s.title}</span><button type="button" disabled={active || readOnly} aria-label={`移除技能 ${s.title}`} onClick={() => { setDraft(d => ({...d, skills:(d.skills ?? []).filter(item => item.id !== s.id)})); setPendingId(null); composer.current?.focus(); }}><Icon name="close" size={12}/></button></span>)}</motion.div>}</AnimatePresence><textarea ref={composer} aria-label="Agent需求" value={text} maxLength={8000} disabled={readOnly || sending || !draftReady} rows={3} placeholder={readOnly ? '管理员仅查看其他用户的对话' : isRetouch ? '上传原图，描述需要裁切、抠图、调色或修改的部分…' : '描述你的想法，或上传产品图，让 Agent 帮你完成创作…'} onChange={e => { setText(e.target.value); setPendingId(null); }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} onPaste={e => { if (e.clipboardData.files.length && !active && !readOnly) { e.preventDefault(); void addFiles(e.clipboardData.files); } }} /></div></div>
+          <div className="agent-input-row"><ReferenceDock references={[...uploads.map(u=>({id:u.id,name:u.name,dataUrl:u.data_url,width:u.width,height:u.height})), ...refs.map(r=>({id:r.id,name:r.name,dataUrl:r.url,width:r.width??1024,height:r.height??1024}))]} add={()=>fileInput.current?.click()} remove={removeReference} maxReferences={8} disabled={active || readOnly || uploading}/><div className="agent-prompt-content"><AnimatePresence initial={false}>{skills.length > 0 && <motion.div key="skills" className="agent-selected-skills" role="group" aria-label="已选创作技能" initial={{opacity:0,height:0}} animate={{opacity:1,height:"auto"}} exit={{opacity:0,height:0}} transition={{duration:reducedMotion ? 0 : .22}}><span className="agent-selected-skills-label">创作技能</span>{skills.map(s => <span className="agent-skill-token" key={s.id} title={currentSkills.find(item => item.id === s.id)?.description}><span className="agent-skill-token-icon"><Icon name="brush" size={14}/></span><span>{s.title}</span><button type="button" disabled={active || readOnly} aria-label={`移除技能 ${s.title}`} onClick={() => { setDraft(d => ({...d, skills:(d.skills ?? []).filter(item => item.id !== s.id)})); setPendingId(null); composer.current?.focus(); }}><Icon name="close" size={12}/></button></span>)}</motion.div>}</AnimatePresence><textarea ref={composer} aria-label="Agent需求" value={text} maxLength={8000} disabled={readOnly || sending || !draftReady} rows={3} placeholder={readOnly ? '管理员仅查看其他用户的对话' : isRetouch ? '上传原图，描述需要裁切、抠图、调色或修改的部分…' : '描述你的想法，或上传产品图，让 Agent 帮你完成创作…'} onChange={e => { setText(e.target.value); setPendingId(null); }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} onPaste={e => { if (e.clipboardData.files.length && !active && !readOnly) { e.preventDefault(); void addFiles(e.clipboardData.files); } }} /></div></div>
           <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={e => { if (e.target.files) void addFiles(e.target.files); e.target.value = ''; }} />
           <div className="agent-composer-toolbar"><div className="agent-mode-select"><GlassSelect label="选择智能体" value={agentMode} options={[{value:'generate',label:'生图 Agent'},{value:'retouch',label:'修图 Agent'}]} disabled={active || readOnly || Boolean(draft.submission)} onChange={value => { setSelectedAgent(value as 'generate' | 'retouch'); setDraft(d => ({...d,agent:value as 'generate' | 'retouch',skills:[]})); setSkillsOpen(false); setSettingsOpen(false); setPendingId(null); }}/></div>{!isRetouch && <button type="button" data-layer-trigger aria-label="生成偏好" onClick={() => { setSettingsOpen(!settingsOpen); setSkillsOpen(false); }} aria-expanded={settingsOpen}><Icon name="settings" size={16} /><span>生成偏好</span></button>}<button type="button" data-layer-trigger aria-label="技能" onClick={() => { setSkillsOpen(!skillsOpen); setSettingsOpen(false); }} aria-expanded={skillsOpen}><Icon name="brush" size={16} /><span>技能</span></button><div className="agent-send-area"><span>{uploading ? '读取原图中' : isRetouch ? '原图保留 · 本地处理' : quote == null ? '出图时估算积分' : `约 ${Number(quote.toFixed(4))} 积分/张`}</span>{running ? <button type="button" className="agent-send" aria-label="停止 Agent" onClick={() => void agentRequest(`chats/${cid}/stop`, {}).catch(e => setError(e.message))}><Icon name="stop" size={17} /></button> : <button className="agent-send" type="submit" aria-label="发送需求" disabled={active || uploading || (!text.trim() && !skills.length) || readOnly || !config?.configured}><Icon name="arrow" size={22} /></button>}</div></div>
           {settingsOpen && !isRetouch ? <AgentPreferences value={opts} update={changes=>setOpts(s=>({...s,...changes}))} disabled={active || readOnly} close={()=>setSettingsOpen(false)}/> : null}
