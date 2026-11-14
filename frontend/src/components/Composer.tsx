@@ -17,8 +17,8 @@ const modelDescriptions: Record<string, string> = {
   original: '本地生成与参考图编辑，适合细节对照和精修',
   official_turbo: '本地快速生成与参考图编辑，适合试构图、改提示词',
   'gemini-nano-banana-2.1': '多样风格与高分辨率输出，适合商品场景创意',
-  'gpt-image-2.5-flare': '图像生成与编辑，适合商品场景和广告创意',
-  'gpt-image-2.5-sunburst': '参考图编辑优先，适合保留商品后调整场景',
+  'gpt-image-2.6-flare': '图像生成与编辑，适合商品场景和广告创意',
+  'gpt-image-2.6-sunburst': '参考图编辑优先，适合保留商品后调整场景',
 };
 
 export default function Composer({ editorRef, settings, config, params, models, prompt, references, editing, setPrompt, update,
@@ -90,7 +90,7 @@ export default function Composer({ editorRef, settings, config, params, models, 
               <Icon name="settings" size={18} /><span>{cloudModel ? '图像质量' : mode?.label ?? '标准'}</span><Icon name="chevron" size={13} />
             </button>
             <AnimatePresence>{panel === 'mode' ? <motion.div key="mode" {...panelMotion} data-motion-layer className="mode-panel popover" role="dialog" aria-label="生成模式">
-              {cloudModel ? <><p className="popover-heading">图像质量</p>{cloudModel.qualities.length ? <GlassTabs className="segmented mode-options">{cloudModel.qualities.map(quality => <button key={quality} className={settings.quality === quality ? 'selected' : ''} onClick={() => update({ quality })}>{({ auto: '自动', low: '低', medium: '中', high: '高' } as Record<string, string>)[quality] ?? quality}</button>)}</GlassTabs> : <p className="panel-note">当前模型未提供可选质量参数。</p>}{cloudModel.id.startsWith('gpt-image-2.5-') ? <p className="panel-note">默认中档（medium）；高与 xhigh 需手动选择，分辨率变化不会提高档位。</p> : null}<p className="panel-note">参考图：{cloudModel.maxReferences == null ? `服务未声明固定上限，界面上限 ${maxReferences} 张` : `最多 ${maxReferences} 张`}。</p></> : <>
+              {cloudModel ? <><p className="popover-heading">图像质量</p>{cloudModel.qualities.length ? <GlassTabs className="segmented mode-options">{cloudModel.qualities.map(quality => <button key={quality} className={settings.quality === quality ? 'selected' : ''} onClick={() => update({ quality })}>{({ auto: '自动', low: '低', medium: '中', high: '高' } as Record<string, string>)[quality] ?? quality}</button>)}</GlassTabs> : <p className="panel-note">当前模型未提供可选质量参数。</p>}{cloudModel.id.startsWith('gpt-image-2.6-') ? <p className="panel-note">默认中档（medium）；高与 xhigh 需手动选择，分辨率变化不会提高档位。</p> : null}<p className="panel-note">参考图：{cloudModel.maxReferences == null ? `服务未声明固定上限，界面上限 ${maxReferences} 张` : `最多 ${maxReferences} 张`}。</p></> : <>
               <p className="popover-heading">生成模式</p>
               <GlassTabs className="segmented mode-options">{modes.map(item => <button key={item.id} className={item.model === settings.model ? 'selected' : ''} onClick={() => selectModel(item.model)}>{item.label}</button>)}</GlassTabs>
               {mode?.detail ? <p className="panel-note">{mode.detail}</p> : null}
@@ -105,7 +105,7 @@ export default function Composer({ editorRef, settings, config, params, models, 
           </div>
           <div className="control-anchor size-anchor">
             <button className={`toolbar-button size-button ${panel === 'size' ? 'active' : ''}`} aria-expanded={panel === 'size'} data-layer-trigger onClick={() => setPanel(panel === 'size' ? null : 'size')}>
-              <Icon name="expand" size={17} /><span>{ratioLabel}<span className="control-dot">·</span>{settings.resolution}<span className="control-dot">·</span>{settings.count} 张</span><Icon name="chevron" size={13} />
+              <Icon name="expand" size={17} /><span>{settings.outputFormat === 'gif' ? `GIF · ${settings.gifWidth ?? 512}×${settings.gifHeight ?? 512}` : `${settings.outputFormat === 'svg' ? 'SVG · ' : ''}${ratioLabel} · ${settings.resolution}`}<span className="control-dot">·</span>{settings.count} 张</span><Icon name="chevron" size={13} />
             </button>
             <AnimatePresence>{panel === 'size' ? <ParameterPanel key="size" settings={settings} config={config} cloudModel={cloudModel} update={update} setGeometry={setGeometry} close={closePanel} /> : null}</AnimatePresence>
           </div>

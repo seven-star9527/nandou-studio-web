@@ -17,7 +17,7 @@ import { authRequest } from '../auth';
 function historyModelLabel(model: string) {
   if (model.startsWith('qwen_image_2.1_turbo')) return 'Qwen-Image-2.1 · Turbo';
   if (model.startsWith('qwen_image_2.1')) return 'Qwen-Image-2.1 · 标准';
-  return ({'gpt-image-2.5-flare':'GPT Image 2.5 Flare','gpt-image-2.5-sunburst':'GPT Image 2.5 Sunburst','gemini-nano-banana-2.1':'Nano Banana 2.1'} as Record<string,string>)[model] ?? model;
+  return ({'gpt-image-2.6-flare':'GPT Image 2.6 Flare','gpt-image-2.6-sunburst':'GPT Image 2.6 Sunburst','gpt-image-2.5-flare':'GPT Image 2.5 Flare','gpt-image-2.5-sunburst':'GPT Image 2.5 Sunburst','gemini-nano-banana-2.1':'Nano Banana 2.1'} as Record<string,string>)[model] ?? model;
 }
 
 function HistoryTime({ value, label = '提交时间' }: { value?: string; label?: string }) {
@@ -215,7 +215,7 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
           {isAdmin ? <p className="artwork-owner">所属账号：{ownerLabel(selected.ownerName, selected.ownerEmail, selected.ownerId) || '历史管理员作品'}{selected.hiddenAt ? ' · 用户已移除' : ''}</p> : null}
           {selected.source !== 'quick' && selected.taskId ? <TaskReferences taskId={selected.taskId} /> : null}
           {retryError && <p className="history-error" role="alert">{retryError}</p>}
-          <div className="detail-actions"><DownloadLink artwork={selected} />{ownImageUrl(selected.url) && !selected.hiddenAt && <><button className="quiet-button" onClick={() => { setSelected(null); compare({url:selected.url,name:selected.prompt || '创作图片'}); }}>添加到画布</button><button className="quiet-button" onClick={() => { setSelected(null); onQuick({url:selected.url,name:selected.prompt || '创作图片',width:selected.width,height:selected.height}); }}>快捷修图</button></>}{selected.source !== 'quick' && <button className="quiet-button" disabled={retrying} onClick={() => void retrySelected()}>{retrying ? '正在读取…' : '再试一次'}</button>}{canHide(selected.taskId) ? <button className="quiet-button" onClick={() => askRemove(selected.taskId!)}><Icon name="trash" size={15} />移除任务</button> : null}</div>
+          <div className="detail-actions"><DownloadLink artwork={selected} />{ownImageUrl(selected.url) && !selected.url.toLowerCase().endsWith('.svg') && !selected.hiddenAt && <><button className="quiet-button" onClick={() => { setSelected(null); compare({url:selected.url,name:selected.prompt || '创作图片'}); }}>添加到画布</button>{selected.mimeType !== 'image/gif' && !selected.url.toLowerCase().endsWith('.gif') && <button className="quiet-button" onClick={() => { setSelected(null); onQuick({url:selected.url,name:selected.prompt || '创作图片',width:selected.width,height:selected.height}); }}>快捷修图</button>}</>}{selected.source !== 'quick' && <button className="quiet-button" disabled={retrying} onClick={() => void retrySelected()}>{retrying ? '正在读取…' : '再试一次'}</button>}{canHide(selected.taskId) ? <button className="quiet-button" onClick={() => askRemove(selected.taskId!)}><Icon name="trash" size={15} />移除任务</button> : null}</div>
           {selected.metadata ? <details><summary>生成信息</summary><pre>{selected.metadata}</pre></details> : null}
         </div>
       </section>

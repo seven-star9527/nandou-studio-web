@@ -67,22 +67,22 @@ public class NandouCommerce : Extension
                 catch (ArgumentException ex) { return new JObject { ["error"] = ex.Message, ["error_id"] = "cloud_quality_disabled" }; }
                 JObject result = await original.Call(context, session, socket, safe);
                 if (route == "getstudiocloudcapabilities" && result?["models"] is JArray models)
-                    foreach (JObject model in models.OfType<JObject>().Where(model => IsGpt25(model.Value<string>("id"))))
+                    foreach (JObject model in models.OfType<JObject>().Where(model => IsGpt26(model.Value<string>("id"))))
                         model["qualities"] = new JArray(((JArray)model["qualities"]).Values<string>().Where(value => value != "max" && value != "auto"));
                 return result;
             }};
         }
     }
 
-    private static bool IsGpt25(string model) => model is "gpt-image-2.5-flare" or "gpt-image-2.5-sunburst";
+    private static bool IsGpt26(string model) => model is "gpt-image-2.6-flare" or "gpt-image-2.6-sunburst";
 
     public static bool IsTenantIdentity(string value) => value is not null && Regex.IsMatch(value, @"\And_[0-9a-f]{32}\z");
 
     public static void ApplyGptQualityLimit(JObject input)
     {
-        if (!IsGpt25(input.Value<string>("model"))) return;
+        if (!IsGpt26(input.Value<string>("model"))) return;
         string quality = input.Value<string>("quality")?.Trim().ToLowerInvariant();
-        if (quality == "max") throw new ArgumentException("本平台已禁用 GPT Image 2.5 的 max 档位，请选择其他质量档位。");
+        if (quality == "max") throw new ArgumentException("本平台已禁用 GPT Image 2.6 的 max 档位，请选择其他质量档位。");
         if (string.IsNullOrEmpty(quality) || quality == "auto")
             quality = "medium";
         if (quality is not ("low" or "medium" or "high" or "xhigh")) throw new ArgumentException("质量档位不受本平台支持。");

@@ -109,10 +109,12 @@ class AgentStore:
 
     def public_assets(self, cid, user):
         rows = self.store.all("SELECT * FROM agent_assets WHERE chat_id=? ORDER BY created_at", (cid,))
-        return [{"id": r["id"], "name": r["name"], "url": "/studio-agent/assets/" + r["id"], "task_id": r["task_id"], 'kind':'file' if Path(r['path']).suffix.lower() in {'.pcraft','.psd'} else 'image', **self.image_size(r['path'])}
+        return [{"id": r["id"], "name": r["name"], "url": "/studio-agent/assets/" + r["id"], "task_id": r["task_id"], 'kind':'file' if Path(r['path']).suffix.lower() in {'.pcraft','.psd','.svg'} else 'image', **self.image_size(r['path'])}
                 for r in rows if not r["task_id"] or self.store.task_visible(self.store.task(r["task_id"]), user)]
 
     def image_size(self, path):
+        if Path(path).suffix.lower() == '.svg':
+            return {}
         if path not in self.dimensions:
             try:
                 with Image.open(path) as image:

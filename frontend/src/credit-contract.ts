@@ -10,12 +10,18 @@ export function accountBalanceLabel(account: CloudAccount | null) {
   if (account && !account.configured) return '积分未配置';
   return account && isCreditAmount(account.remaining_credits) ? `剩余 ${formatCredits(account.remaining_credits)} 积分` : '积分暂不可用';
 }
+export function gifParameters(settings: GenerationSettings) {
+  const width = settings.gifWidth ?? 512, height = settings.gifHeight ?? 512;
+  return {output_format: 'gif' as const, size: `${width}x${height}`, frame_count: settings.frameCount ?? 9, frame_duration_ms: settings.frameDurationMs ?? 200};
+}
+
 export function quoteRequest(model: string, settings: GenerationSettings): CloudQuoteRequest {
-  return { model, size: settings.ratio === 'custom' ? `${settings.width}x${settings.height}` : settings.ratio,
-    resolution: settings.resolution, n: settings.count, ...(settings.quality ? { quality: settings.quality } : {}) };
+  const size = settings.ratio === 'custom' ? `${settings.width}x${settings.height}` : settings.ratio;
+  return { model,
+    resolution: settings.resolution, n: settings.count, ...(settings.outputFormat === 'gif' ? gifParameters(settings) : settings.outputFormat === 'svg' ? {size, output_format:'svg' as const} : {size}), ...(settings.quality ? { quality: settings.quality } : {}) };
 }
 export function quoteKey(request: CloudQuoteRequest) {
-  return JSON.stringify([request.model, request.size, request.resolution, request.quality ?? '', request.n]);
+  return JSON.stringify([request.model, request.size, request.resolution, request.quality ?? '', request.n, request.output_format, request.frame_count, request.frame_duration_ms]);
 }
 export function quoteForSelection(record: { key: string; quote: CloudQuote } | null, key: string, model: string) {
   return record?.key === key && record.quote.model === model ? record.quote : null;

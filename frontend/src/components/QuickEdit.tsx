@@ -12,7 +12,7 @@ import ModalPortal from './ModalPortal';
 
 const options = {
   cutout: [['transparent', '自动主体'], ['include', '补留主体'], ['remove', '移除主体']],
-  retouch: [['brush', '画笔'], ['paint', '颜料'], ['paper', '水彩本'], ['toy', '玩具']],
+  retouch: [['auto','自动识别'], ['palette','调色盘'], ['brush', '画笔'], ['paint', '颜料'], ['paper', '水彩纸 / 本'], ['miniature', '微缩模型'], ['toy', '玩具']],
   upscale: [['2', '2×'], ['4', '4×']],
 };
 
@@ -30,6 +30,8 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
   const [background,setBackground] = useState('original'), [exposure,setExposure] = useState('0');
   const [marks,setMarks]=useState<SubjectMark[]>([]);
   const [framing,setFraming]=useState('frame');
+  const [enhance,setEnhance]=useState(true);
+  const [backColor,setBackColor]=useState('#e3e5e8');
   const picking=tool==='cutout' && (option==='include'||option==='remove');
   const [job, setJob] = useState<QuickJob>();
   const [error, setError] = useState('');
@@ -55,18 +57,29 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const current = await workRequest<QuickJob>('jobs/' + watch, undefined, controller.signal);
+        let current = await workRequest<QuickJob>('jobs/' + watch, undefined, controller.signal);
         if (controller.signal.aborted) return;
+        if(current.tool==='cutout' && current.option.includes(':') && current.status==='failed'){
+          setError(current.error || '换底未完成，可以继续使用透明底。');
+          const parent=current.source.split('/').pop();
+          current=await workRequest<QuickJob>('jobs/'+parent,undefined,controller.signal);
+          if(controller.signal.aborted)return;
+          remember('cutout',current.id);
+        }
         setJob(current);
         if(current.tool==='retouch'){
           const [category,bg='original',ev='0',frame='frame']=current.option.split('|');
           setOption(category);setBackground(bg);setExposure(ev);setFraming(frame);
         } else if(current.tool==='cutout'){
+          if(current.option.includes(':')) setBackColor(current.option.split(':')[1]);
           const saved=current.marks?.length ? current.marks : (current.include ?? []).map(([x,y])=>({mode:'keep' as const,x,y}));
           setMarks(saved);
           setOption(old=>current.option==='subjects' && ['include','remove'].includes(old) ? old :
             saved.at(-1)?.mode==='remove' ? 'remove' : saved.length ? 'include' : 'transparent');
-        } else setOption(current.option);
+        } else {
+          setOption(current.option.split('-')[0]);
+          setEnhance(current.option.endsWith('-detail'));
+        }
         setSource(old => old?.url === current.source ? old : {url:current.source, name:'原图'});
         if (current.status === 'processing') timer = setTimeout(poll, 800);
         else { setBusy(false); setWatch(''); }
@@ -88,24 +101,28 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
     } catch (cause) { if (mounted.current) setError(String(cause)); }
     finally { working.current = false; if (mounted.current) {setUploading(false);setBusy(false);} }
   }
-  async function run(strokes?:MaskStroke[]) {
+  async function run(strokes?:MaskStroke[], newBackground?:'solid'|'studio') {
     if (!source || busy || working.current) return;
     const mask = strokes && job ? {base:job.id,strokes} : undefined;
     const recipe=tool==='retouch'?[option,background,exposure,...(framing==='center' && background==='white'?['center']:[])].join('|'):
-      tool==='cutout'?marks.length?'subjects':'transparent':option;
+      tool==='cutout'?marks.length?'subjects':'transparent':enhance ? option+'-detail' : option;
     // A saved legacy matte keeps its original recipe when used as the base for a manual stroke.
-    const selected=mask && job ? job.option : recipe;
+    const selected=newBackground ? newBackground+':'+backColor : mask && job ? job.option : recipe;
+    const matteSource=newBackground && job?.result ? (job.option.includes(':') ? job.source : job.result.url) : source.url;
     setCorrecting(false); working.current = true; setBusy(true); setError(''); setJob(undefined);
     const id = createId().replaceAll('-', '');
     remember(tool,id);
     try {
-      const current = await workRequest<QuickJob>('jobs', {id, source:source.url, tool, option:selected, mask, marks:selected==='subjects'?marks:undefined, include:mask && ['include','pick'].includes(selected)?job?.include:undefined});
+      const current = await workRequest<QuickJob>('jobs', {id, source:matteSource, tool, option:selected, mask, marks:selected==='subjects'?marks:undefined, include:mask && ['include','pick'].includes(selected)?job?.include:undefined});
       if (mounted.current) { setJob(current); setWatch(id); }
     } catch (cause) {
       if (mounted.current) {
         setError(String(cause));
         if (cause instanceof TypeError) setWatch(id);
-        else { remember(tool,''); setBusy(false); }
+        else {
+          const previous=job?.status==='completed' ? job : undefined;
+          setJob(previous);remember(tool,previous?.id ?? '');setBusy(false);
+        }
       }
     } finally { working.current = false; }
   }
@@ -115,7 +132,7 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
     if (!nextSource) {
       try { previous = sessionStorage.getItem(pendingKey(next)) ?? ''; } catch { /* Storage is optional. */ }
     }
-    setOption(options[next][0][0]);setMarks([]);setFraming('frame');
+    setOption(options[next][0][0]);setMarks([]);setFraming('frame');setEnhance(true);
     setWatch(previous);
     setBusy(Boolean(previous));
     setJob(undefined);
@@ -125,6 +142,11 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
     switchTool(next, nextSource);
   }
   const result = job?.status === 'completed' ? job.result : undefined;
+  const composite = tool==='cutout' && Boolean(job?.option.includes(':'));
+  function showMatte(){
+    const parent=job?.source.split('/').pop();
+    if(parent){remember('cutout',parent);setBusy(true);setWatch(parent);}
+  }
   const activity=uploading?'正在上传图片':({cutout:'正在抠图',retouch:'正在精修',upscale:'正在放大'})[tool];
   const width = source?.width, height = source?.height;
   const factor = tool === 'upscale' ? Number(option) : 1;
@@ -153,7 +175,8 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
     <div className="work-controls">
       <button className="quiet-button" disabled={busy} onClick={() => file.current?.click()}>{source ? '更换图片' : '选择图片'}</button>
       <input hidden ref={file} type="file" accept="image/png,image/jpeg,image/webp" onChange={e => { void choose(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
-      <GlassTabs className="segmented work-tabs" aria-label={tool==='cutout'?'保留主体':tool==='retouch'?'商品类目':'放大倍率'}>{choices.map(([value,label]) => <button key={value} className={option===value?'selected':''} disabled={busy} aria-pressed={option===value} onClick={()=>chooseOption(value)}>{label}</button>)}</GlassTabs>
+      {!composite && <GlassTabs className="segmented work-tabs" aria-label={tool==='cutout'?'保留主体':tool==='retouch'?'商品类目':'放大倍率'}>{choices.map(([value,label]) => <button key={value} className={option===value?'selected':''} disabled={busy} aria-pressed={option===value} onClick={()=>chooseOption(value)}>{label}</button>)}</GlassTabs>}
+      {tool==='upscale' && <GlassTabs className="segmented work-tabs" aria-label="放大方式">{['保真放大','细节增强'].map((label,i)=><button key={label} disabled={busy} className={enhance===Boolean(i)?'selected':''} aria-pressed={enhance===Boolean(i)} onClick={()=>{if(enhance!==Boolean(i)){setEnhance(Boolean(i));setJob(undefined);remember(tool,'');}}}>{label}</button>)}</GlassTabs>}
       {tool==='retouch' && <>
         <GlassTabs className="segmented work-tabs" aria-label="主图背景">{[['original','保留背景'],['white','纯白背景']].map(([v,t])=><button key={v} disabled={busy} className={v===background?'selected':''} onClick={()=>{setBackground(v);setJob(undefined);remember(tool,'');}}>{t}</button>)}</GlassTabs>
         <GlassTabs className="segmented work-tabs" aria-label="曝光调整">{[['-0.5','压暗'],['0','原曝光'],['0.5','提亮']].map(([v,t])=><button key={v} disabled={busy} className={v===exposure?'selected':''} onClick={()=>{setExposure(v);setJob(undefined);remember(tool,'');}}>{t}</button>)}</GlassTabs>
@@ -164,13 +187,14 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
     </div>
     <QuickPreview key={source?.url || 'empty'} source={source} result={result} busy={busy} activity={activity} marks={marks}
       backdrop={tool==='cutout'?({'棋盘':'checker','白色':'white','深色':'dark'}[backdrop]):''}
-      onPick={picking&&!busy?pick:undefined} choose={()=>file.current?.click()}
+      onPick={picking&&!busy&&!composite?pick:undefined} choose={()=>file.current?.click()}
       onSize={(w,h)=>{if(source && !width)setSource({...source,width:w,height:h});}}/>
     <div className="work-controls">{tool==='cutout' && <GlassTabs className="segmented work-tabs" aria-label="检查背景">{['棋盘','白色','深色'].map(v => <button key={v} className={backdrop===v?'selected':''} onClick={() => setBackdrop(v)}>{v}</button>)}</GlassTabs>}
-    {tool==='retouch' && <small>{{brush:'轻微调整明暗与锐度，保留笔锋。',paint:'轻调明度，保留颜料色序和包装文字。',paper:'校正棚拍底色，保留纸纹和装订细节。',toy:'轻调对比和轮廓，保留零件和接缝。'}[option]}</small>}
-    {tool==='upscale' && <small>{width && height ? `输出 ${outputWidth} × ${outputHeight} px` : '从原尺寸放大'} · 保真重采样</small>}</div>
+    {tool==='cutout' && result && <><label>背景色 <input type="color" aria-label="输出背景色" value={backColor} onChange={e=>setBackColor(e.target.value)}/></label><button className="quiet-button" onClick={()=>void run(undefined,'solid')}>换纯色底</button><button className="quiet-button" onClick={()=>void run(undefined,'studio')}>换影棚底</button></>}
+    {tool==='retouch' && <small>{option==='auto' ? (result && job?.subject ? job.subject==='general' ? '已按通用商品处理' : '识别为'+(options.retouch.find(([id])=>id===job.subject)?.[1] ?? '商品') : '处理时自动识别主体，也可手动指定。') : {palette:'保留调色槽、侧翼和指孔。',brush:'保留笔锋与笔箍刻字。',paint:'保留颜料色序和包装文字。',paper:'保留纸纹和装订细节。',miniature:'保留涂装分区、刻线和细小部件。',toy:'保留零件和接缝。'}[option]}</small>}
+    {tool==='upscale' && <small>{width && height ? `输出 ${outputWidth} × ${outputHeight} px` : '从原尺寸放大'}</small>}</div>
     {(tooLarge || error || job?.error) && <p className="history-error" role="alert">{tooLarge ? (width && height && width*height>=MAX_IMAGE_PIXELS ? '原图已达 6400 万像素上限。' : '所选倍率超过 6400 万像素，请选择「上限内放大」。') : job?.error || error}</p>}
-    <footer className="work-controls">{result && <>{tool==='cutout' && <button className="quiet-button" onClick={()=>{setBackground('white');selectTool('retouch',result);}}>用此蒙版精修</button>}{tool==='retouch' && background==='white' && <button className="quiet-button" onClick={()=>selectTool('cutout')}>修正主体范围</button>}{tool!=='upscale' && <button className="quiet-button" onClick={()=>setCorrecting(true)}>{tool==='cutout'?'调整边缘':'局部去瑕'}</button>}<a className="quiet-button" href={result.url} download={result.name}>下载 PNG</a>{compare && <button className="quiet-button" onClick={() => compare(result)}>{compareLabel}</button>}</>}
-    <button className="primary-button" disabled={!source || busy || tooLarge || (picking && !marks.length && !result)} onClick={() => void run()}>{busy ? activity : result ? '重新处理' : '开始处理'}</button></footer></>}
+    <footer className="work-controls">{result && <>{tool==='cutout' && !composite && <button className="quiet-button" onClick={()=>{setBackground('white');selectTool('retouch',result);}}>用此蒙版精修</button>}{tool==='retouch' && background==='white' && <button className="quiet-button" onClick={()=>selectTool('cutout')}>修正主体范围</button>}{composite && <button className="quiet-button" onClick={showMatte}>返回透明底</button>}{tool!=='upscale' && !composite && <button className="quiet-button" onClick={()=>setCorrecting(true)}>{tool==='cutout'?'调整边缘':'局部去瑕'}</button>}<a className="quiet-button" href={result.url} download={result.name}>下载 PNG</a>{compare && <button className="quiet-button" onClick={() => compare(result)}>{compareLabel}</button>}</>}
+    {!composite && <button className="primary-button" disabled={!source || busy || tooLarge || (picking && !marks.length && !result)} onClick={() => void run()}>{busy ? activity : result ? '重新处理' : '开始处理'}</button>}</footer></>}
   </section></div></ModalPortal>;
 }

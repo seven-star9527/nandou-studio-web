@@ -2,8 +2,9 @@
 from .agent_skills import tool, TOOLS, DESIGN_SKILLS
 
 SKILLS = {
+    'designer-white': {'title':'设计师白底精修','description':'实拍商品分层精修，可继续修边和调整材质光影','rules':'调用 retouch_product，designer=true，background=white，center=false。尊重指定品类，其他选 auto。保留原构图、印字、商品数量。另有改色、加道具等要求时单独处理。'},
     **DESIGN_SKILLS,
-    'retouch-product': {'title':'商品精修','description':'保留商品身份，抠图、蒙版与局部修整','rules':'手持使用图按要求把手和笔一起选入，成套画笔逐支核对笔尖和金属管。浅色盒盖和水彩纸保留边界及纸纹。类目匹配且只需常规主图精修时用 retouch_product；定点去瑕和特殊光影再查 PhotoCraft 命令。锁定数量、轮廓、标识、包装文字、材质与真实颜色。抠图优先选区和图层蒙版，结果检查边缘，不能声称自动抠图完美。'},
+    'retouch-product': {'title':'商品精修','description':'保留商品身份，抠图、蒙版与局部修整','rules':'手持使用图按要求把手和笔一起选入，成套画笔逐支核对笔尖和金属管。浅色盒盖和水彩纸保留边界及纸纹。常规主图精修用 retouch_product，用户未指定类目时 category 选 auto，手动类目优先；空调色盘用 palette，区分调色槽与真实通孔；定点去瑕和特殊光影再查 PhotoCraft 命令。锁定数量、轮廓、标识、包装文字、材质与真实颜色。按参考精修图借鉴白底、主体占比和清晰层次。画笔保留笔锋和金属受光层次，颜料保留色块顺序，微缩模型锁定涂装分界、刻线与支撑件，玩具保留关节、装配缝和独立小件，水彩本检查白纸与盒盖是否误透。精修示例中的删配件、改盒色、加画作和改排布，需要明确编辑指令才执行。抠图优先选区和图层蒙版，结果检查边缘，不能声称自动抠图完美。'},
     'retouch-color': {'title':'光影调色','description':'曲线、色阶与色相饱和度调整','rules':'先观察中性纸面、金属高光及色卡。校正色偏使用小幅 Camera Raw 参数，处理瑕疵时仅标记确有灰尘的位置。优先调整图层，保留原图。提亮不等于改色，检查高光和暗部，商品颜色不得擅自变化。'},
     'retouch-layout': {'title':'排版合成','description':'文字图层、多图合成与画布整理','rules':'用户需要基于现有商品和标题制作简洁封面时调用 compose_product_cover，排版后查看预览并核对标题和商品均完整。复杂合成使用现有工程、形状及文字图层。文字逐字使用用户提供文案，不虚构卖点。保留图层。缺少必须的素材或文案时只问一个关键问题。'},
     'retouch-export': {'title':'尺寸与导出','description':'裁切、缩放、透明背景与格式转换','rules':'用户没要求时保持尺寸；原图永不覆盖。透明输出用PNG或WebP，JPEG须明确铺底色。不把DPI修改说成新增清晰度。'},
@@ -23,8 +24,8 @@ params 用结构化JSON。PhotoCraft选区操作必须先有选区，图层蒙�
 
 EDIT_TOOLS = [t for t in TOOLS if t['function']['name'] in {'remove_background','research_design','ask_user','finish_project','inspect_images','update_plan'}] + [
     tool('retouch_product','用实拍图做类目主图精修并导入 PhotoCraft 工程，可选纯白底与居中。', {
-        'ref_id':{'type':'string'},'category':{'type':'string','enum':['brush','paint','paper','toy']},
-        'background':{'type':'string','enum':['original','white']},'center':{'type':'boolean'}},['ref_id','category','background']),
+        'ref_id':{'type':'string'},'category':{'type':'string','enum':['auto','palette','brush','paint','paper','miniature','toy','general']},
+        'background':{'type':'string','enum':['original','white']},'center':{'type':'boolean'},'designer':{'type':'boolean','description':'使用设计师分层工作流，仅适用于白底保留构图'}},['ref_id','category','background']),
     tool('compose_product_cover','用已有实拍图和用户给定的标题，建立可编辑的 PhotoCraft 封面工程并导出 PNG。', {
         'ref_id':{'type':'string'},'ratio':{'type':'string','enum':['16:9','9:16','1:1']},
         'title':{'type':'string','minLength':1,'maxLength':80}},['ref_id','ratio','title']),

@@ -16,6 +16,7 @@ from .photocraft import PhotoCraft, PhotoCraftError, load_config
 from .agent_limits import AgentError
 from .quick_edits import checked_points, cutout, product_retouch, retouch_settings
 from .image_uploads import MAX_IMAGE_PIXELS, copy_processing_input
+from . import designer_workflow
 
 PYTHON = {
     'image.resize':('图像大小', '{width:整数,height:整数} 等比需求请给出计算后的宽高'),
@@ -174,11 +175,16 @@ class Editing:
         return await self.edit({'ref_id':aid, 'engine':engine, 'steps':steps, 'format':'png', 'cutout':True},
                                cid,tid,user,ctx)
 
-    async def product(self,cid,tid,user,aid,category,background,center,ctx):
+    async def product(self,cid,tid,user,aid,category,background,center,ctx,designer=False):
         if type(center) is not bool:
             raise ValueError('invalid product framing')
         option='|'.join((category,background,'0','center' if center else 'frame'))
         retouch_settings(option)
+        if designer:
+            if background!='white' or center:
+                return {'error':'设计师白底工作流保留原图构图，请选白底且关闭居中。'}
+            return await self.edit({'ref_id':aid,'engine':'photocraft','designer':category,'steps':[],'format':'png'},
+                                   cid,tid,user,ctx)
         return await self.edit({'ref_id':aid,'engine':'photocraft','retouch':option,'steps':[],'format':'png'},
                                cid,tid,user,ctx)
 
@@ -217,6 +223,8 @@ class Editing:
         return status
 
     def publish(self,jid,cid,tid,user,args,folder):
+        if args.get('designer') and not (folder/'result.pcraft').is_file():
+            raise AgentError('分层工程未保存完整，本次未交付。')
         existing=self.agent.g.store.one('SELECT status,result_json FROM edit_jobs WHERE id=?',(jid,))
         if existing and existing['status']=='completed': return json.loads(existing['result_json'])
         fmt=args['format']; output=folder/('result.'+fmt); project=folder/'result.pcraft'
@@ -240,7 +248,8 @@ class Editing:
         result={'request_id':jid,'status':'completed','source_id':args['ref_id'],
             'images':[{'ref_id':aid,'url':'/studio-agent/assets/'+aid,'name':'修图结果.'+fmt}],
             'files':[{'name':'可编辑工程.pcraft','url':'/studio-agent/assets/'+project_id}] if project_id else [], **dimensions}
-        self.update(jid,'completed',len(args['steps']),result)
+        count = len(designer_workflow.STAGES) if args.get('designer') else len(args['steps'])
+        self.update(jid,'completed',count,result)
         self.agent.store.event(cid,tid,'result',result)
         return result
 
@@ -267,7 +276,8 @@ class Editing:
                                 await mcp.call('doc_save',path=str(folder/'recovered-checkpoint.pcraft'),index=doc['index'])
                                 await mcp.call('control_call',method='engine.execute',params={'command':'file.close','params':{'document':doc['index']}})
         output=folder/('result.'+args['format'])
-        if job['completed_steps']==len(args['steps']) and output.is_file():
+        expected = len(designer_workflow.STAGES) if args.get('designer') else len(args['steps'])
+        if job['completed_steps']==expected and output.is_file():
             result=self.publish(jid,cid,job['turn_id'],user,args,folder)
             for event in self.agent.store.events(cid):
                 if event['kind']=='result' and event['data'].get('request_id')==jid and event['data'].get('status')!='completed':
@@ -283,7 +293,7 @@ class Editing:
         if ctx['generated']>=4:
             return {'error':'本轮已交付4个结果，请下一轮继续。'}
         asset,source=self.source(cid,user,args['ref_id'])
-        if args.get('cutout') or args.get('cover') or args.get('retouch'):
+        if args.get('cutout') or args.get('cover') or args.get('retouch') or args.get('designer'):
             # Segment the selected visible composite, never just the active project layer.
             source = Path(asset['path'])
         if engine=='python' and source.suffix.lower()=='.pcraft':
@@ -321,6 +331,8 @@ class Editing:
         if args.get('cover'):
             plan.insert(0,{'title':'新建封面并放置商品','tool':'PhotoCraft · doc_new / doc_place'})
         plan.append({'title':f'导出 {fmt.upper()}','tool':f"{backend} · {'Image.save' if engine=='python' else 'doc_save'}"})
+        if args.get('designer'):
+            plan=[{'title':title,'tool':tool} for title,tool in designer_workflow.STAGES]
         emit('plan',{'summary':'保留原图，处理后另存新版本','steps':[p['title'] for p in plan],'operations':plan,'request_id':jid})
         emit('status',{'text':'正在等待修图执行器'})
         folder=self.root/user['id']/cid/jid
@@ -335,6 +347,19 @@ class Editing:
                     async with self.desktop_lock:
                         async with DesktopLease(Path(self.config['token_file']).parent):
                             await self.run_mcp(folder,local,output,project,prepared,jid,emit,cid,user,True)
+                elif engine=='photocraft' and args.get('designer'):
+                    self.update(jid,'running')
+                    def phase(i,state):
+                        return {**plan[i],'request_id':jid,'status':state}
+                    def complete(eid,i):
+                        self.agent.store.update_event(eid,phase(i,'completed'))
+                        self.update(jid,'running',i+1)
+                    async with self.connection(folder,False) as editor:
+                        category=await designer_workflow.render(editor,self.agent.g.workbench.cutout_model,local,folder,args['designer'],
+                            lambda i:emit('edit_step',phase(i,'running')),complete)
+                        label={'brush':'画笔','paper':'水彩纸／本','palette':'调色盘','paint':'颜料','toy':'玩具','miniature':'微缩模型','general':'通用商品'}[category]
+                        origin='自动识别' if args['designer']=='auto' else '手动指定'
+                        emit('notice',{'text':f'{origin}采用「{label}」精修。'})
                 elif engine=='photocraft':
                     if args.get('selection') in ('hands','pick','include'):
                         eid=emit('edit_step',{**plan[0],'status':'running','request_id':jid})

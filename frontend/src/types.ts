@@ -11,6 +11,7 @@ export type ResolutionId = string;
 export interface GenerationSettings {
   ratio: RatioId; resolution: ResolutionId; width: number; height: number;
   count: number; model: string; steps: number; cfg: number; seed: string; quality?: string;
+  svgTransparent?: boolean; outputFormat?: 'png' | 'gif' | 'svg'; frameCount?: number; frameDurationMs?: number; gifWidth?: number; gifHeight?: number;
 }
 export interface ModeConfig {
   id: string; label: string; model?: string; modelMatch?: string;
@@ -80,14 +81,16 @@ export interface CloudAccount {
   remaining_credits: number | null; account_credits: number | null; token_credits: number | null;
   token_unlimited: boolean; checked_utc: string; error?: string;
 }
-export interface CloudQuoteRequest { model: string; size: string; resolution: string; quality?: string; n: number; }
+export interface CloudAnimation { output_format?: 'gif' | 'svg'; frame_count?: number; frame_duration_ms?: number; }
+export interface CloudQuoteRequest extends CloudAnimation { model: string; size: string; resolution: string; quality?: string; n: number; }
 export interface CloudQuote {
   model: string; kind: 'output_reference' | 'precharge_reference' | 'unknown';
   credits_per_image: number | null; min_credits_per_image: number | null; max_credits_per_image: number | null;
   credits_total_reference: number | null; source: string; captured_at: string | null; stale: boolean;
   label: string; additional_input_cost_unknown: boolean;
 }
-export interface CloudRequest {
+export interface CloudRequest extends CloudAnimation {
+  background?: 'transparent';
   request_id: string; model: string; operation: CloudOperation; prompt: string; size: string;
   resolution: string; n: number; quality?: string; reference_images: string[];
 }

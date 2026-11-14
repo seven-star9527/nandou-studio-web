@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadDeployment, parseArtwork, SwarmClient } from './api';
 import { availableModes, buildGenerationRequest, configurationIssue, modelDefaults } from './generation-contract';
 import { dimensions } from './resolution-policy';
-import { buildCloudRequest, cloudArtworkSettings, cloudDimensions, mergeArtwork, referenceLimit, taskArtworks } from './cloud-contract';
+import { currentCloudModel, buildCloudRequest, cloudArtworkSettings, cloudDimensions, mergeArtwork, referenceLimit, taskArtworks } from './cloud-contract';
 import { useCloudStudio } from './useCloudStudio';
 import { useCloudQuote } from './useCloudQuote';
 import { localProgress, mergeJobProgress } from './job-progress';
@@ -16,7 +16,7 @@ import { isActiveJob, reconcileHistory } from './history-view-contract';
 import { queueJobPatch, restoreQueuedJob, restoredTaskPatch } from './queue-contract';
 import type { Artwork, BackendStatus, DeploymentConfig, GenerationSettings, Job, Model, ParamSchema, RatioId, ReferenceImage, ResolutionId } from './types';
 
-const INITIAL: GenerationSettings = { ratio: '1:1', resolution: '1K', width: 1024, height: 1024, count: 1, model: '', steps: 20, cfg: 7, seed: '-1' };
+const INITIAL: GenerationSettings = { ratio: '1:1', resolution: '1K', width: 1024, height: 1024, count: 1, model: '', steps: 20, cfg: 7, seed: '-1', quality: 'medium' };
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export function useStudio() {
@@ -49,7 +49,7 @@ export function useStudio() {
   const [history, setHistory] = useState<Artwork[]>([]);
   const [job, setJob] = useState<Job | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [cloudModelId, setCloudModelId] = useState<string | null>(null);
+  const [cloudModelId, setCloudModelId] = useState<string | null>('gpt-image-2.6-flare');
   const receiveArtwork = useCallback((artwork: Artwork) => {
     if (!artwork.taskId || !hiddenTasks.current.has(artwork.taskId)) setHistory(previous => mergeArtwork(previous, artwork));
   }, []);
@@ -183,7 +183,7 @@ export function useStudio() {
     setCloudModelId(null);
     const defaults = modelDefaults(model, config);
     const defaultNumber = (id: string, fallback: number) => Number(defaults[id] ?? params.find(param => param.id === id)?.default ?? fallback);
-    setSettings(previous => ({ ...previous, ...(cloudModelId ? { ratio: '1:1', resolution: '1K', ...dimensions('1:1', '1K'), quality: '' } : {}), model, steps: defaultNumber('steps', 20), cfg: defaultNumber('cfgscale', 7) }));
+    setSettings(previous => ({ ...previous, ...(cloudModelId ? { outputFormat: 'png' as const, ratio: '1:1', resolution: '1K', ...dimensions('1:1', '1K'), quality: '' } : {}), model, steps: defaultNumber('steps', 20), cfg: defaultNumber('cfgscale', 7) }));
   };
   const selectCloudModel = (id: string) => {
     const model = cloud.capabilities?.models.find(item => item.id === id);
@@ -191,11 +191,11 @@ export function useStudio() {
     setCloudModelId(id);
     const ratio = model.ratios.includes('1:1') ? '1:1' : model.ratios[0];
     const resolution = model.resolutions[0];
-    setSettings(previous => ({ ...previous, ratio, resolution, ...cloudDimensions(model, ratio, resolution), count: Math.min(previous.count, model.maxImages), quality: model.qualities.includes('medium') ? 'medium' : model.qualities[0] ?? '' }));
+    setSettings(previous => ({ ...previous, outputFormat: 'png', ratio, resolution, ...cloudDimensions(model, ratio, resolution), count: Math.min(previous.count, model.maxImages), quality: model.qualities.includes('medium') ? 'medium' : model.qualities[0] ?? '' }));
   };
   const selectLocal = () => {
     setCloudModelId(null);
-    setSettings(previous => ({ ...previous, ratio: '1:1', resolution: '1K', ...dimensions('1:1', '1K'), count: Math.min(4, previous.count) }));
+    setSettings(previous => ({ ...previous, outputFormat: 'png', ratio: '1:1', resolution: '1K', ...dimensions('1:1', '1K'), count: Math.min(4, previous.count) }));
   };
 
   const updateJob = (patch: Partial<Job>) => {
@@ -311,7 +311,7 @@ export function useStudio() {
   };
 
   const reuse = async (artwork: Artwork, signal: AbortSignal) => {
-    const cloudChoice = cloud.capabilities?.models.find(model => model.id === artwork.model);
+    const cloudChoice = cloud.capabilities?.models.find(model => model.id === currentCloudModel(artwork.model ?? ''));
     if ((artwork.source === 'cloud' && !cloudChoice) ||
         (!cloudChoice && artwork.model && !models.some(model => model.name === artwork.model))) {
       throw new Error('原任务模型暂不可用，请刷新连接后重试。');
@@ -333,7 +333,7 @@ export function useStudio() {
     setError(editing && !restored.length ? '此任务未保存参考原图，请重新添加后提交。' : '');
     setCloudModelId(cloudChoice?.id ?? null);
     setSettings(cloudDraft?.settings ?? {
-      ...settings, model: artwork.model ?? settings.model,
+      ...settings, outputFormat: 'png', model: artwork.model ?? settings.model,
       ratio: typeof extra.studio_requested_ratio === 'string' ? extra.studio_requested_ratio : 'custom',
       resolution: typeof extra.studio_requested_resolution === 'string' ? extra.studio_requested_resolution : '1K',
       width: artwork.width ?? settings.width, height: artwork.height ?? settings.height,

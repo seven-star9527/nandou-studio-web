@@ -38,3 +38,8 @@ def _render(source, destination, size):
             os.replace(temporary, destination)
         finally:
             temporary.unlink(missing_ok=True)
+
+
+def svg_headers(path):
+    return {"Content-Type": "image/svg+xml", "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"} if path.suffix.lower() == '.svg' else {}

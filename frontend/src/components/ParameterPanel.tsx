@@ -61,7 +61,17 @@ export default function ParameterPanel({ settings, config, cloudModel, setGeomet
     : { status: 'experimental' as const, detail: '此分辨率尚未完成本机速度与稳定性测试。' });
   return <motion.div data-motion-layer initial={{opacity:0,y:12,scale:.94}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:8,scale:.97}} transition={{duration:reduced?0:.32,ease:[.22,1,.36,1]}} className="parameter-panel popover" ref={panel} role="dialog" aria-label="图像尺寸与数量">
     <button className="icon-button panel-close" onClick={close} aria-label="关闭尺寸设置"><Icon name="close" size={16} /></button>
-    <fieldset>
+    {cloudModel?.id.startsWith('gpt-image-2.6-') && <fieldset><legend>输出格式</legend>
+      <GlassTabs className="segmented" role="radiogroup" aria-label="输出格式" onKeyDown={navigateChoices}>
+        {(['png','gif','svg'] as const).map(format => <button key={format} role="radio" aria-checked={(settings.outputFormat ?? 'png') === format} className={(settings.outputFormat ?? 'png') === format ? 'selected' : ''} onClick={() => update({outputFormat: format, ...(format === 'svg' ? {count: 1} : {})})}>{format === 'gif' ? 'GIF 动图' : format === 'svg' ? 'SVG 矢量图' : '静态 PNG'}</button>)}
+      </GlassTabs>{settings.outputFormat === 'svg' && <><label><input type="checkbox" checked={!!settings.svgTransparent} onChange={e => update({svgTransparent:e.target.checked})}/>指定透明背景</label><p className="panel-note">每次一张，按图像与 gpt-5.4-mini 写作用量分别计费。</p></>}</fieldset>}
+    {settings.outputFormat === 'gif' && cloudModel?.id.startsWith('gpt-image-2.6-') ? <fieldset><legend>动图规格</legend>
+      <div className="advanced-fields">
+        <label>单帧宽度（px）<input type="number" min={16} step={16} value={settings.gifWidth ?? 512} onChange={e => update({gifWidth: Number(e.target.value)})}/></label>
+        <label>单帧高度（px）<input type="number" min={16} step={16} value={settings.gifHeight ?? 512} onChange={e => update({gifHeight: Number(e.target.value)})}/></label>
+        <label>帧数<input type="number" min={2} max={16} value={settings.frameCount ?? 9} onChange={e => update({frameCount: Number(e.target.value)})}/></label>
+        <label>每帧毫秒<input type="number" min={20} max={655350} step={10} value={settings.frameDurationMs ?? 200} onChange={e => update({frameDurationMs: Number(e.target.value)})}/></label>
+      </div><p className="panel-note">按整张帧拼图计费。512 × 512 支持全部帧数。</p></fieldset> : <><fieldset>
       <legend>选择比例</legend>
       <GlassTabs className={`ratios ${ratioOptions.length > 9 ? 'ratios-many' : ''}`} role="radiogroup" aria-label="选择比例" onKeyDown={navigateChoices}>
         {ratioOptions.map(item => <button key={item.id} role="radio" tabIndex={settings.ratio === item.id ? 0 : -1} aria-checked={settings.ratio === item.id} className={settings.ratio === item.id ? 'selected' : ''}
@@ -82,12 +92,6 @@ export default function ParameterPanel({ settings, config, cloudModel, setGeomet
       </GlassTabs>
     </fieldset>
     <fieldset>
-      <legend>生成数量</legend>
-      <GlassTabs className="segmented" role="radiogroup" aria-label="生成数量" onKeyDown={navigateChoices}>
-        {Array.from({ length: cloudModel?.maxImages ?? 4 }, (_, index) => index + 1).map(count => <button key={count} role="radio" tabIndex={settings.count === count ? 0 : -1} aria-checked={settings.count === count} className={settings.count === count ? 'selected' : ''} onClick={() => update({ count })}>{count}</button>)}
-      </GlassTabs>
-    </fieldset>
-    <fieldset>
       <legend>尺寸</legend>
       <div className="dimensions">
         <label><span>W</span><input aria-label="图像宽度" type="number" min="1" step={cloudModel?.exactSize?.multiple ?? 32} readOnly={!allowsCustom} key={`w-${settings.width}-${cloudModel?.id}`} defaultValue={knownSize ? settings.width : ''} placeholder="服务决定" onBlur={event => { if (allowsCustom) custom('width', event.target.value); }} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>
@@ -97,5 +101,12 @@ export default function ParameterPanel({ settings, config, cloudModel, setGeomet
     </fieldset>
     <p className="panel-note">{knownSize ? `${megapixels(settings.width, settings.height)} MP · ${cloudModel ? settings.ratio === 'custom' ? `尺寸按 ${cloudModel.exactSize?.multiple} 像素对齐` : '服务预设尺寸' : '尺寸按 32 像素对齐'}` : '尺寸由服务决定，生成后显示真实像素。'}</p>
     {!cloudModel && capability(settings.resolution).detail ? <p className="panel-note resolution-detail">{capability(settings.resolution).detail}</p> : null}
+    </>}
+    <fieldset>
+      <legend>生成数量</legend>
+      <GlassTabs className="segmented" role="radiogroup" aria-label="生成数量" onKeyDown={navigateChoices}>
+        {Array.from({ length: settings.outputFormat === 'svg' ? 1 : cloudModel?.maxImages ?? 4 }, (_, index) => index + 1).map(count => <button key={count} role="radio" tabIndex={settings.count === count ? 0 : -1} aria-checked={settings.count === count} className={settings.count === count ? 'selected' : ''} onClick={() => update({ count })}>{count}</button>)}
+      </GlassTabs>
+    </fieldset>
   </motion.div>;
 }

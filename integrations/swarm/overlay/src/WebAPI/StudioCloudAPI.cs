@@ -1,4 +1,6 @@
 using System.IO;
+using System.Xml;
+using Formatting = Newtonsoft.Json.Formatting;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -112,7 +114,17 @@ public static partial class StudioCloudAPI
         string resolution = ((string)input["resolution"] ?? "1K").ToUpperInvariant();
         if (!cap["resolutions"].Values<string>().Contains(resolution)) throw new ArgumentException("分辨率不受模型支持");
         string size = (string)input["size"] ?? "auto";
-        if (!cap["ratios"].Values<string>().Contains(size))
+        string format = (string)input["output_format"] ?? "png";
+        bool gif = format == "gif";
+        if (input["output_format"] != null && (!model.StartsWith("gpt-image-2.6-") || format is not ("png" or "gif" or "svg")))
+            throw new ArgumentException("模型不支持所选输出格式");
+        if (input["svg"] != null) throw new ArgumentException("SVG 写作模型由 Studio 配置");
+        if (format == "svg" && count != 1) throw new ArgumentException("SVG 每次只生成一张");
+        if (format is "gif" or "svg" && new[] { "mask_url", "markup_url", "markup", "output_compression" }.Any(k => input[k] != null))
+            throw new ArgumentException("此格式不支持蒙版、标注或输出压缩");
+        if (!gif && (input["frame_count"] != null || input["frame_duration_ms"] != null))
+            throw new ArgumentException("帧数和帧时长仅用于 GIF");
+        if (!gif && !cap["ratios"].Values<string>().Contains(size))
         {
             JObject rules = cap["exactSize"] as JObject;
             Match match = Regex.Match(size, @"^(\d{2,5})x(\d{2,5})$");
@@ -127,13 +139,55 @@ public static partial class StudioCloudAPI
         foreach (JToken image in refs) DecodeReference(image.Value<string>());
         JObject body = new() { ["model"] = model, ["prompt"] = prompt, ["size"] = size, ["resolution"] = model.StartsWith("gpt-") ? resolution.ToLowerInvariant() : resolution, ["n"] = count };
         string quality = (string)input["quality"];
+        if (model.StartsWith("gpt-image-2.6-") && (string.IsNullOrEmpty(quality) || quality == "auto")) quality = "medium";
         if (!string.IsNullOrEmpty(quality))
         {
             if (cap["qualities"] is not JArray qualityChoices || !qualityChoices.Values<string>().Contains(quality)) throw new ArgumentException("质量档位不受模型支持");
             body["quality"] = quality;
         }
-        if (model.StartsWith("gpt-")) body["output_format"] = "png";
+        if (model.StartsWith("gpt-")) body["output_format"] = format;
+        if (format == "svg") body["svg"] = new JObject { ["model"] = "gpt-5.4-mini" };
+        if (input["background"] is JToken background)
+        {
+            if (!model.StartsWith("gpt-image-2.6-") || (string)background is not ("transparent" or "opaque" or "auto") || gif && (string)background == "transparent")
+                throw new ArgumentException("透明背景需要 GPT Image 2.6 的 PNG 或 SVG 输出");
+            body["background"] = background;
+        }
+        if (input["complexity"] is JToken complexity)
+        {
+            if (!model.StartsWith("gpt-image-2.6-") || (string)complexity is not ("low" or "medium" or "high")) throw new ArgumentException("规划强度不受支持");
+            body["complexity"] = complexity;
+        }
+        if (gif)
+        {
+            int frames = GifInteger(input, "frame_count", 9, 2, 16);
+            int duration = GifInteger(input, "frame_duration_ms", 200, 20, 655350);
+            if (duration % 10 != 0) throw new ArgumentException("GIF 单帧时长应为 10 毫秒的倍数");
+            Match match = Regex.Match(size == "auto" ? "512x512" : size, @"\A([1-9]\d{0,3})x([1-9]\d{0,3})\z");
+            if (!match.Success) throw new ArgumentException("GIF 需要单帧像素尺寸");
+            int w = int.Parse(match.Groups[1].Value), h = int.Parse(match.Groups[2].Value);
+            (int a, int b) = GifSheet(w, h, frames);
+            if (w % 16 != 0 || h % 16 != 0 || Math.Max(a, b) > 3840 || (long)a * b > 8294400 || Math.Max(a, b) > 3 * Math.Min(a, b))
+                throw new ArgumentException("GIF 单帧尺寸或拼图超限，请减少帧数或缩小单帧尺寸");
+            body.Remove("resolution");
+            body["frame_count"] = frames;
+            body["frame_duration_ms"] = duration;
+        }
         return body;
+    }
+
+    private static (int Width, int Height) GifSheet(int w, int h, int frames)
+    {
+        (int cols, int rows) = frames <= 8 ? (4, 2) : frames == 9 ? (3, 3) : frames <= 12 ? (4, 3) : (4, 4);
+        return w <= h ? (w * cols, h * rows) : (w * rows, h * cols);
+    }
+
+    private static int GifInteger(JObject input, string key, int fallback, int min, int max)
+    {
+        if (input[key] is not JToken token) return fallback;
+        if (token.Type != JTokenType.Integer || !int.TryParse(token.ToString(), out int number) || number < min || number > max)
+            throw new ArgumentException($"GIF {key} 应为 {min} 至 {max} 的整数");
+        return number;
     }
 
     private static (byte[] bytes, string mime, string extension) DecodeReference(string data)
@@ -250,7 +304,41 @@ public static partial class StudioCloudAPI
         return images;
     }
 
-    private static async Task CacheImages(string id, JArray images)
+    // Only standalone, static vector artwork may be served or downloaded under the Studio origin.
+    private static void ValidateStaticSvg(byte[] bytes)
+    {
+        const string ns = "http://www.w3.org/2000/svg";
+        using var reader = XmlReader.Create(new MemoryStream(bytes), new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersInDocument = 8_000_000 });
+        while (reader.Read() && reader.NodeType != XmlNodeType.Element)
+            if (reader.NodeType == XmlNodeType.ProcessingInstruction) throw new InvalidDataException("External XML stylesheet");
+        if (reader.NodeType != XmlNodeType.Element || reader.LocalName != "svg" || reader.NamespaceURI != ns) throw new InvalidDataException("Expected SVG");
+        var elements = new HashSet<string>("svg g defs symbol use path rect circle ellipse line polyline polygon text tspan textPath title desc linearGradient radialGradient stop clipPath mask pattern marker filter feGaussianBlur feOffset feMerge feMergeNode feBlend feColorMatrix feFlood feComposite feComponentTransfer feFuncA feFuncR feFuncG feFuncB feTurbulence feDisplacementMap switch style".Split(' '));
+        void CheckCss(string value)
+        {
+            if (value.IndexOfAny(['@', (char)92]) >= 0 || value.Contains("/*") || Regex.IsMatch(Regex.Replace(value, @"url\(\s*['""]?#[\w:.-]+['""]?\s*\)", "", RegexOptions.IgnoreCase), @"url\s*\(|image-set\s*\(|image\s*\(|src\s*\(", RegexOptions.IgnoreCase)) throw new InvalidDataException("External SVG content");
+        }
+        StringBuilder style = new();
+        bool inStyle = false;
+        do
+        {
+            if (reader.NodeType == XmlNodeType.ProcessingInstruction || reader.Depth > 128) throw new InvalidDataException("Invalid SVG document");
+            if (reader.NodeType is XmlNodeType.Text or XmlNodeType.CDATA) { if (inStyle) style.Append(reader.Value); }
+            if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "style") { CheckCss(style.ToString()); style.Clear(); inStyle = false; }
+            if (reader.NodeType != XmlNodeType.Element) continue;
+            if (inStyle) throw new InvalidDataException("Invalid SVG style");
+            if (reader.NamespaceURI != ns || !elements.Contains(reader.LocalName)) throw new InvalidDataException("Unsupported SVG element");
+            if (reader.LocalName == "style") inStyle = !reader.IsEmptyElement;
+            while (reader.MoveToNextAttribute())
+            {
+                if (reader.Prefix == "xmlns" || reader.Name == "xmlns") continue;
+                if (reader.LocalName.StartsWith("on", StringComparison.OrdinalIgnoreCase) || reader.LocalName == "base" || reader.LocalName == "href" && !Regex.IsMatch(reader.Value, @"^#[\w:.-]+$")) throw new InvalidDataException("Unsafe SVG attribute");
+                CheckCss(reader.Value);
+            }
+            reader.MoveToElement();
+        } while (reader.Read());
+    }
+
+    private static async Task CacheImages(string id, JArray images, string expectedFormat)
     {
         string folder = Path.Combine(Root, "server/SwarmUI/src/wwwroot/studio-results");
         Directory.CreateDirectory(folder);
@@ -277,22 +365,34 @@ public static partial class StudioCloudAPI
                     buffer.Write(chunk, 0, size);
                 }
                 byte[] bytes = buffer.ToArray();
-                var info = Image.Identify(bytes);
-                if (info is null || (long)info.Width * info.Height > 32_000_000) throw new InvalidDataException("Invalid result image");
-                var format = info.Metadata.DecodedImageFormat;
-                string extension = format?.FileExtensions.FirstOrDefault() ?? throw new InvalidDataException("Unknown image format");
-                if (extension is not ("png" or "jpg" or "jpeg" or "webp")) throw new InvalidDataException("Unsupported image format");
+                string extension, mime;
+                if (expectedFormat == "svg")
+                {
+                    ValidateStaticSvg(bytes);
+                    extension = "svg";
+                    mime = "image/svg+xml";
+                }
+                else
+                {
+                    var info = Image.Identify(bytes);
+                    if (info is null || (long)info.Width * info.Height > 32_000_000) throw new InvalidDataException("Invalid result image");
+                    var format = info.Metadata.DecodedImageFormat;
+                    extension = format?.FileExtensions.FirstOrDefault() ?? throw new InvalidDataException("Unknown image format");
+                    if (extension is not ("png" or "jpg" or "jpeg" or "webp" or "gif") || expectedFormat == "gif" && (extension != "gif" || info.FrameMetadataCollection.Count < 2))
+                        throw new InvalidDataException("Unexpected image format or missing animation");
+                    item["width"] = info.Width;
+                    item["height"] = info.Height;
+                    mime = format.DefaultMimeType;
+                }
                 string name = id + "-" + (int)item["index"] + "." + extension;
                 await File.WriteAllBytesAsync(Path.Combine(folder, name + ".tmp"), bytes);
                 File.Move(Path.Combine(folder, name + ".tmp"), Path.Combine(folder, name), true);
                 item["url"] = "/studio-results/" + name;
-                item["width"] = info.Width;
-                item["height"] = info.Height;
-                item["mime_type"] = format.DefaultMimeType;
+                item["mime_type"] = mime;
                 item["sha256"] = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
                 item.Remove("download_error");
             }
-            catch { item["download_error"] = "自动转存未完成；远程结果可能到期，请下载保存"; }
+            catch { if (expectedFormat == "svg") item["url"] = ""; item["download_error"] = "自动转存未完成；远程结果可能到期，请下载保存"; }
         }
     }
 
@@ -326,7 +426,7 @@ public static partial class StudioCloudAPI
                 JArray completedImages = record["images"] as JArray ?? [];
                 if (completedImages.OfType<JObject>().Any(i => i["download_error"] is not null))
                 {
-                    await CacheImages(id, completedImages);
+                    await CacheImages(id, completedImages, (string)record["parameters"]?["output_format"]);
                     Delivery(record);
                     Save(user, record);
                 }
@@ -355,7 +455,7 @@ public static partial class StudioCloudAPI
                 {
                     JArray images = NormalizeImages(data);
                     if (images.Count == 0) throw new InvalidDataException("Completed without images");
-                    await CacheImages(id, images);
+                    await CacheImages(id, images, (string)record["parameters"]?["output_format"]);
                     record["images"] = images;
                     Delivery(record);
                     record["completed_utc"] = DateTime.UtcNow.ToString("o");

@@ -20,6 +20,7 @@ from aiohttp import ClientError, ClientSession, ClientTimeout, WSMsgType, web
 
 from .store import Store, TERMINAL, password_hash, password_valid
 from .local_queue import LocalQueue
+from .image_preview import svg_headers
 from .agent import CreativeAgent
 from .workbench import Workbench
 from .image_uploads import ImageUploadError, check_upload_batch, generation_references
@@ -474,7 +475,7 @@ class Gateway:
         delivered = 0
         for image in record.get("images", []):
             url = image.get("url", "")
-            if not re.fullmatch(r"/studio-results/[a-zA-Z0-9_-]+\.(?:png|jpg|jpeg|webp)", url):
+            if not re.fullmatch(r"/studio-results/[a-zA-Z0-9_-]+\.(?:png|jpg|jpeg|webp|gif|svg)", url):
                 continue
             if not Path(url).name.startswith(tid + "-"):
                 raise ValueError("cloud artifact request mismatch")
@@ -565,7 +566,7 @@ class Gateway:
                 raise ValueError()
             disk = Path(row["disk_path"]).resolve()
             local = disk.is_relative_to(self.output.resolve())
-            if not (local or disk.is_relative_to(self.results.resolve())) or disk.suffix.lower() not in IMAGE_EXTENSIONS:
+            if not (local or disk.is_relative_to(self.results.resolve())) or disk.suffix.lower() not in (IMAGE_EXTENSIONS if local else IMAGE_EXTENSIONS | {'.gif','.svg'}):
                 raise ValueError()
         except ValueError:
             raise web.HTTPNotFound()
@@ -594,7 +595,7 @@ class Gateway:
                 return web.Response(body=bytes(body), content_type=content_type, headers={"Cache-Control": "private, no-store"})
         if not disk.is_file():
             raise web.HTTPNotFound()
-        response = web.FileResponse(disk)
+        response = web.FileResponse(disk, headers=svg_headers(disk))
         response.headers["Cache-Control"] = "private, no-store"
         return response
 

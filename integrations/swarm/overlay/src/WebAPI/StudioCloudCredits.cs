@@ -77,7 +77,11 @@ public static partial class StudioCloudAPI
             ["scope"] = "public_default_group", ["account_specific_price_unknown"] = true,
             ["additional_input_cost_unknown"] = true, ["credits_per_usd_reference"] = ReferenceCreditsPerUsd
         };
+        if ((string)input["output_format"] == "svg") { quote["label"] = "SVG 按图像及 gpt-5.4-mini 写作用量分别计费，总额待结算"; return quote; }
+        bool gif = (string)input["output_format"] == "gif";
+        if (gif) quote["label"] = "GIF 按整张帧拼图及输入用量计费，当前尺寸报价待定";
         if (!Succeeded(response) || response["data"] is not JObject data) return quote;
+        if ((string)data["model_name"] is string priceModel && priceModel != model) return quote;
         JObject pricing = data["pricing"] as JObject;
         if ((string)pricing?["unit"] != "usd_per_million_tokens") return quote;
         if (model == "gemini-nano-banana-2.1")
@@ -91,8 +95,17 @@ public static partial class StudioCloudAPI
             quote["label"] = "预计预留积分参考；最终按实际 token 结算，公开默认分组价可能与账户不同";
             return quote;
         }
-        if (model is not ("gpt-image-2.5-flare" or "gpt-image-2.5-sunburst") || size == "auto" || size.Contains('x')) return quote;
-        string sizeKey = resolution switch { "1K" => size, "2K" => size + "@2k", "4K" => size + "@4k", _ => "" };
+        if (model is not ("gpt-image-2.6-flare" or "gpt-image-2.6-sunburst")) return quote;
+        string sizeKey;
+        if (gif)
+        {
+            string[] sides = (size == "auto" ? "512x512" : size).Split('x');
+            if (sides.Length != 2 || !int.TryParse(sides[0], out int w) || !int.TryParse(sides[1], out int h)) return quote;
+            var sheet = GifSheet(w, h, input.Value<int?>("frame_count") ?? 9);
+            sizeKey = $"{sheet.Width}x{sheet.Height}";
+        }
+        else if (size == "auto") return quote;
+        else sizeKey = size.Contains('x') ? size : resolution switch { "1K" => size, "2K" => size + "@2k", "4K" => size + "@4k", _ => "" };
         JObject tokens = data["size_quality_tokens"]?[sizeKey] as JObject;
         decimal? rate = NonnegativeNumber(pricing?["effective_rates"]?["image_output"]);
         if (tokens is null || !rate.HasValue) return quote;
@@ -109,7 +122,7 @@ public static partial class StudioCloudAPI
         {
             quote["kind"] = "output_reference"; quote["credits_per_image"] = credits;
             quote["credits_total_reference"] = credits * count;
-            quote["label"] = "单张输出积分参考；另计提示词和参考图输入用量，实际账户分组价可能不同";
+            quote["label"] = gif ? "每段 GIF 按整张帧拼图估算输出积分，另计提示词和参考图输入用量" : "单张输出积分参考；另计提示词和参考图输入用量，实际账户分组价可能不同";
         }
         return quote;
     }

@@ -15,7 +15,7 @@ from .image_uploads import original_image_bytes, ImageUploadError
 from .image_preview import preview_path
 from .compare_board import CompareBoard
 from .board_video import upload_video, video_source
-from .quick_edits import RECIPES, checked_points, checked_subject_marks, correct_mask, cutout, heal_product_spots, product_retouch, retouch_or_enlarge, retouch_settings, upscale_size
+from .quick_edits import RECIPES, backdrop_option, checked_points, checked_subject_marks, correct_mask, cutout, heal_product_spots, product_retouch, replace_backdrop, retouch_or_enlarge, retouch_settings, upscale_size
 from .photocraft import PhotoCraftError, load_config
 from .agent_limits import AgentError
 
@@ -58,6 +58,9 @@ class Workbench:
         """)
         if not any(row[1] == 'mask_json' for row in self.store.db.execute('PRAGMA table_info(studio_quick_jobs)')):
             self.store.db.execute("ALTER TABLE studio_quick_jobs ADD COLUMN mask_json TEXT")
+            self.store.db.commit()
+        if not any(row[1] == 'subject' for row in self.store.db.execute('PRAGMA table_info(studio_quick_jobs)')):
+            self.store.db.execute("ALTER TABLE studio_quick_jobs ADD COLUMN subject TEXT")
             self.store.db.commit()
 
     def media(self, uid, mid):
@@ -106,7 +109,7 @@ class Workbench:
             path = Path(row['disk_path']).resolve()
             if not any(path.is_relative_to(root.resolve()) for root in (self.g.output, self.g.results)):
                 raise web.HTTPNotFound()
-        if not path.is_file() or path.suffix.lower() not in ('.png','.jpg','.jpeg','.webp'):
+        if not path.is_file() or path.suffix.lower() not in ('.png','.jpg','.jpeg','.webp','.gif'):
             raise web.HTTPNotFound()
         return path
 
@@ -135,13 +138,19 @@ class Workbench:
         instructions=json.loads(row['mask_json']) if row['mask_json'] else {}
         return {'id':jid, 'status':row['status'], 'error':row['error'], 'result':result,
                 'include':instructions.get('include',[]),'marks':instructions.get('marks',[]),
-                'source':row['source'], 'tool':row['tool'], 'option':row['option']}
+                'source':row['source'], 'tool':row['tool'], 'option':row['option'], 'subject':row['subject']}
 
     async def submit(self, user, data):
         jid = identifier(data.get('id'))
         tool, option, source = data.get('tool'), data.get('option'), data.get('source')
         if tool=='retouch':
             retouch_settings(option)
+        elif tool=='cutout' and backdrop_option(option):
+            if not isinstance(source,str) or not source.startswith(MEDIA) or data.get('mask') is not None:
+                raise ValueError('请选择已经完成的透明底结果。')
+            parent = self.job(user,identifier(source[len(MEDIA):]))
+            if parent['tool']!='cutout' or parent['option'] not in RECIPES['cutout'] or not parent['result']:
+                raise ValueError('请选择已经完成的透明底结果。')
         elif not isinstance(tool, str) or tool not in RECIPES or option not in RECIPES[tool]:
             raise ValueError('unknown recipe')
         mask = data.get('mask')
@@ -187,6 +196,8 @@ class Workbench:
                 return fail('该请求编号已经用于另一张图片。',409)
             return web.json_response(previous)
         path = self.source(user, source)
+        if path.suffix.lower() == '.gif':
+            return fail('快捷修图处理静态图。请先选取 GIF 中需要编辑的一帧。',400)
         if tool == 'upscale':
             width, height = dimensions(path)
             try:
@@ -196,7 +207,7 @@ class Workbench:
         if self.store.one("SELECT 1 FROM studio_quick_jobs WHERE owner_id=? AND status='processing'",(user['id'],)):
             return fail('上一张图片仍在处理中。',409)
         with self.store.db:
-            self.store.db.execute("INSERT INTO studio_quick_jobs VALUES(?,?,?,?,?,'processing',NULL,unixepoch(),?)",
+            self.store.db.execute("INSERT INTO studio_quick_jobs(id,owner_id,source,tool,option,status,error,created_at,mask_json) VALUES(?,?,?,?,?,'processing',NULL,unixepoch(),?)",
                                   (jid,user['id'],source,tool,option,encoded))
         task = asyncio.create_task(self.process(user['id'],jid,path,tool,option,base,mask,points,marks))
         self.running.add(task)
@@ -207,26 +218,33 @@ class Workbench:
         folder = self.root / uid
         folder.mkdir(exist_ok=True)
         temp, final = folder / (jid + '.part'), folder / (jid + '.png')
+        subject = None
         try:
             async with self.slots:
                 if base is not None and tool=='retouch':
+                    subject=self.store.one('SELECT subject FROM studio_quick_jobs WHERE id=? AND owner_id=?',(identifier(mask['base']),uid))['subject']
                     await heal_product_spots(load_config(self.g.root)['executable'],base,temp,mask['strokes'])
                 elif base is not None:
                     await asyncio.to_thread(correct_mask,source,base,temp,mask['strokes'])
+                elif tool=='cutout' and backdrop_option(option):
+                    await replace_backdrop(load_config(self.g.root)['executable'],source,temp,option)
                 elif tool == 'cutout':
                     await cutout(self.cutout_model,source,temp,points,option=='pick',option=='hands',marks)
                 elif tool == 'retouch':
-                    await product_retouch(self.cutout_model,source,temp,option)
+                    subject = await product_retouch(self.cutout_model,source,temp,option)
                 else:
-                    await asyncio.to_thread(retouch_or_enlarge,source,temp,tool,option)
+                    await asyncio.to_thread(retouch_or_enlarge,source,temp,tool,option,
+                                            model_dir=self.g.root/'models/upscale_models')
                 w,h = dimensions(temp)
                 temp.replace(final)
             name = {'cutout':'透明底','retouch':'主图精修','upscale':'高清放大'}[tool] + '.png'
+            if tool=='cutout' and backdrop_option(option):
+                name = '影棚背景.png' if option.startswith('studio:') else '纯色背景.png'
             with self.store.db:
                 self.store.db.execute('INSERT INTO studio_media VALUES(?,?,?,?,?,?)',(jid,uid,name,'.png',w,h))
                 self.store.db.execute("""INSERT INTO tasks(id,owner_id,kind,model,status,requested,completed,started_at,ended_at,credits)
                   SELECT id,owner_id,'quick',tool,'completed',1,1,created_at,?,0 FROM studio_quick_jobs WHERE id=?""",(time.time(),jid))
-                self.store.db.execute("UPDATE studio_quick_jobs SET status='completed' WHERE id=?",(jid,))
+                self.store.db.execute("UPDATE studio_quick_jobs SET status='completed',subject=? WHERE id=?",(subject,jid))
         except Exception as exc:
             if isinstance(exc,(ValueError,PhotoCraftError,AgentError)):
                 message = str(exc)

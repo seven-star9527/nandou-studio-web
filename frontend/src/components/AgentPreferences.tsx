@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { agentRequest, type AgentSettings } from '../agent-api';
 import Icon from './Icon';
 
-const MODELS = [['gpt-image-2.5-flare', 'GPT Image 2.5 Flare'], ['gpt-image-2.5-sunburst', 'GPT Image 2.5 Sunburst'], ['gemini-nano-banana-2.1', 'Nano Banana 2.1']];
+const MODELS = [['gpt-image-2.6-flare', 'GPT Image 2.6 Flare'], ['gpt-image-2.6-sunburst', 'GPT Image 2.6 Sunburst'], ['gemini-nano-banana-2.1', 'Nano Banana 2.1']];
 const RATIOS = ['auto', '1:1', '3:4', '16:9', '4:3', '9:16', '2:3', '3:2', '21:9'];
 
 export default function AgentPreferences({ value, update, disabled, close }: {value: AgentSettings; update: (value: Partial<AgentSettings>) => void; disabled: boolean; close: () => void}) {

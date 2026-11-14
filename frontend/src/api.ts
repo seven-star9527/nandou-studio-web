@@ -96,7 +96,7 @@ export class SwarmClient {
   interrupt(taskId?: string) { return this.request<{ success: boolean; studio_cancelled?: boolean; studio_task_id?: string }>('InterruptAll', { other_sessions: false, ...(taskId ? { studio_task_id: taskId } : {}) }); }
   async cloudCapabilities() {
     const value = await this.request<CloudCapabilities>('GetStudioCloudCapabilities');
-    return { ...value, models: value.models.map(model => ({ ...model, qualities: (model.qualities ?? []).filter(quality => !model.id.startsWith('gpt-image-2.5-') || !['max', 'auto'].includes(quality)) })) };
+    return { ...value, models: value.models.map(model => ({ ...model, qualities: (model.qualities ?? []).filter(quality => !/^gpt-image-2[.][56]-/.test(model.id) || !['max', 'auto'].includes(quality)) })) };
   }
   submitCloud(input: CloudRequest) { return this.request<{ request_id: string; status: string; task_id?: string }>('SubmitStudioCloudImage', input); }
   cloudTask(requestId: string) { return this.request<CloudTask>('GetStudioCloudTask', { request_id: requestId }); }

@@ -7,9 +7,9 @@ type Point = { x:number; y:number };
 const initialView:Camera = {zoom:1, x:.5, y:.5};
 const clamp=(value:number, lo:number, hi:number)=>Math.min(hi,Math.max(lo,value));
 
-function geometry(box:Box, image:WorkImage | undefined, view:Camera){
+function geometry(box:Box, image:WorkImage | undefined, view:Camera, fitLimit:number){
   const w=image?.width || 1, h=image?.height || 1;
-  const fit=Math.min(1,box.width/w,box.height/h);
+  const fit=Math.min(fitLimit,box.width/w,box.height/h);
   const width=w*fit*view.zoom,height=h*fit*view.zoom;
   const left=width<=box.width ? (box.width-width)/2 : clamp(box.width/2-view.x*width,box.width-width,0);
   const top=height<=box.height ? (box.height-height)/2 : clamp(box.height/2-view.y*height,box.height-height,0);
@@ -20,10 +20,10 @@ interface PaneProps {
   label:string; image?:WorkImage; backdrop?:string; view:Camera; empty:ReactNode;
   update:(v:Camera)=>void; marks?:SubjectMark[]; onPick?:(p:Point)=>void;
   onSize?:(width:number,height:number)=>void;
-  onFitScale?:(scale:number)=>void; maxZoom:number;
+  onFitScale?:(scale:number)=>void; maxZoom:number; fitLimit?:number; actualZoom:number;
 }
 
-function Pane({label,image,backdrop='',view,empty,update,marks,onPick,onSize,onFitScale,maxZoom}:PaneProps){
+function Pane({label,image,backdrop='',view,empty,update,marks,onPick,onSize,onFitScale,maxZoom,fitLimit=1,actualZoom}:PaneProps){
   const frame=useRef<HTMLDivElement>(null);
   const gesture=useRef<{id:number; start:Point; left:number; top:number; moved:boolean; select:boolean}|null>(null);
   const [space,setSpace]=useState(false),[dragging,setDragging]=useState(false);
@@ -34,7 +34,7 @@ function Pane({label,image,backdrop='',view,empty,update,marks,onPick,onSize,onF
     resize();const observer=new ResizeObserver(resize);observer.observe(node);
     return ()=>observer.disconnect();
   },[]);
-  const g=geometry(box,image,view);
+  const g=geometry(box,image,view,fitLimit);
   useLayoutEffect(()=>{if(image?.width && image.height)onFitScale?.(g.fit);},[g.fit,image?.width,image?.height,onFitScale]);
   function local(x:number,y:number){const r=frame.current!.getBoundingClientRect();return {x:x-r.left,y:y-r.top};}
   function zoomAt(zoom:number,p:Point){
@@ -75,7 +75,7 @@ function Pane({label,image,backdrop='',view,empty,update,marks,onPick,onSize,onF
     const middle={x:box.width/2,y:box.height/2};
     if(e.key==='0'){e.preventDefault();update(initialView);}
     else if(e.key==='1' || ['+','=','-'].includes(e.key)){
-      e.preventDefault();zoomAt(e.key==='1'?1/g.fit:view.zoom*(e.key==='-'?1/1.5:1.5),middle);
+      e.preventDefault();zoomAt(e.key==='1'?actualZoom:view.zoom*(e.key==='-'?1/1.5:1.5),middle);
     }
   }
   function down(e:PointerEvent<HTMLDivElement>){
@@ -107,7 +107,7 @@ function Pane({label,image,backdrop='',view,empty,update,marks,onPick,onSize,onF
       aria-label={label+'预览'} tabIndex={image?0:undefined} onKeyDown={key} onKeyUp={e=>{if(e.code==='Space')setSpace(false);}}
       onBlur={()=>setSpace(false)} onPointerDown={down} onPointerMove={move} onPointerUp={up}
       onLostPointerCapture={()=>{gesture.current=null;setDragging(false);}}
-      onDoubleClick={e=>{if(!onPick && image)zoomAt(view.zoom>1?1:Math.max(2,1/g.fit),local(e.clientX,e.clientY));}}>
+      onDoubleClick={e=>{if(!onPick && image)zoomAt(view.zoom>1?1:Math.max(2,actualZoom),local(e.clientX,e.clientY));}}>
       {image?<div className="detail-image" style={{width:image.width||1,height:image.height||1,transform:`translate3d(${g.left}px,${g.top}px,0) scale(${g.fit*view.zoom})`}}>
         <img src={image.url} alt={label} draggable={false} onLoad={e=>onSize?.(e.currentTarget.naturalWidth,e.currentTarget.naturalHeight)}/>
         </div>:empty}
@@ -133,10 +133,12 @@ export default function QuickPreview({source,result,backdrop,marks,onPick,onSize
     },75);
   },[displayPercent]);
   useEffect(()=>()=>window.clearTimeout(displayTimer.current),[]);
-  const shared={view,update:setView,maxZoom};
+  const shared={view,update:setView,maxZoom,actualZoom:1/fit};
+  // Match the framing when a small original is enlarged beyond its native dimensions.
+  const sourceLimit=source?.width && result?.width ? Math.max(1,result.width/source.width) : 1;
   function scale(zoom:number){setView(v=>({...v,zoom:clamp(zoom,1,maxZoom)}));}
   return <><div className="work-pair">
-    <Pane {...shared} label="原图" image={source} marks={marks} onPick={onPick} onSize={onSize} onFitScale={setSourceFit}
+    <Pane {...shared} label="原图" image={source} marks={marks} onPick={onPick} onSize={onSize} onFitScale={setSourceFit} fitLimit={sourceLimit}
       empty={<button disabled={busy} onClick={choose}>拖入图片，或点击上传</button>}/>
     <Pane {...shared} label="处理结果" image={result} backdrop={backdrop} onFitScale={setResultFit} empty={busy?<div className="quick-processing" role="status">
       {source && <img className="quick-processing-image" src={source.url} alt="" draggable={false}/>}

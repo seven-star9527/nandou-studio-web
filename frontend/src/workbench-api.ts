@@ -9,7 +9,7 @@ export type QuickTool = keyof typeof toolNames;
 export interface SubjectMark { x:number; y:number; mode:'keep'|'remove' }
 export interface QuickJob {
   id: string; source: string; include?: [number,number][]; marks?:SubjectMark[]; tool: QuickTool; option: string;
-  status: 'processing' | 'completed' | 'failed'; error?: string; result?: WorkImage;
+  status: 'processing' | 'completed' | 'failed'; error?: string; result?: WorkImage; subject?:string | null;
 }
 
 export function workRequest<T>(path: string, data?: object, signal?: AbortSignal) {
