@@ -94,7 +94,7 @@ class CompareBoard:
         if kind == 'image' and not card.get('url') and card.get('generationId'):
             return
         if kind == 'image':
-            self.workbench.source(user, card['url'])
+            self.workbench.source(user, card['url'], board=True)
         elif kind == 'video':
             video_source(self.workbench, user, card['url'])
 

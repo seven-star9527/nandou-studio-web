@@ -1,5 +1,6 @@
 .task-references { margin-block: 20px; }
 .task-references h3 { font-size: 14px; margin-block: 0 10px; }
+.task-references .quiet-button { margin-top: 12px; }
 .task-references p, .task-reference-list span { color: var(--glass-muted); font-size: 12px; }
 .task-reference-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .task-reference-list a { min-width: 0; color: inherit; text-decoration: none; }

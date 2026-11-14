@@ -82,8 +82,8 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
     catch (cause) { setEditHistoryError(String(cause)); }
   };
   useEffect(() => { void refreshEdits(); }, []);
-  const [board, setBoard] = useState<{initial?:WorkImage} | null>(null);
-  const openBoard = (initial?:WorkImage) => { setQuick(null); void refreshEdits(); setBoard({initial});selectWorkspace('studio');setSurface('canvas');setProject(null);window.scrollTo(0,0); };
+  const [board, setBoard] = useState<WorkImage[] | null>(null);
+  const openBoard = (...images: WorkImage[]) => { setQuick(null); void refreshEdits(); setBoard(images);selectWorkspace('studio');setSurface('canvas');setProject(null);window.scrollTo(0,0); };
   const [quick, setQuick] = useState<{tool:QuickTool; source?:WorkImage} | null>(null);
   const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth >= 1150);
   const [previousPrompt,setPreviousPrompt] = useState<{before:string;minimum:number;applied:string; added?:string; geometry?:Pick<typeof studio.settings,'ratio'|'width'|'height'|'resolution'>; appliedRatio?:string}|null>(null);
@@ -153,7 +153,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         }}>
           {(['image','canvas'] as const).map(t=><button key={t} role="tab" aria-selected={surface===t} className={surface===t?'selected':''} onClick={()=>{setSurface(t);if(t==='image')setBoard(null);}}>{t==='image'?'图片生成':'画布'}</button>)}
         </GlassTabs>
-        {surface==='canvas' ? <CanvasProjects key={project?.id??'projects'} adding={Boolean(board?.initial)} open={setProject}/> : <>
+        {surface==='canvas' ? <CanvasProjects key={project?.id??'projects'} adding={Boolean(board?.length)} open={setProject}/> : <>
         <Composer editorRef={promptEditor} settings={studio.settings} config={studio.config} params={studio.params} models={studio.models} prompt={studio.prompt} references={studio.references}
           editing={editing} setPrompt={studio.setPrompt} update={changes => studio.setSettings(previous => ({ ...previous, ...changes }))}
           setGeometry={(ratio, resolution) => studio.setGeometry(ratio, resolution, editing)} addReferences={studio.addReferences} reorderReferences={studio.reorderReferences} removeReference={studio.removeReference} selectModel={studio.selectModel}
@@ -185,6 +185,6 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
       </section>
     </main></div>}
     {quick && <QuickEdit compare={openBoard} switchTool={(tool,source) => setQuick({tool,source})} tool={quick.tool} initial={quick.source} close={() => {setQuick(null);void refreshEdits();}} />}
-    {project && <CompareBoard key={project.id} studio={studio} onEditComplete={refreshEdits} project={project} initial={board?.initial} close={() => {setProject(null);setBoard(null);}} />}
+    {project && <CompareBoard key={project.id} studio={studio} onEditComplete={refreshEdits} project={project} initial={board} close={() => {setProject(null);setBoard(null);}} />}
   </div>;
 }

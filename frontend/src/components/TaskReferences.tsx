@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import './task-references.css';
 
 import { listTaskReferences } from '../task-references';
+import type { WorkImage } from '../workbench-api';
 
-export default function TaskReferences({ taskId }: { taskId: string }) {
+export default function TaskReferences({ taskId, compare }: { taskId: string; compare?: (images: WorkImage[]) => void }) {
   const [state, setState] = useState<{ taskId: string; references?: Awaited<ReturnType<typeof listTaskReferences>>; error?: string }>({ taskId });
   useEffect(() => {
     const abort = new AbortController();
@@ -20,5 +21,8 @@ export default function TaskReferences({ taskId }: { taskId: string }) {
       : current.references.length ? <div className="task-reference-list">{current.references.map(item => <a key={item.index} href={item.url} target="_blank" rel="noreferrer" aria-label={`查看参考原图 ${item.index}`}>
         <img src={item.url} alt={`参考原图 ${item.index}`} loading="lazy" /><span>参考图 {item.index} · {item.width} × {item.height}</span>
       </a>)}</div> : <p>此任务未保存参考原图。旧记录仅保留参考图尺寸时，无法在这里还原。</p>}
+    {compare && current.references && current.references.length > 0 && <button className="quiet-button" onClick={() => compare(current.references!.map(item => ({
+      url:item.url, name:`参考原图 ${item.index}`
+    })))}>原图与生成图一起对比</button>}
   </section>;
 }

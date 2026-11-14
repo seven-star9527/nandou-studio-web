@@ -54,6 +54,7 @@ export interface Artwork {
   seed?: string; model?: string; steps?: number; metadata?: string;
   generatedAt?: string; completedAt?: string; duration?: number; current?: boolean; batchIndex?: number; batchSize?: number;
   source?: 'local' | 'cloud' | 'quick';
+  originalUrl?: string;
   locallySaved?: boolean; downloadError?: string; mimeType?: string;
   taskCreditsCost?: number; taskCostSettled?: boolean;
   taskId?: string; ownerId?: string; ownerEmail?: string; ownerName?: string; hiddenAt?: string;

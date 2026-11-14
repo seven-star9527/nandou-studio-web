@@ -40,7 +40,7 @@ function place(image:LayerInput, cards:Card[]): Card {
     x:last ? last.x+(last.w??width)+gap : 0,y:last?.y ?? 0};
 }
 
-export default function CompareBoard({project, initial, close, studio, onEditComplete}: {project:CanvasProject; initial?:WorkImage; close:()=>void; studio:StudioSession; onEditComplete:()=>void}) {
+export default function CompareBoard({project, initial, close, studio, onEditComplete}: {project:CanvasProject; initial:WorkImage[] | null; close:()=>void; studio:StudioSession; onEditComplete:()=>void}) {
   const dialog = useRef<HTMLElement>(null), plane = useRef<HTMLDivElement>(null), file = useRef<HTMLInputElement>(null);
   const videoFile = useRef<HTMLInputElement>(null);
   const [editing,setEditing]=useState('');
@@ -141,7 +141,19 @@ export default function CompareBoard({project, initial, close, studio, onEditCom
       revision.current=data.revision;
       current.current={name:data.name??project.name,cards:data.cards,preferred:data.preferred,view:data.view};
       setBoard(current.current);choose(data.preferred ?? data.cards[0]?.id ?? '');setReady(true);
-      if(initial)append([initial]);
+      if(initial?.length) {
+        if(initial.length===1)append(initial);
+        else {
+          // Place the comparison together without moving existing work.
+          const board=current.current;
+          if(board.cards.length+initial.length>maxCards)throw new Error('剩余图层不足以放下整组图片，请选择其他画布或新建画布。');
+          const y=board.cards.length ? Math.max(...board.cards.map(c=>c.y+(c.h??height)))+gap : 0;
+          const cards=initial.map((image,i)=>({...place(image,[]),x:i*(width+gap),y}));
+          choose(cards[cards.length-1].id);
+          change({...board,cards:[...board.cards,...cards],view:fit(cards,plane.current!)});
+          void save();
+        }
+      }
     }).catch(cause=>{if(!controller.signal.aborted)setError(String(cause));});
     const leaving=(e:BeforeUnloadEvent)=>{if(dirty.current||writing.current){e.preventDefault();e.returnValue='';}};
     window.addEventListener('beforeunload',leaving);
@@ -419,8 +431,8 @@ export default function CompareBoard({project, initial, close, studio, onEditCom
           left:`clamp(290px, ${board.view.x+(active.x+geometry(active).width/2)*board.view.zoom}px, calc(100% - ${layers?530:250}px))`,
           top:`clamp(70px, ${board.view.y+active.y*board.view.zoom-78}px, calc(100% - 76px))`
         }}>
-          <button title="基于此图创建" onClick={()=>{setLayers(false);setVariant(active.id);}}><Icon name="spark" size={16}/>智能改图</button>
-          {(['retouch','cutout','upscale'] as const).map(tool=><button key={tool} onClick={()=>setQuick({tool,source:{url:active.url!,name:active.name},parent:active.id})}><Icon name={tool==='retouch'?'brush':tool==='cutout'?'cutout':'expand'} size={16}/>{tool==='retouch'?'主图精修':tool==='cutout'?'抠图':'高清放大'}</button>)}
+          {!active.url!.toLowerCase().endsWith('.svg') && <><button title="基于此图创建" onClick={()=>{setLayers(false);setVariant(active.id);}}><Icon name="spark" size={16}/>智能改图</button>
+          {(['retouch','cutout','upscale'] as const).map(tool=><button key={tool} onClick={()=>setQuick({tool,source:{url:active.url!,name:active.name},parent:active.id})}><Icon name={tool==='retouch'?'brush':tool==='cutout'?'cutout':'expand'} size={16}/>{tool==='retouch'?'主图精修':tool==='cutout'?'抠图':'高清放大'}</button>)}</>}
           <a title="下载原图" aria-label="下载原图" href={imageUrl(active.url!)} download={active.name}><Icon name="download" size={16}/></a>
         </div>}
         {variant && (variant==='new' || (usable && variant===selected)) && <CanvasVariant key={variant} studio={studio}

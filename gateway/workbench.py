@@ -13,7 +13,8 @@ from urllib.parse import unquote
 from aiohttp import web
 from PIL import Image
 from .image_uploads import original_image_bytes, ImageUploadError
-from .image_preview import preview_path
+from .image_preview import preview_path, svg_headers
+from .task_references import reference_directory, task_references
 from .compare_board import CompareBoard
 from .board_video import upload_video, video_source
 from .quick_edits import RECIPES, backdrop_option, checked_points, checked_subject_marks, correct_mask, cutout, heal_product_spots, product_retouch, replace_backdrop, retouch_or_enlarge, retouch_settings, upscale_size
@@ -84,7 +85,7 @@ class Workbench:
         row = self.media(uid, mid)
         return {'url': MEDIA + mid, 'name': row['name'], 'width': row['width'], 'height': row['height']}
 
-    def source(self, user, url):
+    def source(self, user, url, *, board=False):
         if not isinstance(url, str) or len(url) > 2048 or '?' in url or '#' in url:
             raise web.HTTPNotFound()
         if url.startswith(MEDIA):
@@ -97,6 +98,16 @@ class Workbench:
                     uid = task['owner_id']
             row = self.media(uid, mid)
             path = self.root / uid / (row['id'] + row['extension'])
+        elif url.startswith('/studio-references/'):
+            parts = url.split('/')
+            if len(parts) != 4:
+                raise web.HTTPNotFound()
+            task = self.store.task(parts[2])
+            if not self.store.task_visible(task, user) or task['hidden_at']:
+                raise web.HTTPNotFound()
+            if not any(entry['url'] == url for entry in task_references(self.g.root, parts[2])):
+                raise web.HTTPNotFound()
+            path = reference_directory(self.g.root, parts[2]) / parts[3]
         elif url.startswith('/studio-agent/assets/'):
             aid = identifier(url.split('/')[-1])
             asset = self.store.one('SELECT a.chat_id FROM agent_assets a JOIN agent_chats c ON c.id=a.chat_id WHERE a.id=? AND c.owner_id=? AND c.hidden_at IS NULL', (aid, user['id']))
@@ -119,7 +130,10 @@ class Workbench:
             path = Path(row['disk_path']).resolve()
             if not any(path.is_relative_to(root.resolve()) for root in (self.g.output, self.g.results)):
                 raise web.HTTPNotFound()
-        if not path.is_file() or path.suffix.lower() not in ('.png','.jpg','.jpeg','.webp','.gif'):
+        allowed = ('.png','.jpg','.jpeg','.webp','.gif')
+        if board and url.startswith('/studio-results/'):
+            allowed += ('.svg',)
+        if not path.is_file() or path.suffix.lower() not in allowed:
             raise web.HTTPNotFound()
         return path
 
@@ -268,12 +282,13 @@ class Workbench:
 
     async def route(self, request, user, route):
         if route == 'history' and request.method == 'GET':
-            rows = self.store.all("""SELECT m.*,q.created_at,u.email,u.name owner_name,v.hidden_at FROM studio_quick_jobs q
+            rows = self.store.all("""SELECT m.*,q.created_at,q.source original,u.email,u.name owner_name,v.hidden_at FROM studio_quick_jobs q
                 JOIN studio_media m ON q.id=m.id JOIN users u ON m.owner_id=u.id
                 LEFT JOIN task_visibility v ON v.task_id=m.id AND v.viewer_id=m.owner_id
                 WHERE (? OR (m.owner_id=? AND v.hidden_at IS NULL)) ORDER BY q.created_at DESC LIMIT 100""",(user['role']=='admin',user['id']))
             return private_history(request, user, [{'id':r['id'],'taskId':r['id'],'ownerId':r['owner_id'],'ownerEmail':r['email'],'ownerName':r['owner_name'],
                 'hiddenAt':str(r['hidden_at']) if r['hidden_at'] else None,'url':MEDIA+r['id'],'source':'quick',
+                'originalUrl':r['original'] if r['owner_id']==user['id'] else None,
                 'prompt':r['name'],'width':r['width'],'height':r['height'],
                 'generatedAt':datetime.fromtimestamp(r['created_at'],timezone.utc).isoformat()} for r in rows])
         if route == 'board-video' and request.method == 'POST':
@@ -287,10 +302,12 @@ class Workbench:
         if route == 'board':
             return await self.board.route(request,user)
         if route == 'board-image' and request.method == 'GET':
-            path = self.source(user, request.query.get('source'))
-            if request.query.get('preview') == '1':
+            path = self.source(user, request.query.get('source'), board=True)
+            headers = svg_headers(path)
+            if request.query.get('preview') == '1' and not headers:
                 path = await preview_path(path,self.root/'previews',560)
-            return web.FileResponse(path)
+                headers['Content-Type'] = 'image/webp'
+            return web.FileResponse(path, headers=headers)
         if route == 'upload' and request.method=='POST':
             return await self.upload(user, await self.g.body(request))
         if route == 'jobs' and request.method=='POST':
