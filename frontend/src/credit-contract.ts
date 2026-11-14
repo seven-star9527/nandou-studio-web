@@ -1,7 +1,8 @@
 import type { CloudAccount, CloudQuote, CloudQuoteRequest, GenerationSettings } from './types.ts';
 
 export const isCreditAmount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
-export const formatCredits = (value: number) => value.toLocaleString('zh-CN', { maximumFractionDigits: 8 });
+const creditDisplay = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+export const formatCredits = (value: number | null | undefined) => isCreditAmount(value) ? creditDisplay.format(value) : '—';
 export function taskCostLabel(value: number | undefined, settled: boolean | undefined) {
   return isCreditAmount(value) ? `${settled ? '实际费用' : '当前费用（结算待确认）'} ${formatCredits(value)} 积分 · 整任务` : '费用待回读';
 }

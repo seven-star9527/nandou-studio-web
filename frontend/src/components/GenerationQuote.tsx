@@ -9,7 +9,7 @@ export default function GenerationQuote({ local, quote, loading, error, descript
   const trigger = useRef<HTMLButtonElement>(null);
   const taskLabel = quote && quote.kind !== 'unknown' && isCreditAmount(quote.credits_total_reference)
     ? `${quote.kind === 'output_reference' ? '输出约' : '预留约'} ${formatCredits(quote.credits_total_reference)} 积分` : quoteLabel(quote);
-  const label = local ? '0 积分 · 本地' : loading ? '积分读取中' : taskLabel;
+  const label = local ? `${formatCredits(0)} 积分 · 本地` : loading ? '积分读取中' : taskLabel;
   const detail = local ? '在本机生成，不消耗 APIMart 积分。' : quoteExplanation(quote);
   useEffect(() => {
     if (!open) return;

@@ -62,6 +62,20 @@ html[data-theme=light] .auth-card-mark { color:#31516e; background:#ffffff80; bo
 html[data-theme=light] .auth-header .theme-toggle { pointer-events:auto; }
 html[data-theme=light] .document-reader iframe { background:#f5f6f7; }
 /* Standalone guides use the same palette without altering their content. */
+html:not([data-theme=light]) { --studio-ground:#0b0b0e; --studio-panel:#18181e; }
+html:not([data-theme=light]) .document-reader iframe { background:var(--studio-ground); }
+html:not([data-theme=light]) body:has(> .topbar) {
+  --bg:var(--studio-ground); --panel:var(--studio-panel); --raised:#23232b; --line:#32323b;
+  --text:#f4f3f8; --muted:#abaaba; --accent:#d4ceff; --guide-accent:var(--accent);
+  background:radial-gradient(ellipse 62% 29rem at 53% -7%,#27243480,transparent 82%),var(--bg);
+  & :is(.topbar,.chapter-mobile,.chapter-percent) { background:var(--bg); }
+  & :is(.toc,.guide-example,.local-sources,.chapter-mobile select) { background:var(--panel); border-color:var(--line); }
+  & :is(th,code,tbody tr:hover) { background:var(--raised); }
+  & tbody tr:nth-child(even):not(:hover) { background:#1c1c23; }
+  & th { border-color:var(--line); }
+  & .chapter-shade { background:linear-gradient(90deg,transparent,var(--bg) 70%); }
+  & .chapter-ruler { background:linear-gradient(90deg,transparent,var(--bg)); }
+}
 html[data-theme=light] :is(.topbar,.chapter-mobile) { background:#f5f6f7e8; border-color:var(--line); }
 html[data-theme=light] :is(.toc,.guide-example,.guide-card,.local-sources,.chapter-percent) { background:#ffffff80; border-color:var(--line); }
 html[data-theme=light] :is(#guide-content p,main>p,.guide-card p,.guide-note,.guide-example,td,ol,.chapter-link,.chapter-mobile select) { color:#52677c; }
