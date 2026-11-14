@@ -1,5 +1,6 @@
 import { appendMentions, bindMentions, removeMentions, resolveMentions } from './reference-mentions';
 import { createId } from './id';
+import { requestPresets, type GenerationPreset, type PresetChange } from './generation-presets';
 import { readReferenceImage, restoreTaskReferences } from './task-references';
 import { checkImageBatch } from './image-upload-limits';
 import { useDraft } from './useDraft';
@@ -8,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadDeployment, parseArtwork, SwarmClient } from './api';
 import { availableModes, buildGenerationRequest, configurationIssue, modelDefaults } from './generation-contract';
 import { dimensions } from './resolution-policy';
-import { currentCloudModel, buildCloudRequest, cloudArtworkSettings, cloudDimensions, mergeArtwork, referenceLimit, taskArtworks } from './cloud-contract';
+import { currentCloudModel, buildCloudRequest, cloudArtworkSettings, cloudDimensions, cloudParameters, mergeArtwork, referenceLimit, taskArtworks } from './cloud-contract';
 import { useCloudStudio } from './useCloudStudio';
 import { useCloudQuote } from './useCloudQuote';
 import { localProgress, mergeJobProgress } from './job-progress';
@@ -19,7 +20,7 @@ import type { Artwork, BackendStatus, DeploymentConfig, GenerationSettings, Job,
 const INITIAL: GenerationSettings = { ratio: '1:1', resolution: '1K', width: 1024, height: 1024, count: 1, model: '', steps: 20, cfg: 7, seed: '-1', quality: 'medium' };
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-export function useStudio() {
+export function useStudio(account: string) {
   const client = useRef(new SwarmClient()).current;
   const socket = useRef<WebSocket | null>(null);
   const activeJob = useRef<Job | null>(null);
@@ -62,6 +63,65 @@ export function useStudio() {
   const backendReady = ['running', 'some_loading'].includes(status.backend_status?.status ?? '');
   const localReady = cloud.capabilities?.localReadiness?.[settings.model] === true;
   const configurationError = configurationIssue(settings.model, params, config);
+
+  const [presets, setPresets] = useState<GenerationPreset[]>([]);
+  const [presetsRead, setPresetsRead] = useState(false);
+  const [presetsInitialized, setPresetsInitialized] = useState(false);
+  const [presetError, setPresetError] = useState('');
+  const [presetBusy, setPresetBusy] = useState(false);
+  const changingPreset = useRef(false);
+  const readPresets = useCallback(async () => {
+    try {
+      const entries = await requestPresets(account);
+      if (mounted.current) { setPresets(entries); setPresetError(''); }
+      if (mounted.current) setPresetsRead(true);
+    } catch { if (mounted.current) setPresetError('未能读取账号的生图配置。'); }
+  }, [account]);
+  useEffect(() => { void readPresets(); }, [readPresets]);
+
+  const validatePreset = (preset: Pick<GenerationPreset, 'cloudModel' | 'settings'>) => {
+    const s = preset.settings;
+    if (preset.cloudModel !== null) {
+      const model = cloud.capabilities?.models.find(item => item.id === preset.cloudModel);
+      if (!model) throw new Error('配置中的云模型暂不可用。');
+      cloudParameters(model, s);
+    } else {
+      if (!availableModes(models, config).some(item => item.model === s.model) || config.resolutions?.[s.resolution]?.status === 'disabled') throw new Error('配置中的本地模型或分辨率暂不可用。');
+      buildGenerationRequest(s, '配置校验', [], params, config);
+    }
+  };
+  const applyPreset = (entry: GenerationPreset) => {
+    validatePreset(entry);
+    setCloudModelId(entry.cloudModel);
+    setSettings(previous => ({...entry.settings, ...(entry.cloudModel ? {model: previous.model} : {}),
+      ...(!entry.cloudModel && entry.settings.ratio === 'smart' ? dimensions('smart', entry.settings.resolution, references[0]) : {})}));
+  };
+  const current = useRef({applyPreset, presets, settings, cloudModelId});
+  current.current = {applyPreset, presets, settings, cloudModelId};
+  useEffect(() => {
+    if (!connected || !draftReady || !presetsRead || presetsInitialized) return;
+    try { if (presets[0]) current.current.applyPreset(presets[0]); }
+    catch (e) { setError(`默认配置未应用：${errorText(e)}`); }
+    setPresetsInitialized(true);
+  }, [connected, draftReady, presetsRead, presetsInitialized, presets]);
+
+  const changePreset = async (change: PresetChange) => {
+    if (changingPreset.current) return;
+    if (change.action === 'save') validatePreset(change);
+    if (change.action === 'default') {
+      const entry = presets.find(item => item.id === change.id);
+      if (entry) validatePreset(entry);
+    }
+    changingPreset.current = true; setPresetBusy(true);
+    try {
+      const entries = await requestPresets(account, change);
+      if (!mounted.current) return;
+      setPresets(entries); setPresetError('');
+      if (entries[0] && entries[0].id !== presets[0]?.id) {
+        try { applyPreset(entries[0]); } catch (e) { setError(`默认配置未应用：${errorText(e)}`); }
+      }
+    } finally { changingPreset.current = false; if (mounted.current) setPresetBusy(false); }
+  };
 
   const refreshHistory = useCallback(async () => {
     setLoadingHistory(true); setHistoryError('');
@@ -206,6 +266,15 @@ export function useStudio() {
 
   const generate = (includeReferences: boolean, branch?: {id:string; prompt:string; references:ReferenceImage[]; settings:GenerationSettings}) => {
     const input = branch ?? { prompt: resolveMentions(prompt, references), references, settings };
+    let accepted = false;
+    const restoreDefault = () => {
+      if (branch || accepted) return;
+      accepted = true;
+      const latest = current.current;
+      if (!latest.presets[0] || latest.settings !== settings || latest.cloudModelId !== cloudModelId) return;
+      try { latest.applyPreset(latest.presets[0]); }
+      catch (e) { setError(`下次生成的默认配置未应用：${errorText(e)}`); }
+    };
     setError('');
     if (socket.current && socket.current.readyState < WebSocket.CLOSING) {
       if (branch) throw new Error('当前任务仍在运行。');
@@ -217,7 +286,7 @@ export function useStudio() {
       if (cloudModel) {
         const request = buildCloudRequest(cloudModel, input.settings, includeReferences ? 'edit' : 'generate', input.prompt, includeReferences ? input.references : [], Boolean(cloud.capabilities?.configured));
         if (branch) request.request_id = branch.id;
-        void cloud.generate(request);
+        void cloud.generate(request, restoreDefault);
         return;
       }
       if (!backendReady) throw new Error('图像服务尚未就绪，请稍后刷新连接。');
@@ -240,6 +309,7 @@ export function useStudio() {
           return;
         }
         if (message.studio_queue && activeJob.current) updateJob(queueJobPatch(activeJob.current, message.studio_queue));
+        if (message.studio_queue || message.gen_progress || message.image) restoreDefault();
         if (message.status || message.backend_status) {
           setStatus(message);
           if (activeJob.current?.queue?.state !== 'queued' && activeJob.current?.phase !== 'stopping' && !['complete', 'error', 'interrupted'].includes(activeJob.current?.phase ?? '')) {
@@ -344,7 +414,8 @@ export function useStudio() {
   };
 
   return { client, connected, connecting, error, setError, historyError, status, params, models, config, configurationError, backendReady, localReady,
-    ready: connected && (cloudModel ? Boolean(cloud.capabilities?.configured) : Boolean(settings.model) && backendReady && localReady && !configurationError),
+    ready: connected && presetsInitialized && (cloudModelId !== null ? Boolean(cloudModel && cloud.capabilities?.configured) : Boolean(settings.model) && backendReady && localReady && !configurationError),
+    presetControls: {presets, initialized: presetsInitialized, busy: presetBusy, error: presetError, read: readPresets, change: changePreset, apply: applyPreset, cloudModelId},
     settings, setSettings, references, prompt, setPrompt, minReferences, setTemplate, draftReady, draftError, history, job: displayJob, loadingHistory,
     cloudModel, cloudModels: cloud.capabilities?.models ?? [], cloudConfigured: Boolean(cloud.capabilities?.configured), cloudCapabilityError: cloud.capabilityError, cloudTasks: cloud.tasks,
     cloudAccount: cloud.account, accountLoading: cloud.accountLoading, accountError: cloud.accountError, refreshAccount: cloud.loadAccount, creditQuote,

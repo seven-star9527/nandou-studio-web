@@ -20,6 +20,7 @@ from aiohttp import ClientError, ClientSession, ClientTimeout, WSMsgType, web
 
 from .store import Store, TERMINAL, password_hash, password_valid
 from .local_queue import LocalQueue
+from .generation_presets import generation_presets
 from .image_preview import svg_headers
 from .agent import CreativeAgent
 from .workbench import Workbench
@@ -232,6 +233,21 @@ class Gateway:
         user = request["user"]
         if action == "me" and request.method == "GET":
             return web.json_response({"user": public_user(user), "admin_entry": local_entry(request)})
+        if action == "generation-presets" and request.method in {"GET", "POST"}:
+            if not user:
+                return error("请先登录。", 401)
+            change = None
+            if request.method == "POST":
+                change = await self.body(request)
+                if change.get("account") != user["id"]:
+                    return error("当前账号已切换，请刷新页面。", 409)
+            try:
+                entries = generation_presets(self.store, user["id"], change)
+            except ValueError as exc:
+                return error(str(exc))
+            except KeyError:
+                return error("配置不存在。", 404)
+            return web.json_response({"account": user["id"], "presets": entries})
         if action == "admin/overview" and request.method == "GET":
             if not user or user["role"] != "admin" or not local_entry(request):
                 return error("无法访问。", 403)

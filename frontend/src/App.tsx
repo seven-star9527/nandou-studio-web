@@ -34,11 +34,11 @@ import './components/agent-workspace.css';
 
 
 export default function App() {
-  return <><GlassDefs/><AuthGate>{workspace => <DocumentReader><Studio {...workspace} /></DocumentReader>}</AuthGate></>;
+  return <><GlassDefs/><AuthGate>{workspace => <DocumentReader><Studio key={workspace.user.id} {...workspace} /></DocumentReader>}</AuthGate></>;
 }
 
 function Studio({ user, adminEntry, logout }: AuthWorkspace) {
-  const studio = useStudio();
+  const studio = useStudio(user.id);
   const [workspace, selectWorkspace] = useState<'studio' | 'agent'>(() => { try { return sessionStorage.getItem(`nandou-mode:${user.id}`) === 'agent' ? 'agent' : 'studio'; } catch { return 'studio'; } });
   const motion = useRef<Array<Animation | AnimationPlaybackControls>>([]);
   const switchSequence = useRef(0);
@@ -158,9 +158,10 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
           editing={editing} setPrompt={studio.setPrompt} update={changes => studio.setSettings(previous => ({ ...previous, ...changes }))}
           setGeometry={(ratio, resolution) => studio.setGeometry(ratio, resolution, editing)} addReferences={studio.addReferences} reorderReferences={studio.reorderReferences} removeReference={studio.removeReference} selectModel={studio.selectModel}
           selectLocal={studio.selectLocal} selectCloud={studio.selectCloudModel} cloudModel={studio.cloudModel} cloudModels={studio.cloudModels} cloudConfigured={studio.cloudConfigured} cloudCapabilityError={studio.cloudCapabilityError}
-          creditQuote={studio.creditQuote}
+          creditQuote={studio.creditQuote} presetControls={studio.presetControls}
           polisher={<PromptPolisher client={studio.client} prompt={readablePrompt} setPrompt={value => studio.setPrompt(bindMentions(value, studio.references))} width={studio.settings.width} height={studio.settings.height} model={studio.cloudModel?.id ?? studio.settings.model} referenceCount={editing ? studio.references.length : 0} referenceIds={editing ? studio.references.map(reference => reference.id).join(',') : ''} busy={busy} />}
           generate={() => studio.generate(editing)} busy={busy} ready={studio.ready && studio.references.length>=studio.minReferences} />
+        {studio.presetControls.error && <div className="service-notice" role="alert">{studio.presetControls.error}<button onClick={() => void studio.presetControls.read()}>重新读取</button></div>}
         {studio.job && (busy || !historyOpen) && <div className="composer-status"><GenerationStatus job={studio.job} stop={()=>void studio.stop()}/>{!busy && <button className="quiet-button" onClick={()=>setHistoryOpen(true)}>查看创作记录</button>}</div>}
         {studio.references.length<studio.minReferences && <p className="panel-note">此提示词还需 {studio.minReferences-studio.references.length} 张参考图。</p>}
         {editing && studio.references.length > 0 ? <p className="edit-notice">{IMAGE_UPLOAD_HINT}。较大原图会另建缩图作为生图参考；原尺寸精修请使用修图 Agent。</p> : null}

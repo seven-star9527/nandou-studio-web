@@ -19,6 +19,11 @@ export function buildCloudRequest(model: CloudModelCapability, settings: Generat
   if (!prompt.trim()) throw new Error('请填写提示词。');
   if (operation === 'edit' && !references.length) throw new Error('参考图编辑需要至少一张参考图。');
   if (references.length > referenceLimit(model)) throw new Error(`当前模型最多可添加 ${referenceLimit(model)} 张参考图。`);
+  const parameters = cloudParameters(model, settings);
+  return { request_id: createId(), model: model.id, operation, prompt: prompt.trim(), ...parameters, reference_images: references.map(image => image.dataUrl) };
+}
+
+export function cloudParameters(model: CloudModelCapability, settings: GenerationSettings) {
   if (!Number.isInteger(settings.count) || settings.count < 1 || settings.count > model.maxImages) throw new Error(`生成数量需为1至${model.maxImages}张。`);
   if (!model.resolutions.includes(settings.resolution)) throw new Error('当前模型不支持所选分辨率。');
   let size = settings.ratio;
@@ -45,9 +50,8 @@ export function buildCloudRequest(model: CloudModelCapability, settings: Generat
   } else if (!model.ratios.includes(size)) throw new Error('当前模型不支持所选比例。');
   if (/^gpt-image-2[.][56]-/.test(model.id) && settings.quality === 'max') throw new Error('GPT Image 2.6 已禁用 max 档位，请重新选择图像质量。');
   if (settings.quality && !model.qualities.includes(settings.quality)) throw new Error('当前模型不支持所选质量参数。');
-  return { request_id: createId(), model: model.id, operation, prompt: prompt.trim(),
-    resolution: settings.resolution, n: settings.count, ...(settings.quality ? { quality: settings.quality } : {}),
-    ...(gif ? gifParameters(settings) : svg ? {size, output_format:'svg' as const, ...(settings.svgTransparent ? {background:'transparent' as const} : {})} : {size}), reference_images: references.map(image => image.dataUrl) };
+  return { resolution: settings.resolution, n: settings.count, ...(settings.quality ? { quality: settings.quality } : {}),
+    ...(gif ? gifParameters(settings) : svg ? {size, output_format:'svg' as const, ...(settings.svgTransparent ? {background:'transparent' as const} : {})} : {size}) };
 }
 
 export function cloudImageUrl(path: string): string | null {

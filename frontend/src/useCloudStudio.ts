@@ -88,7 +88,7 @@ export function useCloudStudio(client: SwarmClient, receiveArtwork: (artwork: Ar
     timer = window.setTimeout(check, 15000);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [backgroundIds, client, acceptTask]);
-  const generate = async (request: CloudRequest) => {
+  const generate = async (request: CloudRequest, accepted?: () => void) => {
     window.clearTimeout(pollTimer.current);
     active.current = { id: request.request_id, started: Date.now(), requested: request.n, completed: 0, phase: 'connecting', source: 'cloud' };
     waiting.current = true;
@@ -105,7 +105,7 @@ export function useCloudStudio(client: SwarmClient, receiveArtwork: (artwork: Ar
         }
       }
     };
-    try { await client.submitCloud(request); }
+    try { await client.submitCloud(request); if (mounted.current) accepted?.(); }
     catch (error) {
       // Explicit validation rejection occurs before submission; there is no task to poll.
       if (error instanceof SwarmError && [400, 413, 422].includes(error.status ?? 0)) {

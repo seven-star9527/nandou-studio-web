@@ -47,6 +47,8 @@ class Store:
           token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires_at REAL NOT NULL);
         CREATE TABLE IF NOT EXISTS backend_sessions(
           session_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id));
+        CREATE TABLE IF NOT EXISTS generation_presets(
+          owner_id TEXT PRIMARY KEY REFERENCES users(id), entries TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS tasks(
           id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id), kind TEXT NOT NULL,
           model TEXT, status TEXT NOT NULL, requested INTEGER, completed INTEGER NOT NULL DEFAULT 0,

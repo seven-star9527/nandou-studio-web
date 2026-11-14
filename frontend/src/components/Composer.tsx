@@ -9,6 +9,8 @@ import { referenceLimit } from '../cloud-contract';
 import type { CloudModelCapability, CloudQuote, DeploymentConfig, GenerationSettings, Model, ParamSchema, RatioId, ReferenceImage, ResolutionId } from '../types';
 import Icon from './Icon';
 import ParameterPanel from './ParameterPanel';
+import GenerationPresets from './GenerationPresets';
+import type { useStudio } from '../useStudio';
 import GenerationQuote from './GenerationQuote';
 import ReferenceDock from './ReferenceDock';
 import type { ReactNode, Ref } from 'react';
@@ -22,7 +24,7 @@ const modelDescriptions: Record<string, string> = {
 };
 
 export default function Composer({ editorRef, settings, config, params, models, prompt, references, editing, setPrompt, update,
-  setGeometry, addReferences, reorderReferences, removeReference, selectModel, selectLocal, selectCloud, cloudModel, cloudModels, cloudConfigured, cloudCapabilityError, creditQuote, polisher, generate, busy, ready }: {
+  setGeometry, addReferences, reorderReferences, removeReference, selectModel, selectLocal, selectCloud, cloudModel, cloudModels, cloudConfigured, cloudCapabilityError, creditQuote, presetControls, polisher, generate, busy, ready }: {
   settings: GenerationSettings; config: DeploymentConfig; params: ParamSchema[]; models: Model[];
   editorRef: Ref<PromptEditorHandle>; prompt: string; references: ReferenceImage[]; editing: boolean;
   setPrompt: (value: string) => void;
@@ -33,6 +35,7 @@ export default function Composer({ editorRef, settings, config, params, models, 
   selectLocal: () => void; selectCloud: (id: string) => void; cloudModel?: CloudModelCapability; cloudModels: CloudModelCapability[]; cloudConfigured: boolean; cloudCapabilityError: string;
   creditQuote: { quote: CloudQuote | null; loading: boolean; error: string };
   polisher: ReactNode;
+  presetControls: ReturnType<typeof useStudio>['presetControls'];
 }) {
   const [panel, setPanel] = useState<'size' | 'mode' | 'model' | null>(null);
   const reduced = useReducedMotion();
@@ -70,7 +73,7 @@ export default function Composer({ editorRef, settings, config, params, models, 
         </div>
       </div>
       <div className="composer-toolbar">
-        <div className="toolbar-controls">
+        <div className="toolbar-controls" inert={!presetControls.initialized}>
           <div className="control-anchor">
             <button className={`toolbar-button ${panel === 'model' ? 'active' : ''}`} aria-expanded={panel === 'model'} data-layer-trigger onClick={() => setPanel(panel === 'model' ? null : 'model')} title={modelDescriptions[cloudModel?.id ?? mode?.id ?? ''] ?? '选择图像模型'}>
               <Icon name="cube" size={18} /><span className="model-name">{cloudModel?.label ?? `Qwen-Image-2.1 · ${mode?.label ?? '本地'}`}</span><Icon name="chevron" size={13} />
@@ -109,6 +112,7 @@ export default function Composer({ editorRef, settings, config, params, models, 
             </button>
             <AnimatePresence>{panel === 'size' ? <ParameterPanel key="size" settings={settings} config={config} cloudModel={cloudModel} update={update} setGeometry={setGeometry} close={closePanel} /> : null}</AnimatePresence>
           </div>
+          <GenerationPresets controls={presetControls} settings={settings} modelLabel={cloudModel?.label ?? `Qwen · ${mode?.label ?? '本地'}`}/>
         </div>
         <div className="generation-actions"><GenerationQuote local={!cloudModel} quote={creditQuote.quote} loading={creditQuote.loading} error={creditQuote.error} descriptionId={quoteDescriptionId} />
         {polisher}
