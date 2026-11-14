@@ -240,11 +240,11 @@ class Workbench:
 
     async def route(self, request, user, route):
         if route == 'history' and request.method == 'GET':
-            rows = self.store.all("""SELECT m.*,q.created_at,u.email,v.hidden_at FROM studio_quick_jobs q
+            rows = self.store.all("""SELECT m.*,q.created_at,u.email,u.name owner_name,v.hidden_at FROM studio_quick_jobs q
                 JOIN studio_media m ON q.id=m.id JOIN users u ON m.owner_id=u.id
                 LEFT JOIN task_visibility v ON v.task_id=m.id AND v.viewer_id=m.owner_id
                 WHERE (? OR (m.owner_id=? AND v.hidden_at IS NULL)) ORDER BY q.created_at DESC LIMIT 100""",(user['role']=='admin',user['id']))
-            return web.json_response([{'id':r['id'],'taskId':r['id'],'ownerId':r['owner_id'],'ownerEmail':r['email'],
+            return web.json_response([{'id':r['id'],'taskId':r['id'],'ownerId':r['owner_id'],'ownerEmail':r['email'],'ownerName':r['owner_name'],
                 'hiddenAt':str(r['hidden_at']) if r['hidden_at'] else None,'url':MEDIA+r['id'],'source':'quick',
                 'prompt':r['name'],'width':r['width'],'height':r['height'],
                 'generatedAt':datetime.fromtimestamp(r['created_at'],timezone.utc).isoformat()} for r in rows])

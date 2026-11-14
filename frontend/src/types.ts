@@ -45,17 +45,17 @@ export interface GenerationMessage extends BackendStatus {
   gen_progress?: { batch_index: string; overall_percent: number; current_percent: number; preview?: string };
   image?: string; batch_index?: string; request_id?: string; metadata?: string;
   discard_indices?: number[]; socket_intention?: string;
-  studio_task_id?: string; studio_owner_id?: string; studio_owner_email?: string;
+  studio_task_id?: string; studio_owner_id?: string; studio_owner_email?: string; studio_owner_name?: string;
   studio_cancelled?: boolean;
 }
 export interface Artwork {
   id: string; url: string; prompt: string; width?: number; height?: number;
   seed?: string; model?: string; steps?: number; metadata?: string;
-  generatedAt?: string; completedAt?: string; duration?: number; current?: boolean; batchIndex?: number;
+  generatedAt?: string; completedAt?: string; duration?: number; current?: boolean; batchIndex?: number; batchSize?: number;
   source?: 'local' | 'cloud' | 'quick';
   locallySaved?: boolean; downloadError?: string; mimeType?: string;
   taskCreditsCost?: number; taskCostSettled?: boolean;
-  taskId?: string; ownerId?: string; ownerEmail?: string; hiddenAt?: string;
+  taskId?: string; ownerId?: string; ownerEmail?: string; ownerName?: string; hiddenAt?: string;
 }
 export interface Job {
   id: string; started: number; requested: number; completed: number;
@@ -99,7 +99,7 @@ export interface CloudTask {
   poll_error?: string; result_warning?: string;
   error?: string; model: string; prompt: string; parameters: Record<string, unknown>; cost?: unknown; credits_cost?: number | null; created_utc: string;
   completed_utc?: string; actual_time?: number;
-  studio_task_id?: string; studio_owner_id?: string; studio_owner_email?: string; studio_hidden_at?: string;
+  studio_task_id?: string; studio_owner_id?: string; studio_owner_email?: string; studio_owner_name?: string; studio_hidden_at?: string;
 }
 export interface PromptTemplate {
   id: string; title: string; category: string; description: string; prompt: string; tags: string[];

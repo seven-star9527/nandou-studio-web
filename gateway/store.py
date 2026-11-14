@@ -139,7 +139,7 @@ class Store:
             return False
 
     def task(self, tid):
-        return self.one("SELECT t.*,u.email owner_email,v.hidden_at FROM tasks t JOIN users u ON u.id=t.owner_id LEFT JOIN task_visibility v ON v.task_id=t.id AND v.viewer_id=t.owner_id WHERE t.id=?", (tid,))
+        return self.one("SELECT t.*,u.email owner_email,u.name owner_name,v.hidden_at FROM tasks t JOIN users u ON u.id=t.owner_id LEFT JOIN task_visibility v ON v.task_id=t.id AND v.viewer_id=t.owner_id WHERE t.id=?", (tid,))
 
     def task_visible(self, task, user):
         return bool(task and (user["role"] == "admin" or task["owner_id"] == user["id"] and not task.get("hidden_at")))
@@ -176,7 +176,7 @@ class Store:
     def public_task(self, record, task):
         value = dict(record)
         value.pop("fingerprint", None)
-        value.update(studio_task_id=task["id"], studio_owner_id=task["owner_id"], studio_owner_email=task["owner_email"], studio_hidden_at=task["hidden_at"])
+        value.update(studio_task_id=task["id"], studio_owner_id=task["owner_id"], studio_owner_email=task["owner_email"], studio_owner_name=task["owner_name"], studio_hidden_at=task["hidden_at"])
         # Private results must not escape the authenticated file boundary via CDN fallbacks.
         value["images"] = [{key: val for key, val in image.items() if key != "remote_url"}
                            for image in value.get("images", []) if str(image.get("url", "")).startswith("/studio-results/")]

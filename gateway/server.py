@@ -383,8 +383,8 @@ class Gateway:
             if data.get("path", "") != "" or int(data.get("depth", 10)) not in range(0, 21):
                 return error("只允许读取当前作品目录。")
             await self.synchronize(user, include_local=True)
-            rows = self.store.all("SELECT a.*,u.email owner_email,v.hidden_at,t.started_at,t.ended_at,t.seconds FROM artifacts a JOIN users u ON u.id=a.owner_id JOIN tasks t ON t.id=a.task_id LEFT JOIN task_visibility v ON v.task_id=t.id AND v.viewer_id=t.owner_id WHERE t.kind='local' ORDER BY a.created_at DESC")
-            files = [{"src": row["url"].lstrip("/"), "metadata": row["metadata"], "studio_task_id": row["task_id"], "studio_owner_id": row["owner_id"], "studio_owner_email": row["owner_email"], "studio_hidden_at": row["hidden_at"],
+            rows = self.store.all("SELECT a.*,u.email owner_email,u.name owner_name,v.hidden_at,t.started_at,t.ended_at,t.seconds FROM artifacts a JOIN users u ON u.id=a.owner_id JOIN tasks t ON t.id=a.task_id LEFT JOIN task_visibility v ON v.task_id=t.id AND v.viewer_id=t.owner_id WHERE t.kind='local' ORDER BY a.created_at DESC")
+            files = [{"src": row["url"].lstrip("/"), "metadata": row["metadata"], "studio_task_id": row["task_id"], "studio_owner_id": row["owner_id"], "studio_owner_email": row["owner_email"], "studio_owner_name": row["owner_name"], "studio_hidden_at": row["hidden_at"],
                       # Legacy imports only know the image file's modification time, not submission time.
                       "studio_created_utc": None if row["task_id"].startswith("legacy_") else datetime.fromtimestamp(row["started_at"], timezone.utc).isoformat(),
                       "studio_completed_utc": datetime.fromtimestamp(row["ended_at"], timezone.utc).isoformat() if row["ended_at"] else None,
@@ -704,6 +704,7 @@ class Gateway:
                     value["studio_task_id"] = tid
                     value["studio_owner_id"] = user["id"]
                     value["studio_owner_email"] = user["email"]
+                    value["studio_owner_name"] = user["name"]
                     value["studio_queue"] = self.local_queue.snapshot(tid)
                     if job and job["cancel_requested"] and not cancel_sent:
                         await self.upstream_api(user, "InterruptAll", {"other_sessions": False, "session_id": data["session_id"]}, False)

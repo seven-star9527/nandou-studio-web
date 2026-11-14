@@ -257,7 +257,7 @@ export function useStudio() {
           const artwork = parseArtwork(message.image, message.metadata, client.user, client.appendUser);
           artwork.id = `${newJob.id}-${index}`; artwork.current = true; artwork.batchIndex = index;
           artwork.taskId = message.studio_task_id ?? newJob.id; artwork.source = 'local';
-          artwork.ownerId = message.studio_owner_id; artwork.ownerEmail = message.studio_owner_email;
+          artwork.ownerId = message.studio_owner_id; artwork.ownerEmail = message.studio_owner_email; artwork.ownerName = message.studio_owner_name;
           artwork.prompt ||= input.prompt; artwork.width ??= input.settings.width; artwork.height ??= input.settings.height;
           artwork.model ??= input.settings.model; artwork.steps ??= input.settings.steps;
           artwork.generatedAt = new Date(newJob.started).toISOString();

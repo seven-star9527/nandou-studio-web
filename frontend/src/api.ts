@@ -77,12 +77,12 @@ export class SwarmClient {
   }
   status() { return this.request<BackendStatus>('GetCurrentStatus'); }
   async history() {
-    const result = await this.request<{ files: { src: string; metadata?: string; studio_task_id?: string; studio_owner_id?: string; studio_owner_email?: string; studio_hidden_at?: string; studio_created_utc?: string | null; studio_completed_utc?: string | null; studio_duration_seconds?: number | null }[] }>('ListImages', {
+    const result = await this.request<{ files: { src: string; metadata?: string; studio_task_id?: string; studio_owner_id?: string; studio_owner_email?: string; studio_owner_name?: string; studio_hidden_at?: string; studio_created_utc?: string | null; studio_completed_utc?: string | null; studio_duration_seconds?: number | null }[] }>('ListImages', {
       path: '', depth: 10, sortBy: 'Date', sortReverse: false,
     });
     return result.files.filter(f => /\.(?:png|jpe?g|webp)$/i.test(f.src))
       .slice(0, 100).map(f => ({ ...parseArtwork(f.src, f.metadata, this.user, this.appendUser), source: 'local' as const,
-        taskId: f.studio_task_id, ownerId: f.studio_owner_id, ownerEmail: f.studio_owner_email, hiddenAt: f.studio_hidden_at,
+        taskId: f.studio_task_id, ownerId: f.studio_owner_id, ownerEmail: f.studio_owner_email, ownerName: f.studio_owner_name, hiddenAt: f.studio_hidden_at,
         generatedAt: f.studio_created_utc ?? undefined, completedAt: f.studio_completed_utc ?? undefined,
         duration: typeof f.studio_duration_seconds === 'number' && Number.isFinite(f.studio_duration_seconds) && f.studio_duration_seconds >= 0 ? f.studio_duration_seconds : undefined }));
   }
