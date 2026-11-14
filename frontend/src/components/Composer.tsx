@@ -1,6 +1,8 @@
+import PromptEditor, { type PromptEditorHandle } from './PromptEditor';
+import { instructionsOnly } from '../reference-mentions';
 import GlassTabs from './GlassTabs';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { useCallback, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
 import { useDismissibleLayer } from '../useDismissibleLayer';
 import { availableModes } from '../generation-contract';
 import { referenceLimit } from '../cloud-contract';
@@ -9,7 +11,7 @@ import Icon from './Icon';
 import ParameterPanel from './ParameterPanel';
 import GenerationQuote from './GenerationQuote';
 import ReferenceDock from './ReferenceDock';
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 
 const modelDescriptions: Record<string, string> = {
   original: '本地生成与参考图编辑，适合细节对照和精修',
@@ -19,10 +21,10 @@ const modelDescriptions: Record<string, string> = {
   'gpt-image-2.5-sunburst': '参考图编辑优先，适合保留商品后调整场景',
 };
 
-export default function Composer({ settings, config, params, models, prompt, references, editing, setPrompt, update,
+export default function Composer({ editorRef, settings, config, params, models, prompt, references, editing, setPrompt, update,
   setGeometry, addReferences, reorderReferences, removeReference, selectModel, selectLocal, selectCloud, cloudModel, cloudModels, cloudConfigured, cloudCapabilityError, creditQuote, polisher, generate, busy, ready }: {
   settings: GenerationSettings; config: DeploymentConfig; params: ParamSchema[]; models: Model[];
-  prompt: string; references: ReferenceImage[]; editing: boolean;
+  editorRef: Ref<PromptEditorHandle>; prompt: string; references: ReferenceImage[]; editing: boolean;
   setPrompt: (value: string) => void;
   update: (changes: Partial<GenerationSettings>) => void;
   setGeometry: (ratio: RatioId, resolution: ResolutionId) => void;
@@ -38,7 +40,6 @@ export default function Composer({ settings, config, params, models, prompt, ref
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const composer = useRef<HTMLDivElement>(null);
-  const promptInput = useRef<HTMLTextAreaElement>(null);
   const quoteDescriptionId = useId();
   const closePanel = useCallback(() => setPanel(null), []);
   const modes = availableModes(models, config);
@@ -48,24 +49,11 @@ export default function Composer({ settings, config, params, models, prompt, ref
   const steps = params.find(param => param.id === 'steps');
   const cfg = params.find(param => param.id === 'cfgscale');
 
-  useLayoutEffect(() => {
-    const resize = () => {
-      const input = promptInput.current;
-      if (!input) return;
-      const style = getComputedStyle(input);
-      input.style.height = '0px';
-      input.style.height = `${Math.max(parseFloat(style.minHeight) || 84, Math.min(parseFloat(style.maxHeight) || 220, input.scrollHeight))}px`;
-    };
-    resize();
-    window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
-  }, [prompt]);
-
   useDismissibleLayer(Boolean(panel), composer, closePanel);
 
   const chooseFiles = addReferences;
   const supported = !cloudModel || cloudModel.operations.includes(editing ? 'edit' : 'generate');
-  const canSubmit = ready && !busy && Boolean(prompt.trim()) && supported;
+  const canSubmit = ready && !busy && Boolean(instructionsOnly(prompt)) && supported;
   const submit = () => { if (canSubmit) {setPanel(null); generate();} };
 
   return <>
@@ -77,9 +65,8 @@ export default function Composer({ settings, config, params, models, prompt, ref
         <ReferenceDock references={references} add={() => fileInput.current?.click()} paste={chooseFiles} reorder={reorderReferences} remove={removeReference} maxReferences={maxReferences} />
         <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={event => { if (event.target.files) void chooseFiles(event.target.files); event.target.value = ''; }} />
         <div className="prompt-content">
-          <textarea ref={promptInput} aria-label="图像提示词" value={prompt} onChange={event => setPrompt(event.target.value)}
-            placeholder={editing ? '上传参考图，描述你希望进行的修改…' : '描述你想生成的画面，或上传参考图进行编辑…'}
-            onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && !busy && ready) submit(); }} />
+          <PromptEditor editorRef={editorRef} label="图像提示词" value={prompt} references={references} change={setPrompt} submit={submit}
+            placeholder={editing ? '上传参考图，描述你希望进行的修改…' : '描述你想生成的画面，或上传参考图进行编辑…'} />
         </div>
       </div>
       <div className="composer-toolbar">

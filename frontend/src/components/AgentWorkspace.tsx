@@ -1,3 +1,5 @@
+import PromptEditor, { type PromptEditorHandle } from './PromptEditor';
+import { appendMentions, instructionsOnly, removeMentions, resolveMentions } from '../reference-mentions';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
@@ -40,7 +42,7 @@ function removedReferences(key: string): string[] {
 }
 
 function withoutReferences(draft: AgentDraft, ids: string[]): AgentDraft {
-  return {...draft, referenceOrder: draft.referenceOrder?.filter(id => !ids.includes(id)), uploads: draft.uploads.filter(image => !ids.includes(image.id)),
+  return {...draft, text: removeMentions(draft.text, ids), referenceOrder: draft.referenceOrder?.filter(id => !ids.includes(id)), uploads: draft.uploads.filter(image => !ids.includes(image.id)),
     refs: draft.refs.filter(image => !ids.includes(image.id))};
 }
 
@@ -98,7 +100,7 @@ export default function AgentWorkspace({ user, client, cloudConfigured, refreshA
   }, [skillsOpen, settingsOpen]);
   const fileInput = useRef<HTMLInputElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
-  const composer = useRef<HTMLTextAreaElement>(null);
+  const composer = useRef<PromptEditorHandle>(null);
   const selection = useRef(cid);
   const follow = useRef(true);
   const inFlight = useRef(false);
@@ -161,7 +163,13 @@ export default function AgentWorkspace({ user, client, cloudConfigured, refreshA
   }, [opts, client, isRetouch, cloudConfigured]);
 
   async function send(override?: string) {
-    const request = (override ?? text).trim();
+    const raw = override ?? text;
+    if (!instructionsOnly(raw) && !skills.length) return;
+    const described = resolveMentions(raw, references).trim();
+    const action = described.replace(/^【参考图1】|【参考图1】$/g, '').trim();
+    // Standalone local edit commands already target the sole attachment.
+    const singleEdit = references.length === 1 && /^(?:请|帮我|直接|麻烦|把这张图|将这张图)*(?:[抠扣].{0,10}|去除背景|去掉背景|移除背景|.{0,12}精修|.{0,16}封面[，, ]*标题.{1,100})[。！! ]*$/.test(action);
+    const request = singleEdit ? action : described;
     const input = [skills.length ? `请使用${skills.map(s => `「${s.title}」`).join('、')}技能。` : '', request].filter(Boolean).join('\n');
     if (input.length > 8000) { setError('需求与技能合计超过 8000 字，请缩短后再发送。'); return; }
     if (!input || active || readOnly || inFlight.current || uploading) return;
@@ -204,7 +212,7 @@ export default function AgentWorkspace({ user, client, cloudConfigured, refreshA
       }
       setDraft(d => {
         validate(d);
-        return {...d, uploads: [...d.uploads, ...items], referenceOrder: [...referenceIds(d), ...items.map(image => image.id)]};
+        return {...d, text: appendMentions(d.text, items), uploads: [...d.uploads, ...items], referenceOrder: [...referenceIds(d), ...items.map(image => image.id)]};
       });
     }).catch(e => setError(e instanceof Error ? e.message : '读取图片失败'));
     pendingReads.current = read;
@@ -229,7 +237,7 @@ export default function AgentWorkspace({ user, client, cloudConfigured, refreshA
   function reuse(id: string) {
     const image = asset(id); if (!image || readOnly || active) return;
     if (refs.length + uploads.length >= 8) { setError('每轮最多 8 张参考图。'); return; }
-    setDraft(d => d.refs.some(r => r.id === id) ? d : {...d, refs: [...d.refs, image], referenceOrder: [...referenceIds(d), id]});
+    setDraft(d => d.refs.some(r => r.id === id) ? d : {...d, text: appendMentions(d.text, [image]), refs: [...d.refs, image], referenceOrder: [...referenceIds(d), id]});
     composer.current?.focus();
   }
   const renderEvent = (e: AgentEvent) => {
@@ -271,9 +279,9 @@ export default function AgentWorkspace({ user, client, cloudConfigured, refreshA
         {error ? <div className="agent-error" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="关闭提示"><Icon name="close" size={14} /></button></div> : null}
         {config && !config.configured ? <p className="agent-note">本地可用：抠透明底、抠透明底保留手部。修图 Agent 也支持「画笔白底精修」或「制作横版封面，标题为“水彩练习”」。其他需求需配置创作助手。</p> : null}
         <form ref={form} className={`agent-composer ${readOnly ? 'readonly' : ''}`} onSubmit={e => { e.preventDefault(); void send(); }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (!active && !readOnly && e.dataTransfer.files.length) void addFiles(e.dataTransfer.files); }}>
-          <div className="agent-input-row"><ReferenceDock references={references} paste={addFiles} reorder={items => { setDraft(d => ({...d, referenceOrder: items.map(i => i.id)})); setPendingId(null); }} add={()=>fileInput.current?.click()} remove={removeReference} maxReferences={8} disabled={active || readOnly}/><div className="agent-prompt-content"><AnimatePresence initial={false}>{skills.length > 0 && <motion.div key="skills" className="agent-selected-skills" role="group" aria-label="已选创作技能" initial={{opacity:0,height:0}} animate={{opacity:1,height:"auto"}} exit={{opacity:0,height:0}} transition={{duration:reducedMotion ? 0 : .22}}><span className="agent-selected-skills-label">创作技能</span>{skills.map(s => <span className="agent-skill-token" key={s.id} title={currentSkills.find(item => item.id === s.id)?.description}><span className="agent-skill-token-icon"><Icon name="brush" size={14}/></span><span>{s.title}</span><button type="button" disabled={active || readOnly} aria-label={`移除技能 ${s.title}`} onClick={() => { setDraft(d => ({...d, skills:(d.skills ?? []).filter(item => item.id !== s.id)})); setPendingId(null); composer.current?.focus(); }}><Icon name="close" size={12}/></button></span>)}</motion.div>}</AnimatePresence><textarea ref={composer} aria-label="Agent需求" value={text} maxLength={8000} disabled={readOnly || sending || !draftReady} rows={3} placeholder={readOnly ? '管理员仅查看其他用户的对话' : isRetouch ? '上传原图，描述需要裁切、抠图、调色或修改的部分…' : '描述你的想法，或上传产品图，让 Agent 帮你完成创作…'} onChange={e => { setText(e.target.value); setPendingId(null); }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} /></div></div>
+          <div className="agent-input-row"><ReferenceDock references={references} paste={addFiles} reorder={items => { setDraft(d => ({...d, referenceOrder: items.map(i => i.id)})); setPendingId(null); }} add={()=>fileInput.current?.click()} remove={removeReference} maxReferences={8} disabled={active || readOnly}/><div className="agent-prompt-content"><AnimatePresence initial={false}>{skills.length > 0 && <motion.div key="skills" className="agent-selected-skills" role="group" aria-label="已选创作技能" initial={{opacity:0,height:0}} animate={{opacity:1,height:"auto"}} exit={{opacity:0,height:0}} transition={{duration:reducedMotion ? 0 : .22}}><span className="agent-selected-skills-label">创作技能</span>{skills.map(s => <span className="agent-skill-token" key={s.id} title={currentSkills.find(item => item.id === s.id)?.description}><span className="agent-skill-token-icon"><Icon name="brush" size={14}/></span><span>{s.title}</span><button type="button" disabled={active || readOnly} aria-label={`移除技能 ${s.title}`} onClick={() => { setDraft(d => ({...d, skills:(d.skills ?? []).filter(item => item.id !== s.id)})); setPendingId(null); composer.current?.focus(); }}><Icon name="close" size={12}/></button></span>)}</motion.div>}</AnimatePresence><PromptEditor key={draftKey} editorRef={composer} label="Agent需求" value={text} references={references} disabled={readOnly || sending || !draftReady} enterToSend submit={value => void send(value)} placeholder={readOnly ? '管理员仅查看其他用户的对话' : isRetouch ? '上传原图，描述需要裁切、抠图、调色或修改的部分…' : '描述你的想法，或上传产品图，让 Agent 帮你完成创作…'} change={value => { setText(value); setPendingId(null); }} /></div></div>
           <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={e => { if (e.target.files) void addFiles(e.target.files); e.target.value = ''; }} />
-          <div className="agent-composer-toolbar"><div className="agent-mode-select"><GlassSelect label="选择智能体" value={agentMode} options={[{value:'generate',label:'生图 Agent'},{value:'retouch',label:'修图 Agent'}]} disabled={active || readOnly || Boolean(draft.submission)} onChange={value => { setSelectedAgent(value as 'generate' | 'retouch'); setDraft(d => ({...d,agent:value as 'generate' | 'retouch',skills:[]})); setSkillsOpen(false); setSettingsOpen(false); setPendingId(null); }}/></div>{!isRetouch && <button type="button" data-layer-trigger aria-label="生成偏好" onClick={() => { setSettingsOpen(!settingsOpen); setSkillsOpen(false); }} aria-expanded={settingsOpen}><Icon name="settings" size={16} /><span>生成偏好</span></button>}<button type="button" data-layer-trigger aria-label="技能" onClick={() => { setSkillsOpen(!skillsOpen); setSettingsOpen(false); }} aria-expanded={skillsOpen}><Icon name="brush" size={16} /><span>技能</span></button><div className="agent-send-area"><span>{uploading ? '读取原图中' : isRetouch ? '原图保留 · 本地处理' : quote == null ? '出图时估算积分' : `约 ${Number(quote.toFixed(4))} 积分/张`}</span>{running ? <button type="button" className="agent-send" aria-label="停止 Agent" onClick={() => void agentRequest(`chats/${cid}/stop`, {}).catch(e => setError(e.message))}><Icon name="stop" size={17} /></button> : <button className="agent-send" type="submit" aria-label="发送需求" disabled={active || uploading || (!text.trim() && !skills.length) || readOnly || !config}><Icon name="arrow" size={22} /></button>}</div></div>
+          <div className="agent-composer-toolbar"><div className="agent-mode-select"><GlassSelect label="选择智能体" value={agentMode} options={[{value:'generate',label:'生图 Agent'},{value:'retouch',label:'修图 Agent'}]} disabled={active || readOnly || Boolean(draft.submission)} onChange={value => { setSelectedAgent(value as 'generate' | 'retouch'); setDraft(d => ({...d,agent:value as 'generate' | 'retouch',skills:[]})); setSkillsOpen(false); setSettingsOpen(false); setPendingId(null); }}/></div>{!isRetouch && <button type="button" data-layer-trigger aria-label="生成偏好" onClick={() => { setSettingsOpen(!settingsOpen); setSkillsOpen(false); }} aria-expanded={settingsOpen}><Icon name="settings" size={16} /><span>生成偏好</span></button>}<button type="button" data-layer-trigger aria-label="技能" onClick={() => { setSkillsOpen(!skillsOpen); setSettingsOpen(false); }} aria-expanded={skillsOpen}><Icon name="brush" size={16} /><span>技能</span></button><div className="agent-send-area"><span>{uploading ? '读取原图中' : isRetouch ? '原图保留 · 本地处理' : quote == null ? '出图时估算积分' : `约 ${Number(quote.toFixed(4))} 积分/张`}</span>{running ? <button type="button" className="agent-send" aria-label="停止 Agent" onClick={() => void agentRequest(`chats/${cid}/stop`, {}).catch(e => setError(e.message))}><Icon name="stop" size={17} /></button> : <button className="agent-send" type="submit" aria-label="发送需求" disabled={active || uploading || (!instructionsOnly(text) && !skills.length) || readOnly || !config}><Icon name="arrow" size={22} /></button>}</div></div>
           {settingsOpen && !isRetouch ? <AgentPreferences value={opts} update={changes=>setOpts(s=>({...s,...changes}))} disabled={active || readOnly} close={()=>setSettingsOpen(false)}/> : null}
           <AnimatePresence>{skillsOpen && <motion.div className="agent-skill-picker" data-motion-layer role="dialog" aria-label="创作技能" initial={{opacity:0,y:12,scale:.96}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:8,scale:.97}} transition={{duration:reducedMotion ? 0 : .24, ease:[.23,1,.32,1]}}><header><span className="agent-skill-heading-icon"><Icon name="spark" size={20}/></span><div><strong>创作技能</strong></div><button type="button" className="icon-button" aria-label="关闭技能" onClick={() => setSkillsOpen(false)}><Icon name="close" size={16}/></button></header><div className="agent-skill-list">{currentSkills.map(s => <button type="button" disabled={active || readOnly} key={s.id} aria-pressed={skills.some(item => item.id === s.id)} onClick={() => { setDraft(d => ({...d, skills:(d.skills ?? []).some(item => item.id === s.id) ? d.skills : [...(d.skills ?? []), {id:s.id,title:s.title}]})); setPendingId(null); setSkillsOpen(false); composer.current?.focus(); }}><span className="agent-skill-row-icon"><Icon name="brush" size={18}/></span><span className="agent-skill-copy"><strong>{s.title}</strong><small>{s.description}</small></span><Icon name={skills.some(item => item.id === s.id) ? 'check' : 'plus'} size={16}/></button>)}</div></motion.div>}</AnimatePresence>
         </form><p className="agent-composer-hint">{isRetouch ? '需求明确直接修图 · 原图完整保留' : '需求明确直接创作 · 保留产品细节'} · {IMAGE_UPLOAD_HINT}</p>

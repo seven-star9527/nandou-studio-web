@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { ReferenceImage } from '../types';
+import { referenceDragType } from '../reference-mentions';
 import Icon from './Icon';
 import ModalPortal from './ModalPortal';
 import { useModalDialog } from '../useModalDialog';
@@ -11,7 +12,7 @@ export default function ReferenceDock({ references, add, paste, reorder, remove,
 }) {
   const dock = useRef<HTMLDivElement>(null);
   const dragged = useRef<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
+  const [targetSlot, setTargetSlot] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zoom, setZoom] = useState<number | 'fit'>('fit');
   const [hover, setHover] = useState<{ id: string; left: number; top: number; width: number } | null>(null);
@@ -78,17 +79,40 @@ export default function ReferenceDock({ references, add, paste, reorder, remove,
     const top = placeAbove ? rect.top - height - 14 : rect.bottom + 14;
     setHover({ id, width, left: Math.max(12, Math.min(innerWidth - width - 12, rect.left - 12)), top });
   };
+  const from = references.findIndex(item => item.id === dragged.current);
+  function previewSlot(index: number) {
+    if (from < 0 || targetSlot == null) return index;
+    if (index === from) return targetSlot;
+    if (from < index && index <= targetSlot) return index - 1;
+    if (targetSlot <= index && index < from) return index + 1;
+    return index;
+  }
+  function endSort() { dragged.current = null; setTargetSlot(null); }
+  function slotAt(event: React.DragEvent<HTMLDivElement>) {
+    const strip = event.currentTarget;
+    const left = event.clientX - strip.getBoundingClientRect().left;
+    if (left > strip.clientWidth - 18) strip.scrollLeft += 10;
+    if (left < 18) strip.scrollLeft -= 10;
+    return Math.max(0, Math.min(references.length - 1, Math.round((left + strip.scrollLeft - 32) / 44)));
+  }
   return <>
-    <div ref={dock} className={`reference-dock ${references.length ? 'has-references' : ''}`} style={{ '--reference-count': references.length, '--reference-expanded-width': `${(references.length + 1) * 44 + 16}px` } as CSSProperties} onMouseLeave={() => setHover(null)}>
-      <div className="reference-cards">
-        {references.map((reference, index) => <div className="reference-card" key={reference.id} style={{ '--reference-index': index, '--reference-angle': `${index === 0 ? -8 : index % 2 ? 5 : -5}deg` } as CSSProperties}>
-          <button type="button" className={`reference-thumbnail${overId === reference.id ? ' is-drop-target' : ''}`} aria-label={`查看参考图${index + 1}：${reference.name}`} title={`${reference.name} · ${reference.width}×${reference.height}px · 点击放大，左右拖动排序`}
-            draggable={!disabled && references.length > 1}
-            onDragStart={e => { dragged.current = reference.id; setHover(null); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('application/x-studio-reference', reference.id); }}
-            onDragOver={e => { if (dragged.current) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; setOverId(reference.id); } }}
-            onDrop={e => { if (dragged.current) { e.preventDefault(); e.stopPropagation(); move(references.findIndex(item => item.id === dragged.current), index); dragged.current = null; setOverId(null); } }}
-            onDragLeave={() => setOverId(null)}
-            onDragEnd={() => { dragged.current = null; setOverId(null); }}
+    <div ref={dock} className={`reference-dock ${references.length ? 'has-references' : ''} ${targetSlot != null ? 'is-sorting' : ''}`} style={{ '--reference-count': references.length, '--reference-expanded-width': `${(references.length + 1) * 44 + 16}px` } as CSSProperties} onMouseLeave={() => setHover(null)}>
+      <div className="reference-cards" onDragOver={event => {
+        if (from < 0) return;
+        event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setTargetSlot(slotAt(event));
+      }} onDrop={event => {
+        if (from < 0) return;
+        event.preventDefault(); event.stopPropagation(); move(from, slotAt(event)); endSort();
+      }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setTargetSlot(null); }}>
+        {references.map((reference, index) => <div className={`reference-card${from === index ? ' is-lifted' : ''}`} key={reference.id} style={{ '--reference-index': previewSlot(index), '--reference-angle': `${index === 0 ? -8 : index % 2 ? 5 : -5}deg` } as CSSProperties}>
+          <button type="button" className="reference-thumbnail" aria-label={`查看参考图${index + 1}：${reference.name}`} title={`${reference.name} · ${reference.width}×${reference.height}px · 点击放大，左右拖动排序`}
+            draggable={!disabled}
+            onDragStart={event => {
+              dragged.current = reference.id; setHover(null); setTargetSlot(index);
+              event.dataTransfer.effectAllowed = 'copyMove';
+              event.dataTransfer.setData(referenceDragType, reference.id);
+            }}
+            onDragEnd={endSort}
             onKeyDown={e => { if (e.altKey && ['ArrowLeft','ArrowRight'].includes(e.key)) { e.preventDefault(); move(index, index + (e.key === 'ArrowLeft' ? -1 : 1)); } }}
             onMouseEnter={event => showHover(reference.id, event.currentTarget)} onFocus={event => showHover(reference.id, event.currentTarget)} onBlur={() => setHover(null)}
             onClick={() => { setHover(null); setZoom('fit'); setSelectedId(reference.id); }}>

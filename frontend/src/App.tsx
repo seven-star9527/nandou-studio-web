@@ -1,3 +1,5 @@
+import { type PromptEditorHandle } from './components/PromptEditor';
+import { bindMentions, resolveMentions } from './reference-mentions';
 import { useEffect, useRef, useState } from 'react';
 import { animate as springAnimate, type AnimationPlaybackControls } from 'motion';
 import GlassTabs from './components/GlassTabs';
@@ -86,15 +88,16 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
   const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth >= 1150);
   const [previousPrompt,setPreviousPrompt] = useState<{before:string;minimum:number;applied:string; added?:string; geometry?:Pick<typeof studio.settings,'ratio'|'width'|'height'|'resolution'>; appliedRatio?:string}|null>(null);
   const [templateNotice,setTemplateNotice] = useState('');
+  const promptEditor = useRef<PromptEditorHandle>(null);
+  const readablePrompt = resolveMentions(studio.prompt, studio.references);
   const applyTemplate = (text:string,minimum=0) => {
     setTemplateNotice('');
     setPreviousPrompt({before:studio.prompt,minimum:studio.minReferences,applied:text});
     studio.setTemplate(text,minimum);
     requestAnimationFrame(()=>{
-      const field=document.querySelector<HTMLTextAreaElement>('.composer textarea');
       const slot=/【[^】]+】/.exec(text);
-      field?.focus({preventScroll:true});
-      if(slot)field?.setSelectionRange(slot.index,slot.index+slot[0].length);
+      if (slot) promptEditor.current?.selectText(slot[0]);
+      else promptEditor.current?.focus();
     });
   };
   const chooseTemplate: ChooseTemplate = async (choice, onlyImage, signal) => {
@@ -118,7 +121,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
     }
     setTemplateNotice(note);
     requestAnimationFrame(()=>{
-      const field=document.querySelector<HTMLTextAreaElement>('.composer textarea');
+      const field=document.querySelector<HTMLElement>('.composer [role=textbox]');
       field?.focus({preventScroll:true});field?.scrollIntoView({block:'center',behavior:'instant'});
     });
   };
@@ -135,7 +138,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         await studio.reuse(artwork,signal);
         if(signal.aborted)return;
         setSurface('image');setTemplateNotice('');setPreviousPrompt(null);
-        requestAnimationFrame(()=>document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus());
+        requestAnimationFrame(()=>document.querySelector<HTMLElement>('.composer [role=textbox]')?.focus());
       }} /></div></aside>
       <main className="studio-content"><section className="creation-section" aria-labelledby="creation-title">
         {studio.draftError ? <div className="service-notice" role="status">{studio.draftError}</div> : null}
@@ -151,12 +154,12 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
           {(['image','canvas'] as const).map(t=><button key={t} role="tab" aria-selected={surface===t} className={surface===t?'selected':''} onClick={()=>{setSurface(t);if(t==='image')setBoard(null);}}>{t==='image'?'图片生成':'画布'}</button>)}
         </GlassTabs>
         {surface==='canvas' ? <CanvasProjects key={project?.id??'projects'} adding={Boolean(board?.initial)} open={setProject}/> : <>
-        <Composer settings={studio.settings} config={studio.config} params={studio.params} models={studio.models} prompt={studio.prompt} references={studio.references}
+        <Composer editorRef={promptEditor} settings={studio.settings} config={studio.config} params={studio.params} models={studio.models} prompt={studio.prompt} references={studio.references}
           editing={editing} setPrompt={studio.setPrompt} update={changes => studio.setSettings(previous => ({ ...previous, ...changes }))}
           setGeometry={(ratio, resolution) => studio.setGeometry(ratio, resolution, editing)} addReferences={studio.addReferences} reorderReferences={studio.reorderReferences} removeReference={studio.removeReference} selectModel={studio.selectModel}
           selectLocal={studio.selectLocal} selectCloud={studio.selectCloudModel} cloudModel={studio.cloudModel} cloudModels={studio.cloudModels} cloudConfigured={studio.cloudConfigured} cloudCapabilityError={studio.cloudCapabilityError}
           creditQuote={studio.creditQuote}
-          polisher={<PromptPolisher client={studio.client} prompt={studio.prompt} setPrompt={studio.setPrompt} width={studio.settings.width} height={studio.settings.height} model={studio.cloudModel?.id ?? studio.settings.model} referenceCount={editing ? studio.references.length : 0} referenceIds={editing ? studio.references.map(reference => reference.id).join(',') : ''} busy={busy} />}
+          polisher={<PromptPolisher client={studio.client} prompt={readablePrompt} setPrompt={value => studio.setPrompt(bindMentions(value, studio.references))} width={studio.settings.width} height={studio.settings.height} model={studio.cloudModel?.id ?? studio.settings.model} referenceCount={editing ? studio.references.length : 0} referenceIds={editing ? studio.references.map(reference => reference.id).join(',') : ''} busy={busy} />}
           generate={() => studio.generate(editing)} busy={busy} ready={studio.ready && studio.references.length>=studio.minReferences} />
         {studio.job && (busy || !historyOpen) && <div className="composer-status"><GenerationStatus job={studio.job} stop={()=>void studio.stop()}/>{!busy && <button className="quiet-button" onClick={()=>setHistoryOpen(true)}>查看创作记录</button>}</div>}
         {studio.references.length<studio.minReferences && <p className="panel-note">此提示词还需 {studio.minReferences-studio.references.length} 张参考图。</p>}
@@ -174,7 +177,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
             </button>
           )}</div>
         </section>
-        <ScenePresets currentPrompt={studio.prompt} apply={applyTemplate} />
+        <ScenePresets currentPrompt={readablePrompt} apply={applyTemplate} />
         <div className="library-entry"><PromptLibrary referenceCount={studio.references.length} apply={chooseTemplate} /></div>
         {templateNotice && <p className="panel-note template-notice" role="status">{templateNotice} <button onClick={()=>{setHistoryOpen(true);requestAnimationFrame(()=>document.querySelector<HTMLElement>('.rail-toggle')?.focus());}}>出图位置：创作记录</button></p>}
         {previousPrompt && previousPrompt.applied===studio.prompt && <button className="scene-add" onClick={()=>{studio.setTemplate(previousPrompt.before,previousPrompt.minimum);if(previousPrompt.added)studio.removeReference(previousPrompt.added);if(previousPrompt.geometry && previousPrompt.appliedRatio===studio.settings.ratio && previousPrompt.geometry.resolution===studio.settings.resolution)studio.setSettings(old=>({...old,...previousPrompt.geometry}));setPreviousPrompt(null);setTemplateNotice('');}}>撤销套用</button>}</>}

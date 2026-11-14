@@ -1,3 +1,4 @@
+import { appendMentions, bindMentions, removeMentions, resolveMentions } from './reference-mentions';
 import { createId } from './id';
 import { readReferenceImage, restoreTaskReferences } from './task-references';
 import { checkImageBatch } from './image-upload-limits';
@@ -38,7 +39,12 @@ export function useStudio() {
   const [draft, setDraft, draftReady, draftError] = useDraft(accountStorageKey('draft:studio'), { prompt: '', references: [] as ReferenceImage[], minReferences: 0 });
   const {prompt, references, minReferences} = draft;
   const setPrompt = useCallback((prompt: string) => setDraft(d => ({...d, prompt, minReferences:prompt.trim()?d.minReferences:0})), [setDraft]);
-  const setReferences = useCallback((action: ReferenceImage[] | ((old: ReferenceImage[]) => ReferenceImage[])) => setDraft(d => ({...d, references: typeof action === 'function' ? action(d.references) : action})), [setDraft]);
+  const setReferences = useCallback((action: ReferenceImage[] | ((old: ReferenceImage[]) => ReferenceImage[])) => setDraft(d => {
+    const references = typeof action === 'function' ? action(d.references) : action;
+    const added = references.filter(ref => !d.references.some(old => old.id === ref.id));
+    const removed = d.references.filter(ref => !references.some(next => next.id === ref.id));
+    return {...d, references, prompt:appendMentions(removeMentions(d.prompt, removed.map(ref => ref.id)), added)};
+  }), [setDraft]);
   const setTemplate = useCallback((prompt:string, minReferences=0) => setDraft(d=>({...d,prompt,minReferences})),[setDraft]);
   const [history, setHistory] = useState<Artwork[]>([]);
   const [job, setJob] = useState<Job | null>(null);
@@ -199,7 +205,7 @@ export function useStudio() {
   };
 
   const generate = (includeReferences: boolean, branch?: {id:string; prompt:string; references:ReferenceImage[]; settings:GenerationSettings}) => {
-    const input = branch ?? { prompt, references, settings };
+    const input = branch ?? { prompt: resolveMentions(prompt, references), references, settings };
     setError('');
     if (socket.current && socket.current.readyState < WebSocket.CLOSING) {
       if (branch) throw new Error('当前任务仍在运行。');
@@ -323,7 +329,7 @@ export function useStudio() {
     if (restored.length && expected > restored.length) throw new Error('任务参考原图不完整，请检查原图记录后再试。');
     const cloudDraft = cloudChoice && cloudArtworkSettings(artwork, cloudChoice, settings);
     const editing = restored.length > 0 || expected > 0 || cloudDraft?.operation === 'edit';
-    setDraft({ prompt: artwork.prompt, references: restored, minReferences:editing && !restored.length ? 1 : 0 });
+    setDraft({ prompt: bindMentions(artwork.prompt, restored), references: restored, minReferences:editing && !restored.length ? 1 : 0 });
     setError(editing && !restored.length ? '此任务未保存参考原图，请重新添加后提交。' : '');
     setCloudModelId(cloudChoice?.id ?? null);
     setSettings(cloudDraft?.settings ?? {

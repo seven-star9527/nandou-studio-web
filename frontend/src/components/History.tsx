@@ -105,7 +105,7 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
       if (!controller.signal.aborted) {
         setSelected(null);
         requestAnimationFrame(() => {
-          document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus({ preventScroll: true });
+          document.querySelector<HTMLElement>('.composer [role=textbox]')?.focus({ preventScroll: true });
           window.scrollTo({ top: 0, behavior: 'instant' });
         });
       }
@@ -171,7 +171,7 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
       <GlassSelect label="状态" value={filters.status} onChange={status => setFilters(previous => ({...previous, status:status as HistoryFilters['status']}))} options={[{value:'all',label:'全部状态'},{value:'completed',label:'已生成'},{value:'active',label:'进行中 / 待确认'},{value:'failed',label:'失败 / 已取消'}]} />
       {hasFilters ? <button className="text-button" onClick={() => setFilters(INITIAL_HISTORY_FILTERS)}>清除筛选</button> : null}
     </div></details> : null}
-    {job ? <GenerationStatus job={job} stop={stop} remove={canHide(job.id) ? () => askRemove(job.id) : undefined} /> : null}
+    {job && !isBusy(job) ? <GenerationStatus job={job} stop={stop} remove={canHide(job.id) ? () => askRemove(job.id) : undefined} /> : null}
     {attentionTasks.length ? <details className="history-task-summary"><summary>任务动态 · {attentionTasks.length}</summary><div className="cloud-task-list">{attentionTasks.map(task => <div key={task.request_id}><span>{task.model}{isAdmin && task.studio_owner_email ? ` · ${task.studio_owner_email}` : ''}{isAdmin && task.studio_hidden_at ? ' · 用户已移除' : ''}</span><strong>{({ uploading: '上传参考图中', submitting: '提交结果待确认', submitted: '已提交', pending: '后台等待中', processing: '后台生成中', outcome_unknown: '结果待确认', failed: '历史任务失败', cancelled: '已取消', completed: '本地缓存未完整' } as Record<string, string>)[task.status]}</strong>{canHide(task.studio_task_id ?? task.request_id) && isTerminalTask(task) ? <button onClick={() => askRemove(task.studio_task_id ?? task.request_id)}>移除记录</button> : !isTerminalTask(task) || task.status === 'completed' ? <button onClick={refresh} disabled={loading}>刷新状态</button> : null}<HistoryTime value={task.created_utc} />{task.error || task.poll_error || cloudDelivery(task).message ? <p>{task.error ?? cloudDelivery(task).message ?? task.poll_error}</p> : null}{isTerminalTask(task) ? <small>刷新不会重试生成。{taskCostLabel(task.credits_cost ?? undefined, true)}</small> : null}</div>)}</div></details> : null}
     {error ? <p className="history-error" role="alert">创作记录读取失败：{error}</p> : null}
     {visible.length ? <div className="artwork-grid">
@@ -183,7 +183,7 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
         <div className="artwork-info"><p>{artwork.prompt || '生成图像'}</p><HistoryTime value={artwork.generatedAt} />{isAdmin ? <span className="artwork-owner">{artwork.ownerEmail ?? '历史管理员作品'}{artwork.hiddenAt ? <em>用户已移除</em> : null}</span> : null}<div><span>{artwork.width && artwork.height ? `${artwork.width} × ${artwork.height}` : '图像'}</span><span className="artwork-card-actions"><DownloadLink artwork={artwork} compact />{canHide(artwork.taskId) ? <button onClick={() => askRemove(artwork.taskId!)} title="从我的记录中移除整个任务" aria-label="删除任务记录" className="history-delete-button"><Icon name="trash" size={15} /><span>删除</span></button> : null}</span></div>{artwork.source === 'cloud' ? <p className="task-cost">{taskCostLabel(artwork.taskCreditsCost, artwork.taskCostSettled)}</p> : null}{artwork.source === 'cloud' && artwork.locallySaved === false ? <p className="delivery-warning">{artwork.downloadError ?? '本地缓存未完成；远程原图可能到期，请及时保存。'}</p> : null}</div>
       </article>)}
     </div> : null}
-    {empty ? <div className={`empty-history empty-${empty.kind}`} role="status"><div className="empty-history-art"><Icon name={empty.kind === 'loading' ? 'refresh' : empty.kind === 'active' ? 'spark' : 'emptyImage'} size={46} className={empty.kind === 'loading' ? 'spinning' : ''} /></div>
+    {empty && empty.kind !== 'active' ? <div className={`empty-history empty-${empty.kind}`} role="status"><div className="empty-history-art"><Icon name={empty.kind === 'loading' ? 'refresh' : 'emptyImage'} size={46} className={empty.kind === 'loading' ? 'spinning' : ''} /></div>
       <h3>{empty.title}</h3>{empty.description && <p>{empty.description}</p>}
       {empty.kind === 'current-with-history' ? <button className="quiet-button" onClick={() => setFilter('all')}>查看全部作品 <Icon name="arrow" size={15} /></button> : empty.kind === 'error' ? <button className="quiet-button" onClick={refresh}>重新读取</button> : empty.kind === 'filtered' ? <button className="quiet-button" onClick={() => setFilters(INITIAL_HISTORY_FILTERS)}>清除筛选</button> : null}
     </div> : null}
