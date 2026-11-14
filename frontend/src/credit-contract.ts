@@ -3,7 +3,8 @@ import type { CloudAccount, CloudQuote, CloudQuoteRequest, GenerationSettings } 
 export const isCreditAmount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const creditDisplay = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const formatCredits = (value: number | null | undefined) => isCreditAmount(value) ? creditDisplay.format(value) : '—';
-export function taskCostLabel(value: number | undefined, settled: boolean | undefined) {
+export function taskCostLabel(value: number | undefined, settled: boolean | undefined, referenceBilling = false, estimate?: number | null) {
+  if (referenceBilling) return isCreditAmount(estimate) ? `参考约 ${formatCredits(estimate)} 积分 · 不扣积分` : '预估待定 · 不扣积分';
   return isCreditAmount(value) ? `${settled ? '实际费用' : '当前费用（结算待确认）'} ${formatCredits(value)} 积分 · 整任务` : '费用待回读';
 }
 

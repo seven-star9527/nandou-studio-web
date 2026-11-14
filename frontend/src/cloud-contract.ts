@@ -79,12 +79,14 @@ export function cloudDelivery(task: CloudTask, requested = Number(task.parameter
     ? `云端生成已结束，本地已保存 ${delivered}/${requested} 张。${error ?? task.result_warning ?? '缓存尚未完整，可刷新记录重试转存。远程结果可能到期，请及时保存。'}` : undefined };
 }
 
-export function cloudJobUpdate(task: CloudTask, requested: number, waiting: boolean): Pick<Job, 'phase' | 'completed' | 'percent' | 'error' | 'taskCreditsCost' | 'taskCostSettled'> {
+export function cloudJobUpdate(task: CloudTask, requested: number, waiting: boolean): Pick<Job, 'phase' | 'completed' | 'percent' | 'error' | 'taskCreditsCost' | 'taskCostSettled' | 'estimatedCredits' | 'referenceBilling'> {
   const delivery = cloudDelivery(task, requested);
   const phases: Record<CloudTask['status'], Job['phase']> = { uploading: 'connecting', submitting: 'connecting', submitted: 'queued', pending: 'queued', processing: 'generating', completed: delivery.complete ? 'complete' : 'delivery_pending', failed: 'error', cancelled: 'interrupted', outcome_unknown: 'unknown' };
   const terminal = ['completed', 'failed', 'cancelled', 'outcome_unknown'].includes(task.status);
   return { phase: !waiting && !terminal ? 'background' : phases[task.status], completed: delivery.delivered,
     percent: typeof task.progress === 'number' && task.status !== 'completed' ? Math.max(0, Math.min(1, task.progress / 100)) : undefined,
+    estimatedCredits: isCreditAmount(task.estimated_credits) ? task.estimated_credits : undefined,
+    referenceBilling: task.reference_billing,
     taskCreditsCost: isCreditAmount(task.credits_cost) ? task.credits_cost : undefined,
     taskCostSettled: ['completed', 'failed', 'cancelled'].includes(task.status),
     error: task.error ?? delivery.message ?? task.poll_error ?? (task.status === 'outcome_unknown' ? '结果尚未确认，请刷新记录读回，不要重复提交。' : undefined) };
@@ -121,6 +123,8 @@ export function taskArtworks(task: CloudTask, current = false): Artwork[] {
     duration: typeof task.actual_time === 'number' && Number.isFinite(task.actual_time) && task.actual_time >= 0 ? task.actual_time : undefined,
     batchIndex: image.index, batchSize: Math.max(task.images.length, Number(task.parameters?.n) || 0), source: 'cloud' as const, locallySaved: url.startsWith('/studio-results/') && !image.download_error,
     downloadError: image.download_error, mimeType: image.mime_type,
+    estimatedCredits: isCreditAmount(task.estimated_credits) ? task.estimated_credits : undefined,
+    referenceBilling: task.reference_billing,
     taskCreditsCost: isCreditAmount(task.credits_cost) ? task.credits_cost : undefined,
     taskCostSettled: ['completed', 'failed', 'cancelled'].includes(task.status),
     metadata: JSON.stringify({ studio_cloud: { request_id: task.request_id, model: task.model, status: task.status,

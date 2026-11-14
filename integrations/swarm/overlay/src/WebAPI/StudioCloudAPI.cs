@@ -13,7 +13,7 @@ using Image = SixLabors.ImageSharp.Image;
 
 namespace SwarmUI.WebAPI;
 
-/// <summary>Project-local APIMart adapter. Paid submissions are never retried.</summary>
+/// <summary>Studio image adapters. An ambiguous paid submission is never repeated.</summary>
 public static partial class StudioCloudAPI
 {
     private static readonly HttpClient Client = new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(90) };
@@ -31,15 +31,15 @@ public static partial class StudioCloudAPI
         API.RegisterAPICall(ListStudioCloudTasks, false, Permissions.ViewImageHistory);
     }
 
-    private static string Key()
+    private static string Key(string name = "APIMART_API_KEY")
     {
-        string key = Environment.GetEnvironmentVariable("APIMART_API_KEY");
+        string key = Environment.GetEnvironmentVariable(name);
         if (!string.IsNullOrWhiteSpace(key)) return key.Trim();
         string path = Path.Combine(Root, ".env");
         if (!File.Exists(path)) return "";
         foreach (string line in File.ReadLines(path))
         {
-            Match match = Regex.Match(line, @"^\s*(?:export\s+)?APIMART_API_KEY\s*=\s*(.*)$");
+            Match match = Regex.Match(line, @"^\s*(?:export\s+)?" + Regex.Escape(name) + @"\s*=\s*(.*)$");
             if (!match.Success) continue;
             string value = match.Groups[1].Value.Trim();
             if (value.Length >= 2 && (value[0] == '\"' && value[^1] == '\"' || value[0] == '\'' && value[^1] == '\'')) value = value[1..^1];
@@ -52,7 +52,7 @@ public static partial class StudioCloudAPI
     {
         JObject caps = Capabilities;
         caps["provider"] = "apimart";
-        caps["configured"] = Key().Length > 0;
+        caps["configured"] = Key().Length > 0 || OfficialKeys().Length > 0;
         string models = Path.Combine(Root, "models/qwen-image-2.1");
         bool commonReady = File.Exists(Path.Combine(models, "text_encoders/qwen3vl_8b_int8_convrot.safetensors")) && File.Exists(Path.Combine(models, "vae/qwen_image_2.1_vae_bf16.safetensors"));
         caps["localReadiness"] = new JObject
@@ -233,59 +233,85 @@ public static partial class StudioCloudAPI
         try { id = Id((string)rawInput["request_id"]); body = ValidateRequest(rawInput, Capabilities); }
         catch (Exception e) when (e is ArgumentException or FormatException) { return Error(e.Message); }
         string key = Key();
-        if (key.Length == 0) return Error("请在项目 .env 中填写 APIMART_API_KEY", "cloud_not_configured");
+        string[] keys = CanUseOfficial(body, rawInput) ? OfficialKeys() : [];
         var gate = Lock(user, id);
         await gate.WaitAsync();
+        bool handedOff = false;
         try
         {
             string fingerprint = RequestFingerprint(rawInput);
             JObject record = Read(user, id);
             if (record is not null) return (string)record["fingerprint"] == fingerprint ? Public(record) : Error("同一request_id不能用于不同请求");
+            if (keys.Length == 0 && key.Length == 0) return Error("此模型或格式尚未配置可用的生图密钥", "cloud_not_configured");
             record = new() { ["request_id"] = id, ["fingerprint"] = fingerprint, ["status"] = "uploading", ["model"] = body["model"], ["prompt"] = body["prompt"], ["operation"] = rawInput["operation"], ["parameters"] = body.DeepClone(), ["reference_count"] = (rawInput["reference_images"] as JArray)?.Count ?? 0, ["created_utc"] = DateTime.UtcNow.ToString("o"), ["images"] = new JArray() };
             Save(user, record);
-            bool submitted = false;
-            try
+            if (keys.Length > 0)
             {
-                JArray urls = [];
-                foreach (JToken image in rawInput["reference_images"] as JArray ?? [])
+                // The worker owns this lock through delivery. Polls can read its durable snapshot.
+                var initial = Public(record);
+                handedOff = true;
+                _ = Task.Run(async () =>
                 {
-                    var file = DecodeReference(image.Value<string>());
-                    using var form = new MultipartFormDataContent();
-                    var content = new ByteArrayContent(file.bytes);
-                    content.Headers.ContentType = new MediaTypeHeaderValue(file.mime);
-                    form.Add(content, "file", "reference." + file.extension);
-                    using var upload = new HttpRequestMessage(HttpMethod.Post, "https://api.apimart.ai/v1/uploads/images") { Content = form };
-                    JObject uploadResult = await Call(upload, key);
-                    string url = (string)uploadResult["url"];
-                    if (!Uri.TryCreate(url, UriKind.Absolute, out Uri uri) || uri.Scheme != "https") throw new InvalidDataException("Invalid upload response");
-                    urls.Add(url);
-                }
-                if (urls.Count > 0) body["image_urls"] = urls;
-                record["status"] = "submitting";
-                Save(user, record);
-                using var generation = new HttpRequestMessage(HttpMethod.Post, "https://api.apimart.ai/v1/images/generations") { Content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json") };
-                submitted = true;
-                JObject result = await Call(generation, key);
-                string task = (string)result["data"]?[0]?["task_id"];
-                if (string.IsNullOrWhiteSpace(task)) throw new InvalidDataException("Missing task_id");
-                record["task_id"] = task;
-                record["status"] = "submitted";
-                record["submitted_utc"] = DateTime.UtcNow.ToString("o");
+                    try { await RunOfficialPool(session, user, rawInput, body, record, keys, key); }
+                    catch
+                    {
+                        record["status"] = "outcome_unknown";
+                        record["error"] = "提交或交付结果待核对，请勿重复提交。";
+                        Save(user, record);
+                    }
+                    finally { gate.Release(); }
+                });
+                return initial;
             }
-            catch (ProviderError e)
-            {
-                record["status"] = submitted && e.Code >= 500 ? "outcome_unknown" : "failed";
-                record["error"] = e.SafeMessage;
-            }
-            catch
-            {
-                record["status"] = submitted ? "outcome_unknown" : "failed";
-                record["error"] = submitted ? "提交响应未确认，禁止自动重发；请核对APIMart任务记录" : "参考图上传失败，未提交生成任务";
-            }
-            Save(user, record);
+            await SubmitMart(user, rawInput, body, record, key);
             return Public(record);
         }
-        finally { gate.Release(); }
+        finally { if (!handedOff) gate.Release(); }
+    }
+
+    private static async Task SubmitMart(string user, JObject rawInput, JObject body, JObject record, string key)
+    {
+        string id = (string)record["request_id"];
+        bool submitted = false;
+        try
+        {
+            JArray urls = [];
+            foreach (JToken image in rawInput["reference_images"] as JArray ?? [])
+            {
+                var file = DecodeReference(image.Value<string>());
+                using var form = new MultipartFormDataContent();
+                var content = new ByteArrayContent(file.bytes);
+                content.Headers.ContentType = new MediaTypeHeaderValue(file.mime);
+                form.Add(content, "file", "reference." + file.extension);
+                using var upload = new HttpRequestMessage(HttpMethod.Post, "https://api.apimart.ai/v1/uploads/images") { Content = form };
+                JObject uploadResult = await Call(upload, key);
+                string url = (string)uploadResult["url"];
+                if (!Uri.TryCreate(url, UriKind.Absolute, out Uri uri) || uri.Scheme != "https") throw new InvalidDataException("Invalid upload response");
+                urls.Add(url);
+            }
+            if (urls.Count > 0) body["image_urls"] = urls;
+            record["status"] = "submitting";
+            Save(user, record);
+            using var generation = new HttpRequestMessage(HttpMethod.Post, "https://api.apimart.ai/v1/images/generations") { Content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json") };
+            submitted = true;
+            JObject result = await Call(generation, key);
+            string task = (string)result["data"]?[0]?["task_id"];
+            if (string.IsNullOrWhiteSpace(task)) throw new InvalidDataException("Missing task_id");
+            record["task_id"] = task;
+            record["status"] = "submitted";
+            record["submitted_utc"] = DateTime.UtcNow.ToString("o");
+        }
+        catch (ProviderError e)
+        {
+            record["status"] = submitted && e.Code >= 500 ? "outcome_unknown" : "failed";
+            record["error"] = e.SafeMessage;
+        }
+        catch
+        {
+            record["status"] = submitted ? "outcome_unknown" : "failed";
+            record["error"] = submitted ? "提交响应未确认，禁止自动重发；请核对APIMart任务记录" : "参考图上传失败，未提交生成任务";
+        }
+        Save(user, record);
     }
 
     /// <summary>Flatten the documented images[].url[] shape without fabricating results.</summary>
@@ -365,35 +391,40 @@ public static partial class StudioCloudAPI
                     buffer.Write(chunk, 0, size);
                 }
                 byte[] bytes = buffer.ToArray();
-                string extension, mime;
-                if (expectedFormat == "svg")
-                {
-                    ValidateStaticSvg(bytes);
-                    extension = "svg";
-                    mime = "image/svg+xml";
-                }
-                else
-                {
-                    var info = Image.Identify(bytes);
-                    if (info is null || (long)info.Width * info.Height > 32_000_000) throw new InvalidDataException("Invalid result image");
-                    var format = info.Metadata.DecodedImageFormat;
-                    extension = format?.FileExtensions.FirstOrDefault() ?? throw new InvalidDataException("Unknown image format");
-                    if (extension is not ("png" or "jpg" or "jpeg" or "webp" or "gif") || expectedFormat == "gif" && (extension != "gif" || info.FrameMetadataCollection.Count < 2))
-                        throw new InvalidDataException("Unexpected image format or missing animation");
-                    item["width"] = info.Width;
-                    item["height"] = info.Height;
-                    mime = format.DefaultMimeType;
-                }
-                string name = id + "-" + (int)item["index"] + "." + extension;
-                await File.WriteAllBytesAsync(Path.Combine(folder, name + ".tmp"), bytes);
-                File.Move(Path.Combine(folder, name + ".tmp"), Path.Combine(folder, name), true);
-                item["url"] = "/studio-results/" + name;
-                item["mime_type"] = mime;
-                item["sha256"] = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-                item.Remove("download_error");
+                await SaveImage(folder, id, item, bytes, expectedFormat);
             }
             catch { if (expectedFormat == "svg") item["url"] = ""; item["download_error"] = "自动转存未完成；远程结果可能到期，请下载保存"; }
         }
+    }
+
+    private static async Task SaveImage(string folder, string id, JObject item, byte[] bytes, string expectedFormat)
+    {
+        string extension, mime;
+        if (expectedFormat == "svg")
+        {
+            ValidateStaticSvg(bytes);
+            extension = "svg";
+            mime = "image/svg+xml";
+        }
+        else
+        {
+            var info = Image.Identify(bytes);
+            if (info is null || (long)info.Width * info.Height > 32_000_000) throw new InvalidDataException("Invalid result image");
+            var format = info.Metadata.DecodedImageFormat;
+            extension = format?.FileExtensions.FirstOrDefault() ?? throw new InvalidDataException("Unknown image format");
+            if (extension is not ("png" or "jpg" or "jpeg" or "webp" or "gif") || expectedFormat == "gif" && (extension != "gif" || info.FrameMetadataCollection.Count < 2))
+                throw new InvalidDataException("Unexpected image format or missing animation");
+            item["width"] = info.Width;
+            item["height"] = info.Height;
+            mime = format.DefaultMimeType;
+        }
+        string name = id + "-" + (int)item["index"] + "." + extension;
+        await File.WriteAllBytesAsync(Path.Combine(folder, name + ".tmp"), bytes);
+        File.Move(Path.Combine(folder, name + ".tmp"), Path.Combine(folder, name), true);
+        item["url"] = "/studio-results/" + name;
+        item["mime_type"] = mime;
+        item["sha256"] = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        item.Remove("download_error");
     }
 
     private static void Delivery(JObject record)
@@ -435,7 +466,7 @@ public static partial class StudioCloudAPI
             if (status is "uploading" or "submitting")
             {
                 record["status"] = "outcome_unknown";
-                record["error"] = "服务重启前任务未确认，禁止自动重发；请核对APIMart记录";
+                record["error"] = "服务重启前任务未确认，请核对任务记录，禁止自动重发";
                 Save(user, record);
             }
             if ((string)record["task_id"] is not string task || status is "completed" or "failed" or "cancelled") return Public(record);

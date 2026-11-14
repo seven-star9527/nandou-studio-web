@@ -100,7 +100,7 @@ Windows 高清工具使用 [Real-ESRGAN 官方 Windows 包](https://github.com/x
 
 快捷抠图与主图精修的纯白背景使用本机 BiRefNet。将 [BiRefNet General Lite ONNX 权重](https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx) 放到网关根目录的 `models/birefnet-general-lite.onnx`，核对 MD5 为 `4fab47adc4ff364be1713e97b7e66334`。模型只在第一次处理时加载。点选主体还需要将 [MobileSAM ONNX](https://huggingface.co/Acly/MobileSAM/tree/0d3b403339b4674a82493d5e97964dd78089ddc8) 的 `mobile_sam_image_encoder.onnx` 和 `sam_mask_decoder_multi.onnx` 放在同一目录。两者的 SHA-256 分别为 `580f5fb648ea1062c0aabc26217aed56921985f03f0cbbd852bba81d760cc749` 和 `8976b90a87ba50a6a72217a5ff994f7d25ce16f2229fcc1ed259e1294c622ffe`。修图 Agent 自动识别手部另需 [MediaPipe 手掌检测模型](https://github.com/opencv/opencv_zoo/tree/main/models/palm_detection_mediapipe) 的 `palm_detection_mediapipe_2023feb.onnx`，SHA-256 为 `78ff51c38496b7fc8b8ebdb6cc8c1abb02fa6c38427c6848254cdaba57fcce7c`。画布视频上传需要网关进程能从 PATH 找到 ffprobe。
 
-在项目根目录自行创建 `.env`，填写 `APIMART_API_KEY` 与 `DEEPSEEK_API_KEY`。这两个值仅由服务端读取，不要写入浏览器配置或使用 `VITE_` 前缀。
+在项目根目录自行创建 `.env`，填写 `APIMART_API_KEY` 与 `DEEPSEEK_API_KEY`。GPT 图片生成与参考图编辑支持在同一文件设置 `OPENAI_API_KEYS`，多个 Key 以英文逗号分隔，单个 Key 也可使用 `OPENAI_API_KEY`。保存后新任务生效。任务轮流选择起始 Key，只有明确的余额或支出额度耗尽才换下一个，全部耗尽才调用 APIMart。额度已耗尽的 Key 暂停 5 分钟，之后可重新参与轮询。未配置官方 Key 时沿用 APIMart，参考图编辑输出 SVG 也保留 APIMart。官方成功任务按相同参数显示参考积分，实际 Studio 积分记为零，OpenAI API 费用由对应账户结算。以上配置仅由服务端读取，不要写入浏览器配置或使用 `VITE_` 前缀。
 
 初始化管理员：
 
