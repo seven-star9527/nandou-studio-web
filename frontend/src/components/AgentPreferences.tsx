@@ -2,11 +2,15 @@ import GlassTabs from './GlassTabs';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { agentRequest, type AgentSettings } from '../agent-api';
 import Icon from './Icon';
+import {PresetManager, type PresetControls} from './GenerationPresets';
+import type {CloudModelCapability, GenerationSettings} from '../types';
 
 const MODELS = [['gpt-image-2.6-flare', 'GPT Image 2.6 Flare'], ['gpt-image-2.6-sunburst', 'GPT Image 2.6 Sunburst'], ['gemini-nano-banana-2.1', 'Nano Banana 2.1']];
 const RATIOS = ['auto', '1:1', '3:4', '16:9', '4:3', '9:16', '2:3', '3:2', '21:9'];
 
-export default function AgentPreferences({ value, update, disabled, close }: {value: AgentSettings; update: (value: Partial<AgentSettings>) => void; disabled: boolean; close: () => void}) {
+export default function AgentPreferences({ value, update, disabled, close, controls, imageSettings, models }: {controls:PresetControls; imageSettings:GenerationSettings; models:CloudModelCapability[]; value: AgentSettings; update: (value: Partial<AgentSettings>) => void; disabled: boolean; close: () => void}) {
+  const model = models.find(item => item.id === value.model);
+  const ratios = model?.ratios ?? RATIOS;
   const [memory, setMemory] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -23,13 +27,23 @@ export default function AgentPreferences({ value, update, disabled, close }: {va
   const save = async (text: string) => {setSaving(true); setNotice(''); try {await agentRequest('memory', {text}); setMemory(text); setNotice(text ? '偏好已保存，后续对话会参考。' : '长期偏好已清空。');} catch(e) {setNotice(e instanceof Error ? e.message : '保存失败');} finally {setSaving(false);} };
   return <div className="agent-preferences" ref={panel} role="dialog" aria-label="生成偏好" style={{maxHeight: availableHeight}}>
     <header><strong>生成偏好</strong><button type="button" className="icon-button" aria-label="关闭生成偏好" onClick={close}><Icon name="close" size={17}/></button></header>
-    <div className="agent-preference-type"><Icon name="image" size={17}/><span>图片</span><small>偏好随当前账号草稿保存</small></div>
-    <fieldset disabled={disabled}><legend>选择比例</legend><GlassTabs className="agent-ratio-choices" role="group" aria-label="生成比例">{RATIOS.map(r => { const [w,h] = r.split(':').map(Number); const aspect = w/h; return <button key={r} type="button" aria-pressed={value.ratio === r} className={value.ratio === r ? 'selected' : ''} onClick={() => update({ratio:r})}>{r === 'auto' ? <Icon name="expand" size={17}/> : <i style={{width:aspect>=1?18:18*aspect,height:aspect<=1?18:18/aspect}}/>}<span>{r === 'auto' ? '智能' : r}</span></button>;})}</GlassTabs><p className="agent-preference-note">智能仅按需求选择比例，画质与分辨率保持下方设置。</p></fieldset>
-    <fieldset disabled={disabled}><legend>出图规格</legend><label className="agent-model-select">生图模型<select value={value.model} onChange={e=>update({model:e.target.value})}>{MODELS.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label><div className="agent-preference-grid">
+    <details className="generation-presets agent-memory-editor"><summary>我的配置{controls.presets[0] && <small>默认 · {controls.presets[0].name}{!controls.presets[0].cloudModel && '（仅图片创作可用）'}</small>}</summary>
+      <fieldset disabled={disabled}><PresetManager agent controls={controls} modelLabel={model?.label ?? value.model} settings={imageSettings}/></fieldset>
+    </details>
+    {controls.error && <p role="alert">{controls.error} <button type="button" onClick={() => void controls.read()}>重新读取</button></p>}
+    <fieldset disabled={disabled}><legend>选择比例</legend><GlassTabs className="agent-ratio-choices" role="group" aria-label="生成比例">{ratios.map(r => { const [w,h] = r.split(':').map(Number); const aspect = w/h; return <button key={r} type="button" aria-pressed={value.ratio === r} className={value.ratio === r ? 'selected' : ''} onClick={() => update({ratio:r})}>{r === 'auto' ? <Icon name="expand" size={17}/> : <i style={{width:aspect>=1?18:18*aspect,height:aspect<=1?18:18/aspect}}/>}<span>{r === 'auto' ? '智能' : r}</span></button>;})}</GlassTabs><p className="agent-preference-note">智能仅按需求选择比例，画质与分辨率保持下方设置。</p></fieldset>
+    <fieldset disabled={disabled}><legend>出图规格</legend><label className="agent-model-select">生图模型<select value={value.model} onChange={e=>update({model:e.target.value, ratio:'auto', outputFormat:undefined, svgTransparent:undefined})}>{MODELS.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label><div className="agent-preference-grid">
       <label>图像质量<select value={value.quality} disabled={value.model.startsWith('gemini')} onChange={e=>update({quality:e.target.value})}>{[['low','低'],['medium','中 · 默认'],['high','高'],['xhigh','超高']].map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
       <label>分辨率<select value={value.resolution} onChange={e=>update({resolution:e.target.value})}>{['1K','2K','4K'].map(r=><option key={r}>{r}</option>)}</select></label>
-      <label>生成数量<select value={value.count} onChange={e=>update({count:e.target.value})}><option value="auto">跟随需求 · 默认1张</option>{['1','2','3','4'].map(n=><option key={n} value={n}>{n} 张</option>)}</select></label>
-    </div></fieldset>
+      <label>生成数量<select disabled={value.outputFormat === 'svg'} value={value.count} onChange={e=>update({count:e.target.value})}><option value="auto">跟随需求 · 默认1张</option>{['1','2','3','4'].map(n=><option key={n} value={n}>{n} 张</option>)}</select></label>
+    </div>
+      {value.ratio === 'custom' && <p className="panel-note">自定义尺寸 · {value.width} × {value.height} px</p>}
+      {value.model.startsWith('gpt-image') && <label className="agent-model-select">输出格式<select value={value.outputFormat ?? 'auto'} onChange={e=>update({outputFormat:e.target.value === 'auto' ? undefined : e.target.value as AgentSettings['outputFormat'], ...(e.target.value === 'svg' ? {count:'1'} : {})})}>
+        <option value="auto">跟随需求 · 默认 PNG</option><option value="png">PNG 静态图</option><option value="gif">GIF 动图</option><option value="svg">SVG 矢量图</option>
+      </select></label>}
+      {value.outputFormat === 'gif' && <p className="panel-note">{value.gifWidth ?? 512} × {value.gifHeight ?? 512} px · {value.frameCount ?? 9} 帧 · 每帧 {value.frameDurationMs ?? 200} ms</p>}
+      {value.outputFormat === 'svg' && <label><input type="checkbox" checked={!!value.svgTransparent} onChange={e=>update({svgTransparent:e.target.checked})}/>指定透明背景</label>}
+    </fieldset>
     <fieldset disabled={disabled}><legend>创作方向</legend><div className="agent-preference-grid">
       <label>使用平台<select value={value.platform} onChange={e=>update({platform:e.target.value})}>{[['auto','按需求'],['amazon','Amazon'],['store','独立站']].map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
       <label>图片用途<select value={value.scene} onChange={e=>update({scene:e.target.value})}>{[['auto','按需求'],['main','白底主图'],['detail','材质 / 结构细节'],['lifestyle','使用场景'],['aplus','A+ / 卖点图'],['hero','独立站横幅']].map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>

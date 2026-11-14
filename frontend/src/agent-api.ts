@@ -1,6 +1,6 @@
 import { AUTH_REQUIRED_EVENT } from './auth';
 
-export interface AgentSettings { model: string; quality: string; resolution: string; ratio: string; count: string; platform: string; scene: string; style: string; }
+export interface AgentSettings { outputFormat?: 'png' | 'gif' | 'svg'; width?: number; height?: number; gifWidth?: number; gifHeight?: number; frameCount?: number; frameDurationMs?: number; svgTransparent?: boolean; model: string; quality: string; resolution: string; ratio: string; count: string; platform: string; scene: string; style: string; }
 export interface AgentChat { cover_id?: string | null; picture_count?: number; id: string; title: string; owner_id: string; owner_email: string; hidden_at?: number; status?: string; updated_at: number; }
 export interface AgentAsset { id: string; name: string; url: string; task_id?: string; width?: number; height?: number; kind?: 'image' | 'file'; }
 export interface AgentEvent { id: number; turn_id: string; kind: string; at: number; data: {
@@ -16,7 +16,7 @@ export interface AgentConfig { configured: boolean; defaults: AgentSettings; ski
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = { model: 'gpt-image-2.6-flare', quality: 'medium', resolution: '1K', ratio: 'auto', count: 'auto', platform: 'auto', scene: 'auto', style: 'natural' };
 
 export async function agentRequest<T>(path: string, data?: object, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(`/studio-agent/${path}`, { method: data ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store', signal,
+  const response = await fetch(`/studio-agent/${path}`, { method: data ? 'POST' : 'GET', credentials: 'same-origin', cache: path === 'workbench/history' && !data ? 'no-cache' : 'no-store', signal,
     headers: data ? { 'Content-Type': 'application/json' } : undefined, body: data ? JSON.stringify(data) : undefined });
   if (response.status === 401) window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
   const value = await response.json().catch(() => ({}));

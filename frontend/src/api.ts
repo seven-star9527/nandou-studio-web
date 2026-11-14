@@ -1,5 +1,7 @@
 import type { Artwork, BackendStatus, CloudAccount, CloudCapabilities, CloudQuote, CloudQuoteRequest, CloudRequest, CloudTask, DeploymentConfig, GenerationMessage, Model, ParamMap, ParamSchema } from './types';
 
+type HistoryFile = { src: string; metadata?: string; studio_task_id?: string; studio_owner_id?: string; studio_owner_email?: string; studio_owner_name?: string; studio_hidden_at?: string; studio_created_utc?: string | null; studio_completed_utc?: string | null; studio_duration_seconds?: number | null };
+
 export class SwarmError extends Error {
   readonly code?: string;
   readonly status?: number;
@@ -76,11 +78,20 @@ export class SwarmClient {
     return { params: result.list, models: (result.models['Stable-Diffusion'] ?? []).map(([name, architecture]) => ({ name, architecture } as Model)) };
   }
   status() { return this.request<BackendStatus>('GetCurrentStatus'); }
+  async savedHistory(signal: AbortSignal) {
+    const response = await fetch('/studio-auth/history', {cache:'no-cache', signal});
+    if (!response.ok) throw new SwarmError('创作记录读取失败，请刷新。', undefined, response.status);
+    const snapshot: {files: HistoryFile[]; tasks: CloudTask[]} = await response.json();
+    return {local: this.historyArtworks(snapshot.files), tasks: snapshot.tasks};
+  }
   async history() {
-    const result = await this.request<{ files: { src: string; metadata?: string; studio_task_id?: string; studio_owner_id?: string; studio_owner_email?: string; studio_owner_name?: string; studio_hidden_at?: string; studio_created_utc?: string | null; studio_completed_utc?: string | null; studio_duration_seconds?: number | null }[] }>('ListImages', {
+    const result = await this.request<{ files: HistoryFile[] }>('ListImages', {
       path: '', depth: 10, sortBy: 'Date', sortReverse: false,
     });
-    return result.files.filter(f => /\.(?:png|jpe?g|webp)$/i.test(f.src))
+    return this.historyArtworks(result.files);
+  }
+  historyArtworks(files: HistoryFile[]) {
+    return files.filter(f => /\.(?:png|jpe?g|webp)$/i.test(f.src))
       .slice(0, 100).map(f => ({ ...parseArtwork(f.src, f.metadata, this.user, this.appendUser), source: 'local' as const,
         taskId: f.studio_task_id, ownerId: f.studio_owner_id, ownerEmail: f.studio_owner_email, ownerName: f.studio_owner_name, hiddenAt: f.studio_hidden_at,
         generatedAt: f.studio_created_utc ?? undefined, completedAt: f.studio_completed_utc ?? undefined,

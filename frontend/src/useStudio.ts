@@ -70,6 +70,8 @@ export function useStudio(account: string) {
   const [presetError, setPresetError] = useState('');
   const [presetBusy, setPresetBusy] = useState(false);
   const changingPreset = useRef(false);
+  const channel = useRef<BroadcastChannel | null>(null);
+  const lastDefault = useRef<string | undefined>(undefined);
   const readPresets = useCallback(async () => {
     try {
       const entries = await requestPresets(account);
@@ -77,7 +79,14 @@ export function useStudio(account: string) {
       if (mounted.current) setPresetsRead(true);
     } catch { if (mounted.current) setPresetError('未能读取账号的生图配置。'); }
   }, [account]);
-  useEffect(() => { void readPresets(); }, [readPresets]);
+  useEffect(() => {
+    void readPresets();
+    if (!('BroadcastChannel' in window)) return;
+    const updates = new BroadcastChannel('studio-generation-presets:' + account);
+    channel.current = updates;
+    updates.onmessage = () => { void readPresets(); };
+    return () => { updates.close(); channel.current = null; };
+  }, [account, readPresets]);
 
   const validatePreset = (preset: Pick<GenerationPreset, 'cloudModel' | 'settings'>) => {
     const s = preset.settings;
@@ -99,7 +108,8 @@ export function useStudio(account: string) {
   const current = useRef({applyPreset, presets, settings, cloudModelId});
   current.current = {applyPreset, presets, settings, cloudModelId};
   useEffect(() => {
-    if (!connected || !draftReady || !presetsRead || presetsInitialized) return;
+    if (!connected || !draftReady || !presetsRead || (presetsInitialized && lastDefault.current === presets[0]?.id)) return;
+    lastDefault.current = presets[0]?.id;
     try { if (presets[0]) current.current.applyPreset(presets[0]); }
     catch (e) { setError(`默认配置未应用：${errorText(e)}`); }
     setPresetsInitialized(true);
@@ -117,17 +127,34 @@ export function useStudio(account: string) {
       const entries = await requestPresets(account, change);
       if (!mounted.current) return;
       setPresets(entries); setPresetError('');
-      if (entries[0] && entries[0].id !== presets[0]?.id) {
-        try { applyPreset(entries[0]); } catch (e) { setError(`默认配置未应用：${errorText(e)}`); }
-      }
+      channel.current?.postMessage('changed');
     } finally { changingPreset.current = false; if (mounted.current) setPresetBusy(false); }
   };
 
+  const historyRevision = useRef(0);
+  const setCloudTasks = cloud.setTasks;
+  useEffect(() => {
+    const controller = new AbortController();
+    const revision = historyRevision.current;
+    setLoadingHistory(true);
+    void client.savedHistory(controller.signal).then(({local, tasks}) => {
+      if (controller.signal.aborted || revision !== historyRevision.current) return;
+      setCloudTasks(tasks);
+      setHistory(previous => reconcileHistory(previous, local, tasks.flatMap(task => taskArtworks(task)), activeJob.current?.id, hiddenTasks.current));
+    }).catch(e => {
+      if (!controller.signal.aborted && revision === historyRevision.current) setHistoryError(errorText(e));
+    }).finally(() => {
+      if (!controller.signal.aborted && revision === historyRevision.current) setLoadingHistory(false);
+    });
+    return () => controller.abort();
+  }, [client, setCloudTasks]);
+
   const refreshHistory = useCallback(async () => {
+    const revision = ++historyRevision.current;
     setLoadingHistory(true); setHistoryError('');
     try {
       const result = await Promise.allSettled([client.history(), refreshCloudTasks()]);
-      if (!mounted.current) return;
+      if (!mounted.current || revision !== historyRevision.current) return;
       const images = result[0].status === 'fulfilled' ? result[0].value : undefined;
       const cloudImages = result[1].status === 'fulfilled' ? result[1].value.flatMap(task => taskArtworks(task)) : undefined;
       setHistory(previous => reconcileHistory(previous, images, cloudImages, isActiveJob(activeJob.current) ? activeJob.current?.id : undefined, hiddenTasks.current));
@@ -135,7 +162,7 @@ export function useStudio(account: string) {
       if (result[1].status === 'rejected') { const cause = result[1].reason; setHistoryError(previous => `${previous ? `${previous}；` : ''}云记录：${errorText(cause)}`); }
       return images;
     } catch (e) { if (mounted.current) setHistoryError(errorText(e)); }
-    finally { if (mounted.current) setLoadingHistory(false); }
+    finally { if (mounted.current && revision === historyRevision.current) setLoadingHistory(false); }
   }, [client, refreshCloudTasks]);
 
   const acceptBackendStatus = useCallback((value: BackendStatus) => {
@@ -180,10 +207,9 @@ export function useStudio(account: string) {
         const defaultNumber = (id: string, fallback: number) => Number(defaults[id] ?? schema.params.find(param => param.id === id)?.default ?? fallback);
         return { ...previous, model: preferred.model, steps: defaultNumber('steps', 20), cfg: defaultNumber('cfgscale', 7) };
       });
-      void refreshHistory();
     } catch (e) { if (mounted.current) { setError(errorText(e)); setConnected(false); } }
     finally { if (mounted.current) setConnecting(false); }
-  }, [client, refreshHistory, loadCloudCapabilities, acceptBackendStatus]);
+  }, [client, loadCloudCapabilities, acceptBackendStatus]);
 
   useEffect(() => {
     mounted.current = true;
@@ -415,7 +441,7 @@ export function useStudio(account: string) {
 
   return { client, connected, connecting, error, setError, historyError, status, params, models, config, configurationError, backendReady, localReady,
     ready: connected && presetsInitialized && (cloudModelId !== null ? Boolean(cloudModel && cloud.capabilities?.configured) : Boolean(settings.model) && backendReady && localReady && !configurationError),
-    presetControls: {presets, initialized: presetsInitialized, busy: presetBusy, error: presetError, read: readPresets, change: changePreset, apply: applyPreset, cloudModelId},
+    presetControls: {presets, presetsLoaded: presetsRead, initialized: presetsInitialized, busy: presetBusy, error: presetError, read: readPresets, change: changePreset, apply: applyPreset, cloudModelId},
     settings, setSettings, references, prompt, setPrompt, minReferences, setTemplate, draftReady, draftError, history, job: displayJob, loadingHistory,
     cloudModel, cloudModels: cloud.capabilities?.models ?? [], cloudConfigured: Boolean(cloud.capabilities?.configured), cloudCapabilityError: cloud.capabilityError, cloudTasks: cloud.tasks,
     cloudAccount: cloud.account, accountLoading: cloud.accountLoading, accountError: cloud.accountError, refreshAccount: cloud.loadAccount, creditQuote,

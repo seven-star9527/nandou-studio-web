@@ -1,7 +1,7 @@
-import { formatCredits } from '../credit-contract';
+import { formatCredits, quoteRequest } from '../credit-contract';
 import PromptEditor, { type PromptEditorHandle } from './PromptEditor';
 import { appendMentions, instructionsOnly, removeMentions, resolveMentions } from '../reference-mentions';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { agentRequest, agentStatus, DEFAULT_AGENT_SETTINGS, type AgentAsset, type AgentChat, type AgentConfig, type AgentEvent, type AgentSettings, type AgentView } from '../agent-api';
@@ -15,7 +15,10 @@ import { useModalDialog } from '../useModalDialog';
 import './agent-workspace.css';
 import ReferenceDock from './ReferenceDock';
 import AgentPreferences from './AgentPreferences';
-import { currentCloudModel } from '../cloud-contract';
+import type { PresetControls } from './GenerationPresets';
+import type { GenerationPreset } from '../generation-presets';
+import type { CloudModelCapability, GenerationSettings } from '../types';
+import { cloudParameters, cloudDimensions, currentCloudModel } from '../cloud-contract';
 import { useDraft } from '../useDraft';
 import { useDismissibleLayer } from '../useDismissibleLayer';
 import { accountStorageKey } from '../account-storage';
@@ -35,6 +38,12 @@ function restorePreferences(_key: string, value: AgentSettings): AgentSettings {
   return {...value, model: currentCloudModel(value.model)};
 }
 const EMPTY_DRAFT: AgentDraft = {text: '', uploads: [], refs: []};
+
+function fromPreset({cloudModel, settings:s}: GenerationPreset): Partial<AgentSettings> {
+  return {model:cloudModel!, quality:s.quality || 'medium', resolution:s.resolution, ratio:s.ratio, count:String(s.count),
+    outputFormat:s.outputFormat ?? 'png', width:s.width, height:s.height, gifWidth:s.gifWidth, gifHeight:s.gifHeight,
+    frameCount:s.frameCount, frameDurationMs:s.frameDurationMs, svgTransparent:s.svgTransparent};
+}
 
 function referenceIds(draft: AgentDraft) {
   return draft.referenceOrder ?? [...draft.uploads, ...draft.refs].map(image => image.id);
@@ -63,7 +72,7 @@ function ImagePreview({ image, close, onQuick }: { onQuick?: () => void; image: 
   </div></div></ModalPortal>;
 }
 
-export default function AgentWorkspace({ user, client, cloudConfigured, refreshAccount, compare, onQuick }: { cloudConfigured:boolean; onQuick:(image:WorkImage)=>void; compare: (image: WorkImage) => void; user: StudioUser; client: SwarmClient; refreshAccount: () => Promise<unknown> }) {
+export default function AgentWorkspace({ user, client, cloudConfigured, refreshAccount, compare, onQuick, presetControls, cloudModels }: { presetControls: PresetControls; cloudModels: CloudModelCapability[]; cloudConfigured:boolean; onQuick:(image:WorkImage)=>void; compare: (image: WorkImage) => void; user: StudioUser; client: SwarmClient; refreshAccount: () => Promise<unknown> }) {
   const [config, setConfig] = useState<AgentConfig | null>(null);
   const [chats, setChats] = useState<AgentChat[]>([]);
   const [cid, setCid] = useState(() => { try { return sessionStorage.getItem(`nandou-agent-chat:${user.id}`) ?? ''; } catch { return ''; } });
@@ -84,7 +93,33 @@ export default function AgentWorkspace({ user, client, cloudConfigured, refreshA
   useEffect(() => { if (draftReady) { try { sessionStorage.setItem(accountStorageKey('agent:selected'), agentMode); } catch { /* Selection remains usable without storage. */ } } }, [agentMode, draftReady]);
   const reducedMotion = useReducedMotion();
   const setText = (action: string | ((old:string)=>string)) => setDraft(d=>({...d, text: typeof action === 'function' ? action(d.text) : action}));
-  const [opts, setOpts, optsReady, optsError] = useDraft<AgentSettings>(accountStorageKey('agent:preferences'), DEFAULT_AGENT_SETTINGS, restorePreferences);
+  const [draftOpts, setOpts, optsReady, optsError] = useDraft<AgentSettings>(accountStorageKey('agent:preferences'), DEFAULT_AGENT_SETTINGS, restorePreferences);
+  const defaultPreset = presetControls.presets[0];
+  const [override, setOverride] = useState<{defaultId?: string; values: Partial<AgentSettings>}>();
+  const opts = useMemo(() => ({...draftOpts, ...(defaultPreset?.cloudModel ? fromPreset(defaultPreset) : {}), ...(override?.defaultId === defaultPreset?.id ? override?.values : {})}),
+    [draftOpts, defaultPreset, override]);
+  const model = cloudModels.find(item => item.id === opts.model);
+  const imageSettings: GenerationSettings = {
+    ratio: opts.ratio, resolution: opts.resolution, count: Number(opts.count) || 1,
+    ...(model ? cloudDimensions(model, opts.ratio, opts.resolution) : {width:0,height:0}),
+    ...(opts.ratio === 'custom' ? {width:opts.width ?? 0, height:opts.height ?? 0} : {}),
+    quality: model?.qualities.length ? opts.quality : '', outputFormat:opts.outputFormat ?? 'png',
+    gifWidth:opts.gifWidth, gifHeight:opts.gifHeight, frameCount:opts.frameCount,
+    frameDurationMs:opts.frameDurationMs, svgTransparent:opts.svgTransparent, model:'', seed:'-1', cfg:7, steps:20,
+  };
+  function updateOptions(changes: Partial<AgentSettings>) {
+    if (changes.platform || changes.scene || changes.style || (!defaultPreset?.cloudModel && !override)) {
+      void setOpts(old => ({...old, ...changes}));
+    } else {
+      setOverride({defaultId:defaultPreset?.id, values:{...(override?.defaultId === defaultPreset?.id ? override?.values : {}), ...changes}});
+    }
+  }
+  const agentPresets: PresetControls = {...presetControls, cloudModelId:opts.model, apply: entry => {
+    const selected = cloudModels.find(m => m.id === entry.cloudModel);
+    if (!selected) throw new Error('此配置仅图片创作可用。');
+    cloudParameters(selected, entry.settings);
+    setOverride({defaultId:defaultPreset?.id, values:fromPreset(entry)});
+  }};
   const [quote, setQuote] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
@@ -162,10 +197,10 @@ export default function AgentWorkspace({ user, client, cloudConfigured, refreshA
   useEffect(() => { if (latest && latest.status !== 'running') { void loadList(); void refreshAccount(); } }, [latest?.id, latest?.status]);
   useEffect(() => {
     const abort = new AbortController(); setQuote(null);
-    if (isRetouch || !cloudConfigured) return () => abort.abort();
-    void client.cloudQuote({ model: opts.model, quality: opts.quality, resolution: opts.resolution, size: opts.ratio === 'auto' ? '1:1' : opts.ratio, n: 1 }, abort.signal).then(q => setQuote(q.credits_total_reference)).catch(() => {});
+    if (isRetouch || !cloudConfigured || !model) return () => abort.abort();
+    void client.cloudQuote({...quoteRequest(opts.model, imageSettings), n:1}, abort.signal).then(q => setQuote(q.credits_total_reference)).catch(() => {});
     return () => abort.abort();
-  }, [opts, client, isRetouch, cloudConfigured]);
+  }, [opts, client, isRetouch, cloudConfigured, model]);
 
   async function send(override?: string) {
     const raw = override ?? text;
@@ -177,6 +212,7 @@ export default function AgentWorkspace({ user, client, cloudConfigured, refreshA
     const request = singleEdit ? action : described;
     const input = [skills.length ? `请使用${skills.map(s => `「${s.title}」`).join('、')}技能。` : '', request].filter(Boolean).join('\n');
     if (input.length > 8000) { setError('需求与技能合计超过 8000 字，请缩短后再发送。'); return; }
+    if (!isRetouch && !presetControls.presetsLoaded) {setError('请稍后再发送，或在生成偏好中重新读取账号配置。');return;}
     if (!input || active || readOnly || inFlight.current || uploading) return;
     inFlight.current = true; setSending(true); setError(''); follow.current = true;
     const requestId = draft.submission?.requestId ?? pendingId ?? createId(); setPendingId(requestId);
@@ -194,6 +230,7 @@ export default function AgentWorkspace({ user, client, cloudConfigured, refreshA
         ref_ids: refs.map(r => r.id), images: uploads.map(({ name, data_url }) => ({ name, data_url })),
         reference_order: references.map(image => payloadIds.indexOf(image.id)),
       });
+      if (!isRetouch) setOverride(undefined);
       setPendingId(null); setDraft({...EMPTY_DRAFT, agent: agentMode}); setSkillsOpen(false); setSettingsOpen(false);
       selection.current = chatId; setCid(chatId);
       setView(await agentRequest<AgentView>(`chats/${chatId}`)); await loadList();
@@ -286,8 +323,8 @@ export default function AgentWorkspace({ user, client, cloudConfigured, refreshA
         <form ref={form} className={`agent-composer ${readOnly ? 'readonly' : ''}`} onSubmit={e => { e.preventDefault(); void send(); }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (!active && !readOnly && e.dataTransfer.files.length) void addFiles(e.dataTransfer.files); }}>
           <div className="agent-input-row"><ReferenceDock references={references} paste={addFiles} reorder={items => { setDraft(d => ({...d, referenceOrder: items.map(i => i.id)})); setPendingId(null); }} add={()=>fileInput.current?.click()} remove={removeReference} maxReferences={8} disabled={active || readOnly}/><div className="agent-prompt-content"><AnimatePresence initial={false}>{skills.length > 0 && <motion.div key="skills" className="agent-selected-skills" role="group" aria-label="已选创作技能" initial={{opacity:0,height:0}} animate={{opacity:1,height:"auto"}} exit={{opacity:0,height:0}} transition={{duration:reducedMotion ? 0 : .22}}><span className="agent-selected-skills-label">创作技能</span>{skills.map(s => <span className="agent-skill-token" key={s.id} title={currentSkills.find(item => item.id === s.id)?.description}><span className="agent-skill-token-icon"><Icon name="brush" size={14}/></span><span>{s.title}</span><button type="button" disabled={active || readOnly} aria-label={`移除技能 ${s.title}`} onClick={() => { setDraft(d => ({...d, skills:(d.skills ?? []).filter(item => item.id !== s.id)})); setPendingId(null); composer.current?.focus(); }}><Icon name="close" size={12}/></button></span>)}</motion.div>}</AnimatePresence><PromptEditor key={draftKey} editorRef={composer} label="Agent需求" value={text} references={references} disabled={readOnly || sending || !draftReady} enterToSend submit={value => void send(value)} placeholder={readOnly ? '管理员仅查看其他用户的对话' : isRetouch ? '上传原图，描述需要裁切、抠图、调色或修改的部分…' : '描述你的想法，或上传产品图，让 Agent 帮你完成创作…'} change={value => { setText(value); setPendingId(null); }} /></div></div>
           <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={e => { if (e.target.files) void addFiles(e.target.files); e.target.value = ''; }} />
-          <div className="agent-composer-toolbar"><div className="agent-mode-select"><GlassSelect label="选择智能体" value={agentMode} options={[{value:'generate',label:'生图 Agent'},{value:'retouch',label:'修图 Agent'}]} disabled={active || readOnly || Boolean(draft.submission)} onChange={value => { setSelectedAgent(value as 'generate' | 'retouch'); setDraft(d => ({...d,agent:value as 'generate' | 'retouch',skills:[]})); setSkillsOpen(false); setSettingsOpen(false); setPendingId(null); }}/></div>{!isRetouch && <button type="button" data-layer-trigger aria-label="生成偏好" onClick={() => { setSettingsOpen(!settingsOpen); setSkillsOpen(false); }} aria-expanded={settingsOpen}><Icon name="settings" size={16} /><span>生成偏好</span></button>}<button type="button" data-layer-trigger aria-label="技能" onClick={() => { setSkillsOpen(!skillsOpen); setSettingsOpen(false); }} aria-expanded={skillsOpen}><Icon name="brush" size={16} /><span>技能</span></button><div className="agent-send-area"><span>{uploading ? '读取原图中' : isRetouch ? '原图保留 · 本地处理' : quote == null ? '出图时估算积分' : `静态图约 ${formatCredits(quote)} 积分/张`}</span>{running ? <button type="button" className="agent-send" aria-label="停止 Agent" onClick={() => void agentRequest(`chats/${cid}/stop`, {}).catch(e => setError(e.message))}><Icon name="stop" size={17} /></button> : <button className="agent-send" type="submit" aria-label="发送需求" disabled={active || uploading || (!instructionsOnly(text) && !skills.length) || readOnly || !config}><Icon name="arrow" size={22} /></button>}</div></div>
-          {settingsOpen && !isRetouch ? <AgentPreferences value={opts} update={changes=>setOpts(s=>({...s,...changes}))} disabled={active || readOnly} close={()=>setSettingsOpen(false)}/> : null}
+          <div className="agent-composer-toolbar"><div className="agent-mode-select"><GlassSelect label="选择智能体" value={agentMode} options={[{value:'generate',label:'生图 Agent'},{value:'retouch',label:'修图 Agent'}]} disabled={active || readOnly || Boolean(draft.submission)} onChange={value => { setSelectedAgent(value as 'generate' | 'retouch'); setDraft(d => ({...d,agent:value as 'generate' | 'retouch',skills:[]})); setSkillsOpen(false); setSettingsOpen(false); setPendingId(null); }}/></div>{!isRetouch && <button type="button" data-layer-trigger aria-label="生成偏好" onClick={() => { setSettingsOpen(!settingsOpen); setSkillsOpen(false); }} aria-expanded={settingsOpen}><Icon name="settings" size={16} /><span>生成偏好</span></button>}<button type="button" data-layer-trigger aria-label="技能" onClick={() => { setSkillsOpen(!skillsOpen); setSettingsOpen(false); }} aria-expanded={skillsOpen}><Icon name="brush" size={16} /><span>技能</span></button><div className="agent-send-area"><span>{uploading ? '读取原图中' : isRetouch ? '原图保留 · 本地处理' : quote == null ? '出图时估算积分' : `${opts.outputFormat === 'gif' ? 'GIF' : opts.outputFormat === 'svg' ? 'SVG' : '静态图'}约 ${formatCredits(quote)} 积分/张`}</span>{running ? <button type="button" className="agent-send" aria-label="停止 Agent" onClick={() => void agentRequest(`chats/${cid}/stop`, {}).catch(e => setError(e.message))}><Icon name="stop" size={17} /></button> : <button className="agent-send" type="submit" aria-label="发送需求" disabled={active || uploading || (!instructionsOnly(text) && !skills.length) || readOnly || !config}><Icon name="arrow" size={22} /></button>}</div></div>
+          {settingsOpen && !isRetouch ? <AgentPreferences controls={agentPresets} imageSettings={imageSettings} models={cloudModels} value={opts} update={updateOptions} disabled={active || readOnly} close={()=>setSettingsOpen(false)}/> : null}
           <AnimatePresence>{skillsOpen && <motion.div className="agent-skill-picker" data-motion-layer role="dialog" aria-label="创作技能" initial={{opacity:0,y:12,scale:.96}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:8,scale:.97}} transition={{duration:reducedMotion ? 0 : .24, ease:[.23,1,.32,1]}}><header><span className="agent-skill-heading-icon"><Icon name="spark" size={20}/></span><div><strong>创作技能</strong></div><button type="button" className="icon-button" aria-label="关闭技能" onClick={() => setSkillsOpen(false)}><Icon name="close" size={16}/></button></header><div className="agent-skill-list">{currentSkills.map(s => <button type="button" disabled={active || readOnly} key={s.id} aria-pressed={skills.some(item => item.id === s.id)} onClick={() => { setDraft(d => ({...d, skills:(d.skills ?? []).some(item => item.id === s.id) ? d.skills : [...(d.skills ?? []), {id:s.id,title:s.title}]})); setPendingId(null); setSkillsOpen(false); composer.current?.focus(); }}><span className="agent-skill-row-icon"><Icon name="brush" size={18}/></span><span className="agent-skill-copy"><strong>{s.title}</strong><small>{s.description}</small></span><Icon name={skills.some(item => item.id === s.id) ? 'check' : 'plus'} size={16}/></button>)}</div></motion.div>}</AnimatePresence>
         </form><p className="agent-composer-hint">{isRetouch ? '需求明确直接修图 · 原图完整保留' : '需求明确直接创作 · 保留产品细节'} · {IMAGE_UPLOAD_HINT}</p>
       </div>

@@ -35,7 +35,7 @@ function ArtworkImage({ artwork, thumbnail = false }: { artwork: Artwork; thumbn
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [artwork.url]);
   return failed ? <span className="image-unavailable"><Icon name="image" size={30} /><span>图像暂时无法预览</span><small>{artwork.locallySaved === false ? '可尝试打开远程原图，或刷新记录重新转存。' : '请刷新记录或检查图像服务。'}</small></span>
-    : <img src={thumbnail && artwork.source === 'quick' ? artwork.url + '?preview=1' : artwork.url} alt={artwork.prompt || '生成图像'} loading="lazy" onError={() => setFailed(true)} />;
+    : <img src={thumbnail && /^\/(?:View\/|Output\/|studio-results\/|studio-agent\/workbench\/media\/)/.test(artwork.url) ? artwork.url + '?preview=1' : artwork.url} alt={artwork.prompt || '生成图像'} loading="lazy" onError={() => setFailed(true)} />;
 }
 
 function DownloadLink({ artwork, compact = false }: { artwork: Artwork; compact?: boolean }) {
@@ -88,6 +88,8 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
   const [showRemoved, setShowRemoved] = useState(false);
   const [filter, setFilter] = useState<HistoryScope>('all');
   const [filters, setFilters] = useState<HistoryFilters>(INITIAL_HISTORY_FILTERS);
+  const [visibleLimit, setVisibleLimit] = useState(40);
+  useEffect(() => setVisibleLimit(40), [filter, filters, showRemoved]);
   const [selected, setSelected] = useState<Artwork | null>(null);
   const retryRequest = useRef<AbortController | null>(null);
   const [retrying, setRetrying] = useState(false);
@@ -193,13 +195,14 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
     {attentionTasks.length ? <details className="history-task-summary"><summary>任务动态 · {attentionTasks.length}</summary><div className="cloud-task-list">{attentionTasks.map(task => <div key={task.request_id}><span>{task.model}{isAdmin && task.studio_owner_email ? ` · ${ownerLabel(task.studio_owner_name, task.studio_owner_email, task.studio_owner_id)}` : ''}{isAdmin && task.studio_hidden_at ? ' · 用户已移除' : ''}</span><strong>{({ uploading: '上传参考图中', submitting: '提交结果待确认', submitted: '已提交', pending: '后台等待中', processing: '后台生成中', outcome_unknown: '结果待确认', failed: '历史任务失败', cancelled: '已取消', completed: '本地缓存未完整' } as Record<string, string>)[task.status]}</strong>{canHide(task.studio_task_id ?? task.request_id) && isTerminalTask(task) ? <button onClick={() => askRemove(task.studio_task_id ?? task.request_id)}>移除记录</button> : !isTerminalTask(task) || task.status === 'completed' ? <button onClick={refresh} disabled={loading}>刷新状态</button> : null}<HistoryTime value={task.created_utc} />{task.error || task.poll_error || cloudDelivery(task).message ? <p>{task.error ?? cloudDelivery(task).message ?? task.poll_error}</p> : null}{isTerminalTask(task) ? <small>刷新不会重试生成。{taskCostLabel(task.credits_cost ?? undefined, true)}</small> : null}</div>)}</div></details> : null}
     {error ? <p className="history-error" role="alert">创作记录读取失败：{error}</p> : null}
     {visible.length ? <div className="artwork-grid">
-      {visible.map(artwork => <article className="artwork" key={artwork.id}>
+      {visible.slice(0, visibleLimit).map(artwork => <article className="artwork" key={artwork.id}>
         <button className="artwork-open" onClick={() => setSelected(artwork)} aria-label={`查看图像 ${artwork.prompt.slice(0, 30) || '创作记录'}`}>
           <ArtworkImage artwork={artwork} thumbnail />
           <span className="artwork-expand"><Icon name="expand" size={20} /></span>
         </button>
         <div className="artwork-info"><p>{artwork.prompt || '生成图像'}</p><HistoryTime value={artwork.generatedAt} />{isAdmin ? <span className="artwork-owner">{ownerLabel(artwork.ownerName, artwork.ownerEmail, artwork.ownerId) || '历史管理员作品'}{artwork.hiddenAt ? <em>用户已移除</em> : null}</span> : null}<div><span>{(artwork.batchSize ?? 0) > 1 && artwork.batchIndex != null && `第 ${artwork.batchIndex + 1}/${artwork.batchSize} 张 · `}{artwork.width && artwork.height ? `${artwork.width} × ${artwork.height}` : '图像'}</span><span className="artwork-card-actions"><DownloadLink artwork={artwork} compact />{canHide(artwork.taskId) ? <button onClick={() => askRemove(artwork.taskId!)} title="从我的记录中移除整个任务" aria-label="删除任务记录" className="history-delete-button"><Icon name="trash" size={15} /><span>删除</span></button> : null}</span></div>{artwork.source === 'cloud' && (!artwork.taskId || firstImageByTask.get(artwork.taskId) === artwork.id) ? <p className="task-cost">{taskCostLabel(artwork.taskCreditsCost, artwork.taskCostSettled)}</p> : null}{artwork.source === 'cloud' && artwork.locallySaved === false ? <p className="delivery-warning">{artwork.downloadError ?? '本地缓存未完成；远程原图可能到期，请及时保存。'}</p> : null}</div>
       </article>)}
+      {visible.length > visibleLimit && <button className="quiet-button" onClick={() => setVisibleLimit(limit => limit + 40)}>查看更多作品</button>}
     </div> : null}
     {empty && empty.kind !== 'active' ? <div className={`empty-history empty-${empty.kind}`} role="status"><div className="empty-history-art"><Icon name={empty.kind === 'loading' ? 'refresh' : 'emptyImage'} size={46} className={empty.kind === 'loading' ? 'spinning' : ''} /></div>
       <h3>{empty.title}</h3>{empty.description && <p>{empty.description}</p>}

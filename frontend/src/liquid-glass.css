@@ -210,8 +210,8 @@ html:not([data-theme=light]) :is(.artwork,.showcase-card,.library-template,.libr
 html:not([data-theme=light]) :is(.composer,.agent-composer)::after { background:linear-gradient(130deg,#fff1,transparent 26%,transparent 82%,#ded7ff0a); }
 html:not([data-theme=light]) :is(.quiet-button,.scene-chip,.toolbar-button,.library-template):hover:not(:disabled) { color:var(--glass-ink);background-color:#35343f;border-color:#a8a3bf70; }
 html:not([data-theme=light]) :is(.agent-guide-link,.agent-chat-item button,.library-template strong,.history-heading h2) { color:var(--glass-ink); }
-.generation-presets form {display:flex;align-items:flex-end;gap:10px;margin-top:12px}
-.generation-presets form .form-field {flex:1;min-width:0;margin:0}
+.generation-presets .preset-save {display:flex;align-items:flex-end;gap:10px;margin-top:12px}
+.generation-presets .preset-save .form-field {flex:1;min-width:0;margin:0}
 .generation-presets .scene-manager-row {gap:8px}
 .generation-presets .scene-manager-row>button:first-child {min-width:0;overflow-wrap:anywhere}
 .generation-presets .preset-default {color:var(--glass-accent);font-size:12px}

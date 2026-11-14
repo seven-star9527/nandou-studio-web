@@ -21,9 +21,9 @@ from aiohttp import ClientError, ClientSession, ClientTimeout, WSMsgType, web
 from .store import Store, TERMINAL, password_hash, password_valid
 from .local_queue import LocalQueue
 from .generation_presets import generation_presets
-from .image_preview import svg_headers
+from .image_preview import svg_headers, preview_path
 from .agent import CreativeAgent
-from .workbench import Workbench
+from .workbench import Workbench, private_history
 from .image_uploads import ImageUploadError, check_upload_batch, generation_references
 from .task_references import reference_directory, save_task_references, task_references
 
@@ -140,7 +140,7 @@ class Gateway:
             response.headers["X-Content-Type-Options"] = "nosniff"
             response.headers["Referrer-Policy"] = "same-origin"
             if not request.path.startswith("/studio/"):
-                response.headers["Cache-Control"] = "private, no-store"
+                response.headers.setdefault("Cache-Control", "private, no-store")
         return response
 
     async def startup(self, app):
@@ -233,6 +233,11 @@ class Gateway:
         user = request["user"]
         if action == "me" and request.method == "GET":
             return web.json_response({"user": public_user(user), "admin_entry": local_entry(request)})
+        if action == "history" and request.method == "GET":
+            if not user:
+                return error("请先登录。", 401)
+            payload = {"files": self.local_history(user), "tasks": self.cloud_history(user)}
+            return private_history(request, user, payload)
         if action == "generation-presets" and request.method in {"GET", "POST"}:
             if not user:
                 return error("请先登录。", 401)
@@ -400,14 +405,7 @@ class Gateway:
             if data.get("path", "") != "" or int(data.get("depth", 10)) not in range(0, 21):
                 return error("只允许读取当前作品目录。")
             await self.synchronize(user, include_local=True)
-            rows = self.store.all("SELECT a.*,u.email owner_email,u.name owner_name,v.hidden_at,t.started_at,t.ended_at,t.seconds FROM artifacts a JOIN users u ON u.id=a.owner_id JOIN tasks t ON t.id=a.task_id LEFT JOIN task_visibility v ON v.task_id=t.id AND v.viewer_id=t.owner_id WHERE t.kind='local' ORDER BY a.created_at DESC")
-            files = [{"src": row["url"].lstrip("/"), "metadata": row["metadata"], "studio_task_id": row["task_id"], "studio_owner_id": row["owner_id"], "studio_owner_email": row["owner_email"], "studio_owner_name": row["owner_name"], "studio_hidden_at": row["hidden_at"],
-                      # Legacy imports only know the image file's modification time, not submission time.
-                      "studio_created_utc": None if row["task_id"].startswith("legacy_") else datetime.fromtimestamp(row["started_at"], timezone.utc).isoformat(),
-                      "studio_completed_utc": datetime.fromtimestamp(row["ended_at"], timezone.utc).isoformat() if row["ended_at"] else None,
-                      "studio_duration_seconds": row["seconds"]}
-                     for row in rows if user["role"] == "admin" or row["owner_id"] == user["id"] and not row["hidden_at"]]
-            return web.json_response({"files": files, "folders": []})
+            return web.json_response({"files": self.local_history(user), "folders": []})
         if endpoint == "SubmitStudioCloudImage":
             return await self.submit_cloud(user, data)
         if endpoint == "GetStudioCloudTask":
@@ -422,16 +420,7 @@ class Gateway:
             return web.json_response(self.store.public_task(json.loads(latest["record_json"]), latest))
         if endpoint == "ListStudioCloudTasks":
             await self.synchronize(user)
-            tasks = self.store.all("SELECT id FROM tasks WHERE kind='cloud' ORDER BY started_at DESC")
-            result = []
-            for row in tasks:
-                task = self.store.task(row["id"])
-                if self.store.task_visible(task, user):
-                    record = json.loads(task["record_json"])
-                    if not record.get("request_id"):
-                        record = {"request_id": task["id"], "status": task["status"], "model": task["model"], "prompt": "", "images": []}
-                    result.append(self.store.public_task(record, task))
-            return web.json_response({"tasks": result})
+            return web.json_response({"tasks": self.cloud_history(user)})
         result = await self.upstream_api(user, endpoint, data, endpoint != "PolishStudioPrompt")
         if endpoint == "GetCurrentStatus":
             result["studio_queue"] = self.local_queue.latest(user["id"])
@@ -552,6 +541,33 @@ class Gateway:
             self.store.update_task(task_id, completed=count, status="completed" if count >= (bound["requested"] or 1) else "outcome_unknown")
         return url, task_id
 
+    def local_history(self, user):
+        rows = self.store.all("""SELECT a.*,u.email owner_email,u.name owner_name,v.hidden_at,t.started_at,t.ended_at,t.seconds
+            FROM artifacts a JOIN users u ON u.id=a.owner_id JOIN tasks t ON t.id=a.task_id
+            LEFT JOIN task_visibility v ON v.task_id=t.id AND v.viewer_id=t.owner_id
+            WHERE t.kind='local' AND (? OR (a.owner_id=? AND v.hidden_at IS NULL)) ORDER BY a.created_at DESC""",
+            (user["role"] == "admin", user["id"]))
+        files = [{"src": row["url"].lstrip("/"), "metadata": row["metadata"], "studio_task_id": row["task_id"], "studio_owner_id": row["owner_id"], "studio_owner_email": row["owner_email"], "studio_owner_name": row["owner_name"], "studio_hidden_at": row["hidden_at"],
+                  # Legacy imports only know the image file's modification time, not submission time.
+                  "studio_created_utc": None if row["task_id"].startswith("legacy_") else datetime.fromtimestamp(row["started_at"], timezone.utc).isoformat(),
+                  "studio_completed_utc": datetime.fromtimestamp(row["ended_at"], timezone.utc).isoformat() if row["ended_at"] else None,
+                  "studio_duration_seconds": row["seconds"]}
+                 for row in rows]
+        return files
+
+    def cloud_history(self, user):
+        tasks = self.store.all("""SELECT t.*,u.email owner_email,u.name owner_name,v.hidden_at FROM tasks t
+            JOIN users u ON u.id=t.owner_id LEFT JOIN task_visibility v ON v.task_id=t.id AND v.viewer_id=t.owner_id
+            WHERE t.kind='cloud' AND (? OR (t.owner_id=? AND v.hidden_at IS NULL)) ORDER BY t.started_at DESC""",
+            (user["role"] == "admin", user["id"]))
+        result = []
+        for task in tasks:
+            record = json.loads(task["record_json"])
+            if not record.get("request_id"):
+                record = {"request_id": task["id"], "status": task["status"], "model": task["model"], "prompt": "", "images": []}
+            result.append(self.store.public_task(record, task))
+        return result
+
     async def synchronize(self, user, include_local=False):
         owners = self.store.all("SELECT * FROM users") if user["role"] == "admin" else [user]
         for owner in owners:
@@ -611,6 +627,12 @@ class Gateway:
                 return web.Response(body=bytes(body), content_type=content_type, headers={"Cache-Control": "private, no-store"})
         if not disk.is_file():
             raise web.HTTPNotFound()
+        if request.query.get("preview") == "1":
+            headers = {"Cache-Control": "private, no-cache", "Vary": "Cookie", **svg_headers(disk)}
+            if disk.suffix.lower() in IMAGE_EXTENSIONS:
+                disk = await preview_path(disk, self.root / "runtime/image-previews", 240)
+                headers["Content-Type"] = "image/webp"
+            return web.FileResponse(disk, headers=headers)
         response = web.FileResponse(disk, headers=svg_headers(disk))
         response.headers["Cache-Control"] = "private, no-store"
         return response

@@ -191,12 +191,36 @@ async def read_completion_stream(lines, on_text=None):
 
 
 def settings(raw):
-    value = {**DEFAULTS, **raw}
+    output_fields = {"outputFormat", "gifWidth", "gifHeight", "frameCount", "frameDurationMs", "svgTransparent", "width", "height"}
+    output = {key: raw[key] for key in output_fields if key in raw}
+    value = {**DEFAULTS, **{k: v for k, v in raw.items() if k not in output_fields}}
     if isinstance(value['model'], str):
         value['model'] = re.sub(r'^gpt-image-2[.]5-(flare|sunburst)$', r'gpt-image-2.6-\1', value['model'])
-    allowed = {'model': MODELS, 'quality': {'low', 'medium', 'high', 'xhigh'}, 'resolution': {'1K', '2K', '4K'}, 'ratio': RATIOS | {'auto'}, 'count': {'auto', '1', '2', '3', '4'}, 'platform': {'auto', 'amazon', 'store'}, 'scene': {'auto', 'main', 'detail', 'lifestyle', 'aplus', 'hero'}, 'style': {'natural', 'studio', 'minimal', 'creative'}}
+    allowed = {'model': MODELS, 'quality': {'low', 'medium', 'high', 'xhigh'}, 'resolution': {'1K', '2K', '4K'}, 'ratio': RATIOS | {'auto'} | ({'1:4','4:1','1:8','8:1','4:5','5:4'} if value['model'] == 'gemini-nano-banana-2.1' else {'custom','5:4','4:5','2:1','1:2','9:21','3:1','1:3'}), 'count': {'auto', '1', '2', '3', '4'}, 'platform': {'auto', 'amazon', 'store'}, 'scene': {'auto', 'main', 'detail', 'lifestyle', 'aplus', 'hero'}, 'style': {'natural', 'studio', 'minimal', 'creative'}}
     if set(value) != set(DEFAULTS) or any(not isinstance(v, str) or v not in allowed[k] for k, v in value.items()):
         raise ValueError("unsupported settings")
+    fmt = output.get("outputFormat")
+    if fmt is not None and (fmt not in ("png","gif","svg") or fmt in ("gif","svg") and not value["model"].startswith("gpt-image-2.6-")):
+        raise ValueError("unsupported output format")
+    if fmt:
+        value["outputFormat"] = fmt
+    if fmt == "svg":
+        if value["count"] != "1" or type(output.get("svgTransparent", False)) is not bool:
+            raise ValueError("invalid svg settings")
+        value["svgTransparent"] = output.get("svgTransparent", False)
+    if fmt == "gif":
+        for key, default, lo, hi, step in (("gifWidth",512,16,3840,16), ("gifHeight",512,16,3840,16),
+                                            ("frameCount",9,2,16,1), ("frameDurationMs",200,20,655350,10)):
+            number = output.get(key, default)
+            if type(number) is not int or not lo <= number <= hi or number % step:
+                raise ValueError("invalid gif settings")
+            value[key] = number
+    if value["ratio"] == "custom":
+        w, h = output.get("width"), output.get("height")
+        if (not all(type(n) is int and 0 < n <= 3840 and n % 16 == 0 for n in (w,h))
+                or not 655360 <= w*h <= 8294400 or max(w,h) > 3*min(w,h)):
+            raise ValueError("invalid custom dimensions")
+        value.update(width=w, height=h)
     return value
 
 
@@ -783,25 +807,26 @@ class CreativeAgent:
         prompt, ratio, ids = args["prompt"], args["ratio"], args["ref_ids"]
         if opts['ratio'] != 'auto':
             ratio = opts['ratio']
-        if not isinstance(prompt, str) or not 10 <= len(prompt) <= 12000 or ratio not in {"1:1", "3:4", "4:3", "2:3", "3:2", "9:16", "16:9", "21:9"} or not isinstance(ids, list) or len(ids) > 8:
+        if not isinstance(prompt, str) or not 10 <= len(prompt) <= 12000 or (opts['ratio'] == 'auto' and ratio not in RATIOS) or not isinstance(ids, list) or len(ids) > 8:
             raise ValueError()
-        output_format = args.get('output_format', 'png')
+        output_format = opts.get('outputFormat', args.get('output_format', 'png'))
         if output_format not in ('png', 'gif', 'svg'):
             return {'error': '请选择静态 PNG、GIF 或 SVG。'}
-        options = {}
+        options = {'size': f"{opts['width']}x{opts['height']}"} if ratio == 'custom' else {}
         if output_format == 'svg':
             if not opts['model'].startswith('gpt-image-2.6-'):
                 return {'error':'所选模型不支持 SVG，请用户选择 GPT Image 2.6。'}
             options['output_format'] = 'svg'
-        if output_format != 'gif' and any(k in args for k in ('frame_count', 'frame_duration_ms', 'frame_size')):
+        if not opts.get('outputFormat') and output_format != 'gif' and any(k in args for k in ('frame_count', 'frame_duration_ms', 'frame_size')):
             return {'error':'单帧规格仅适用于 GIF。'}
         if output_format == 'gif':
             if not opts['model'].startswith('gpt-image-2.6-'):
                 return {'error': '所选模型不支持 GIF，请用户切换到 GPT Image 2.6 后继续。禁止改为静态图提交。'}
-            frames, duration = args.get('frame_count', 9), args.get('frame_duration_ms', 200)
+            frames = opts.get('frameCount', args.get('frame_count', 9))
+            duration = opts.get('frameDurationMs', args.get('frame_duration_ms', 200))
             if type(frames) is not int or not 2 <= frames <= 16 or type(duration) is not int or not 20 <= duration <= 655350 or duration % 10:
                 return {'error': 'GIF 需要 2–16 帧，每帧至少 20 毫秒，按 10 毫秒对齐。'}
-            frame_size = args.get('frame_size') or '512x512'
+            frame_size = f"{opts['gifWidth']}x{opts['gifHeight']}" if opts.get('outputFormat') == 'gif' else args.get('frame_size') or '512x512'
             if not re.fullmatch(r'[1-9][0-9]{0,3}x[1-9][0-9]{0,3}', frame_size):
                 return {'error': 'GIF 需要单帧像素宽高，例如 512x512。'}
             w, h = map(int, frame_size.split('x'))
@@ -809,13 +834,15 @@ class CreativeAgent:
             a, b = min(w,h)*cols, max(w,h)*rows
             if w%16 or h%16 or max(a,b)>3840 or a*b>8294400 or max(a,b)>3*min(a,b):
                 return {'error': '该帧数与单帧尺寸超出 GIF 拼图限制，请调整后再提交。'}
-            if opts['ratio'] != 'auto':
+            if opts['ratio'] not in ('auto', 'custom') and not opts.get('outputFormat'):
                 x,y = map(int, opts['ratio'].split(':'))
                 if w*y != h*x:
                     return {'error':'单帧宽高须满足用户选择的比例，请调整 frame_size。'}
             options.update(output_format='gif', size=frame_size, frame_count=frames, frame_duration_ms=duration)
-        if 'background' in args:
-            background = args['background']
+        background = args.get('background')
+        if opts.get('outputFormat') == 'svg':
+            background = 'transparent' if opts.get('svgTransparent') else None
+        if background is not None:
             if not opts['model'].startswith('gpt-image-2.6-') or background not in ('opaque', 'transparent') or (background == 'transparent' and output_format == 'gif'):
                 return {'error': '透明背景参数需要 GPT Image 2.6 和 PNG 或 SVG。'}
             options['background'] = background

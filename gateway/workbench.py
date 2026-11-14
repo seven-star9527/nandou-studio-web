@@ -1,5 +1,6 @@
 """Private media, quick jobs and source resolution for the comparison board."""
 import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -20,6 +21,15 @@ from .photocraft import PhotoCraftError, load_config
 from .agent_limits import AgentError
 
 MEDIA = '/studio-agent/workbench/media/'
+
+
+def private_history(request, user, payload):
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    etag = '"' + hashlib.sha256(user["id"].encode() + body).hexdigest() + '"'
+    headers = {"ETag": etag, "Cache-Control": "private, no-cache", "Vary": "Cookie"}
+    if request.headers.get("If-None-Match") == etag:
+        return web.Response(status=304, headers=headers)
+    return web.Response(body=body, content_type="application/json", headers=headers)
 
 
 def identifier(value):
@@ -262,7 +272,7 @@ class Workbench:
                 JOIN studio_media m ON q.id=m.id JOIN users u ON m.owner_id=u.id
                 LEFT JOIN task_visibility v ON v.task_id=m.id AND v.viewer_id=m.owner_id
                 WHERE (? OR (m.owner_id=? AND v.hidden_at IS NULL)) ORDER BY q.created_at DESC LIMIT 100""",(user['role']=='admin',user['id']))
-            return web.json_response([{'id':r['id'],'taskId':r['id'],'ownerId':r['owner_id'],'ownerEmail':r['email'],'ownerName':r['owner_name'],
+            return private_history(request, user, [{'id':r['id'],'taskId':r['id'],'ownerId':r['owner_id'],'ownerEmail':r['email'],'ownerName':r['owner_name'],
                 'hiddenAt':str(r['hidden_at']) if r['hidden_at'] else None,'url':MEDIA+r['id'],'source':'quick',
                 'prompt':r['name'],'width':r['width'],'height':r['height'],
                 'generatedAt':datetime.fromtimestamp(r['created_at'],timezone.utc).isoformat()} for r in rows])
@@ -298,5 +308,6 @@ class Workbench:
                 path = self.source(user,MEDIA + mid)
             if request.query.get('preview') == '1':
                 path = await preview_path(path,self.root/'previews',480)
+                return web.FileResponse(path, headers={'Cache-Control':'private, no-cache','Vary':'Cookie'})
             return web.FileResponse(path)
         raise web.HTTPNotFound()

@@ -27,8 +27,10 @@ export function useModalDialog(open: boolean, container: RefObject<HTMLElement |
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!dialogs.length) {
       originalBodyStyle = { overflow: document.body.style.overflow, paddingRight: document.body.style.paddingRight };
-      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+      const widthBeforeLock = document.body.getBoundingClientRect().width;
       document.body.style.overflow = 'hidden';
+      // A stable scrollbar gutter already preserves the body width on desktop.
+      const scrollbarWidth = document.body.getBoundingClientRect().width - widthBeforeLock;
       if (scrollbarWidth > 0) document.body.style.paddingRight = `${parseFloat(getComputedStyle(document.body).paddingRight) + scrollbarWidth}px`;
       observer = new MutationObserver(isolateTopDialog);
       observer.observe(document.body, { childList: true });

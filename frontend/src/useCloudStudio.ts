@@ -54,7 +54,8 @@ export function useCloudStudio(client: SwarmClient, receiveArtwork: (artwork: Ar
     const values = await client.cloudTasks();
     const latest = new Map(values.map(task => [task.request_id, task]));
     if (mounted.current) setTasks(values.filter(task => !hidden.current.has(task.studio_task_id ?? task.request_id)));
-    for (const task of values.slice().sort((a, b) => Date.parse(a.created_utc) - Date.parse(b.created_utc))) acceptTask(task);
+    const foreground = values.find(task => task.request_id === active.current?.id);
+    if (foreground) acceptTask(foreground);
     // Status reads may finish delivery/cache recovery, but never create another paid request.
     const pending = values.filter(cloudTaskNeedsReadback);
     let readFailures = 0;
@@ -67,7 +68,7 @@ export function useCloudStudio(client: SwarmClient, receiveArtwork: (artwork: Ar
     return [...latest.values()].filter(task => !hidden.current.has(task.studio_task_id ?? task.request_id));
   }, [client, acceptTask, loadAccount]);
   // Keep background rows in sync even when this browser did not submit the task.
-  const backgroundIds = tasks.filter(task => !task.studio_hidden_at && !['completed','failed','cancelled'].includes(task.status)
+  const backgroundIds = tasks.filter(task => !task.studio_hidden_at && cloudTaskNeedsReadback(task)
     && task.request_id !== (waiting.current ? active.current?.id : undefined)).map(task => task.request_id).sort().join(',');
   useEffect(() => {
     if (!backgroundIds) return;
@@ -134,5 +135,5 @@ export function useCloudStudio(client: SwarmClient, receiveArtwork: (artwork: Ar
     setTasks(previous => previous.filter(task => (task.studio_task_id ?? task.request_id) !== id));
     if (active.current?.id === id) { window.clearTimeout(pollTimer.current); active.current = null; waiting.current = false; setJob(null); }
   };
-  return { capabilities, capabilityError, tasks, job, account, accountLoading, accountError, loadAccount, loadCapabilities, refreshTasks, generate, stopWaiting, dismissTask };
+  return { capabilities, capabilityError, tasks, setTasks, job, account, accountLoading, accountError, loadAccount, loadCapabilities, refreshTasks, generate, stopWaiting, dismissTask };
 }
