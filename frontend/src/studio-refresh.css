@@ -33,3 +33,5 @@
 
 @media(prefers-reduced-motion:reduce){.reference-dock .reference-card-remove{transition:none}}
 .reference-thumbnail[draggable="true"]{cursor:grab}.reference-thumbnail[draggable="true"]:active{cursor:grabbing}.reference-thumbnail.is-drop-target{outline:2px solid var(--glass-accent);outline-offset:-2px}
+
+.reference-preview-header .reference-to-board { margin-left: auto; flex-shrink: 0; }

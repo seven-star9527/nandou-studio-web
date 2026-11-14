@@ -5,10 +5,12 @@ import Icon from './Icon';
 import ModalPortal from './ModalPortal';
 import { useModalDialog } from '../useModalDialog';
 import { IMAGE_UPLOAD_HINT } from '../image-upload-limits';
+import { ownImageUrl, workRequest, type WorkImage } from '../workbench-api';
 
-export default function ReferenceDock({ references, add, paste, reorder, remove, maxReferences, disabled = false }: {
+export default function ReferenceDock({ references, add, paste, reorder, remove, maxReferences, openBoard, disabled = false }: {
   references: ReferenceImage[]; add: () => void; paste: (files: File[]) => Promise<void>; reorder: (images: ReferenceImage[]) => void;
   remove: (id: string) => void; maxReferences: number; disabled?: boolean;
+  openBoard?: (image: WorkImage) => void;
 }) {
   const dock = useRef<HTMLDivElement>(null);
   const dragged = useRef<string | null>(null);
@@ -20,6 +22,31 @@ export default function ReferenceDock({ references, add, paste, reorder, remove,
   const stage = useRef<HTMLDivElement>(null);
   const selectedIndex = references.findIndex(item => item.id === selectedId);
   const selected = references[selectedIndex];
+  const pending = useRef<AbortController | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [boardError, setBoardError] = useState('');
+  useEffect(() => {
+    setBoardError('');
+    setAdding(false);
+    return () => { pending.current?.abort(); pending.current = null; };
+  }, [selected?.id]);
+  async function addCurrentToBoard() {
+    if (!selected || !openBoard || pending.current) return;
+    const controller = new AbortController();
+    pending.current = controller;
+    setAdding(true);
+    setBoardError('');
+    try {
+      const image = ownImageUrl(selected.dataUrl)
+        ? {url: selected.dataUrl, name: selected.name}
+        : await workRequest<WorkImage>('upload', {name: selected.name, data_url: selected.dataUrl}, controller.signal);
+      if (!controller.signal.aborted) openBoard(image);
+    } catch (cause) {
+      if (!controller.signal.aborted) setBoardError(cause instanceof Error ? cause.message : '添加失败，请重试。');
+    } finally {
+      if (pending.current === controller) { pending.current = null; setAdding(false); }
+    }
+  }
   const hovered = references.find(item => item.id === hover?.id);
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
@@ -128,12 +155,14 @@ export default function ReferenceDock({ references, add, paste, reorder, remove,
     {selected ? <ModalPortal><div className="modal-backdrop reference-backdrop" onClick={close}>
       <section ref={dialog} className="reference-preview-modal modal" role="dialog" aria-modal="true" aria-label="参考图预览" tabIndex={-1} onClick={event => event.stopPropagation()}
         onKeyDown={event => { if (event.key === 'ArrowRight' && references.length > 1) { event.preventDefault(); next(1); } if (event.key === 'ArrowLeft' && references.length > 1) { event.preventDefault(); next(-1); } }}>
-        <header className="reference-preview-header"><div><strong>参考图 {selectedIndex + 1} / {references.length}</strong><span>{selected.name}</span></div><button className="icon-button" aria-label="关闭参考图预览" onClick={close}><Icon name="close" /></button></header>
+        <header className="reference-preview-header"><div><strong>参考图 {selectedIndex + 1} / {references.length}</strong><span>{selected.name}</span></div>
+          {openBoard && <button type="button" className="quiet-button reference-to-board" disabled={adding} onClick={() => void addCurrentToBoard()}>{adding ? '正在添加…' : '添加到画布'}</button>}
+          <button type="button" className="icon-button" aria-label="关闭参考图预览" onClick={close}><Icon name="close" /></button></header>
         <div ref={stage} className={`reference-preview-stage ${zoom === 'fit' ? 'is-fit' : 'is-zoomed'}`} tabIndex={0} aria-label="参考图画布，可滚动查看放大图像">
           <div className={`reference-preview-canvas ${zoom === 'fit' ? 'is-fit' : ''}`}><img src={selected.dataUrl} alt={selected.name} draggable={false} onDoubleClick={() => setZoom(value => value === 'fit' ? 1 : 'fit')}
             style={zoom === 'fit' ? undefined : { width: selected.width * zoom, height: selected.height * zoom }} /></div>
         </div>
-        <footer className="reference-preview-footer"><span className="reference-dimensions">{selected.width} × {selected.height} px</span><div className="reference-zoom-controls">
+        <footer className="reference-preview-footer">{boardError ? <span role="alert" className="history-error">{boardError}</span> : <span className="reference-dimensions">{selected.width} × {selected.height} px</span>}<div className="reference-zoom-controls">
           <button className="icon-button" aria-label="缩小参考图" onClick={() => changeZoom(-.25)} disabled={zoom !== 'fit' && zoom <= .1}>−</button>
           <span className="reference-zoom-value" aria-live="polite">{zoom === 'fit' ? '适应' : `${Math.round(zoom * 100)}%`}</span>
           <button className="icon-button" aria-label="放大参考图" onClick={() => changeZoom(.25)} disabled={zoom !== 'fit' && zoom >= 4}>+</button>

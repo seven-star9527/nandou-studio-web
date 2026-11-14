@@ -13,6 +13,7 @@ import GenerationPresets from './GenerationPresets';
 import type { useStudio } from '../useStudio';
 import GenerationQuote from './GenerationQuote';
 import ReferenceDock from './ReferenceDock';
+import type { WorkImage } from '../workbench-api';
 import type { ReactNode, Ref } from 'react';
 
 const modelDescriptions: Record<string, string> = {
@@ -23,9 +24,10 @@ const modelDescriptions: Record<string, string> = {
   'gpt-image-2.6-sunburst': '参考图编辑优先，适合保留商品后调整场景',
 };
 
-export default function Composer({ editorRef, settings, config, params, models, prompt, references, editing, setPrompt, update,
+export default function Composer({ openBoard, editorRef, settings, config, params, models, prompt, references, editing, setPrompt, update,
   setGeometry, addReferences, reorderReferences, removeReference, selectModel, selectLocal, selectCloud, cloudModel, cloudModels, cloudConfigured, cloudCapabilityError, creditQuote, presetControls, polisher, generate, busy, ready }: {
   settings: GenerationSettings; config: DeploymentConfig; params: ParamSchema[]; models: Model[];
+  openBoard: (image: WorkImage) => void;
   editorRef: Ref<PromptEditorHandle>; prompt: string; references: ReferenceImage[]; editing: boolean;
   setPrompt: (value: string) => void;
   update: (changes: Partial<GenerationSettings>) => void;
@@ -65,7 +67,7 @@ export default function Composer({ editorRef, settings, config, params, models, 
       onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
       onDrop={event => { event.preventDefault(); setDragging(false); if (event.dataTransfer.files.length) void chooseFiles(event.dataTransfer.files); }}>
       <div className="prompt-row">
-        <ReferenceDock references={references} add={() => fileInput.current?.click()} paste={chooseFiles} reorder={reorderReferences} remove={removeReference} maxReferences={maxReferences} />
+        <ReferenceDock openBoard={openBoard} references={references} add={() => fileInput.current?.click()} paste={chooseFiles} reorder={reorderReferences} remove={removeReference} maxReferences={maxReferences} />
         <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={event => { if (event.target.files) void chooseFiles(event.target.files); event.target.value = ''; }} />
         <div className="prompt-content">
           <PromptEditor editorRef={editorRef} label="图像提示词" value={prompt} references={references} change={setPrompt} submit={submit}
