@@ -98,11 +98,12 @@ public static partial class StudioCloudAPI
                 return;
             }
 
+            var payload = JObject.Parse(await response.Content.ReadAsStringAsync());
+            SaveOfficialUsage(id, keyId, body, payload, response);
             record["credits_cost"] = 0;
             var quote = await GetStudioCloudQuote(session, body);
             record["estimated_credits"] = quote["credits_total_reference"]?.DeepClone();
             record["reference_billing"] = true;
-            var payload = JObject.Parse(await response.Content.ReadAsStringAsync());
             var results = payload["data"] as JArray;
             if (results == null || results.Count == 0 || results.Count > body.Value<int>("n"))
                 throw new InvalidDataException("Unexpected number of images");
@@ -135,5 +136,33 @@ public static partial class StudioCloudAPI
         record["error"] = "所有生图密钥额度已耗尽，备用密钥尚未配置。";
         record["credits_cost"] = 0;
         Save(user, record);
+    }
+
+    // Private accounting receipts are independent of both public history and image delivery.
+    private static void SaveOfficialUsage(string id, string keyId, JObject body, JObject payload, HttpResponseMessage response)
+    {
+        var usage = payload["usage"] as JObject;
+        long? Tokens(JToken value) => value?.Type == JTokenType.Integer && (long)value >= 0 ? (long)value : null;
+        var text = Tokens(usage?["input_tokens_details"]?["text_tokens"]);
+        var image = Tokens(usage?["input_tokens_details"]?["image_tokens"]);
+        var output = Tokens(usage?["output_tokens"]);
+        // Standard Images API list prices, USD per million tokens. SVG authoring is separately billed.
+        decimal? usd = null;
+        if ((string)body["output_format"] != "svg" && payload["svg_usage"] == null
+            && text.HasValue && image.HasValue && output.HasValue
+            && text + image == Tokens(usage?["input_tokens"]))
+            usd = (text * 5m + image * 8m + output * 30m) / 1_000_000m;
+        var receipt = new JObject
+        {
+            ["id"] = id, ["key_id"] = keyId[..12], ["model"] = (string)body["model"],
+            ["at"] = DateTime.UtcNow.ToString("o"), ["estimated_usd"] = usd,
+            ["usage"] = usage?.DeepClone(), ["svg_usage"] = payload["svg_usage"]?.DeepClone(),
+            ["upstream_request"] = response.Headers.TryGetValues("x-request-id", out var ids) ? ids.FirstOrDefault() : null
+        };
+        string dir = Path.Combine(Root, "server/SwarmUI/Data/StudioOfficialUsage");
+        Directory.CreateDirectory(dir);
+        string path = Path.Combine(dir, id + ".json");
+        File.WriteAllText(path + ".tmp", receipt.ToString(Formatting.None));
+        File.Move(path + ".tmp", path, true);
     }
 }

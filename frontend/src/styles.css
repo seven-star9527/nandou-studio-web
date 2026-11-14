@@ -163,6 +163,10 @@
 .account-credits > span { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
 .account-credits > span > svg { color: #b2e7ec; }
 .account-credits .icon-button { min-width: 27px; min-height: 27px; padding: 5px; }
+.official-key-list { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 12px; }
+.official-key-list button[aria-pressed=true] { border-color: var(--glass-accent); }
+.official-billing-link { background: transparent; border: 0; font: inherit; cursor: pointer; color: var(--glass-ink); border-inline-start: 1px solid var(--glass-line); padding: 4px 6px 4px 9px; white-space: nowrap; text-decoration: none; }
+.official-billing-link:is(:hover, :focus-visible) { color: var(--glass-accent); text-decoration: underline; }
 .account-partial { border-color: #6a594034; }
 .composer { padding: 16px; border-radius: 24px; border-color: rgba(255,255,255,.08); min-height: 158px; }
 .prompt-row { gap: 12px; min-height: 88px; }

@@ -21,6 +21,7 @@ from aiohttp import ClientError, ClientSession, ClientTimeout, WSMsgType, web
 from .store import Store, TERMINAL, password_hash, password_valid
 from .local_queue import LocalQueue
 from .generation_presets import generation_presets
+from .official_usage import official_usage
 from .image_preview import svg_headers, preview_path
 from .agent import CreativeAgent
 from .workbench import Workbench, private_history
@@ -253,6 +254,13 @@ class Gateway:
             except KeyError:
                 return error("配置不存在。", 404)
             return web.json_response({"account": user["id"], "presets": entries})
+        if action == "admin/official-usage" and request.method == "GET":
+            if not user or user["role"] != "admin" or not local_entry(request):
+                return error("无法访问。", 403)
+            prior = self.store.all("""SELECT id,model,strftime('%Y-%m-%dT%H:%M:%SZ',started_at,'unixepoch') at
+                FROM tasks WHERE json_extract(record_json,'$.reference_billing') = 1""")
+            report = await asyncio.to_thread(official_usage, self.root, prior)
+            return web.json_response(report, headers={"Cache-Control": "private, no-store"})
         if action == "admin/overview" and request.method == "GET":
             if not user or user["role"] != "admin" or not local_entry(request):
                 return error("无法访问。", 403)
