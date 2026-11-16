@@ -296,6 +296,9 @@ export function useStudio(account: string) {
     const restoreDefault = () => {
       if (branch || accepted) return;
       accepted = true;
+      void setDraft(current => current.prompt === prompt && current.references === references
+        ? {prompt: '', references: [], minReferences: 0}
+        : current);
       const latest = current.current;
       if (!latest.presets[0] || latest.settings !== settings || latest.cloudModelId !== cloudModelId) return;
       try { latest.applyPreset(latest.presets[0]); }

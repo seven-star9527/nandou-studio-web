@@ -178,6 +178,7 @@ class Store:
     def public_task(self, record, task):
         value = dict(record)
         value.pop("fingerprint", None)
+        value["returned_images"] = len(value.get("images", []))
         value.update(studio_task_id=task["id"], studio_owner_id=task["owner_id"], studio_owner_email=task["owner_email"], studio_owner_name=task["owner_name"], studio_hidden_at=task["hidden_at"])
         # Private results must not escape the authenticated file boundary via CDN fallbacks.
         value["images"] = [{key: val for key, val in image.items() if key != "remote_url"}

@@ -55,6 +55,7 @@ export interface Artwork {
   generatedAt?: string; completedAt?: string; duration?: number; current?: boolean; batchIndex?: number; batchSize?: number;
   source?: 'local' | 'cloud' | 'quick';
   originalUrl?: string;
+  resultWarning?: string;
   locallySaved?: boolean; downloadError?: string; mimeType?: string;
   taskCreditsCost?: number; referenceBilling?: boolean; estimatedCredits?: number; taskCostSettled?: boolean;
   taskId?: string; ownerId?: string; ownerEmail?: string; ownerName?: string; hiddenAt?: string;
@@ -101,6 +102,7 @@ export interface CloudTask {
   delivery_status?: 'complete' | 'partial' | 'cache_pending'; delivered_images?: number; provider_status?: string | null;
   operation?: CloudOperation; reference_count?: number;
   poll_error?: string; result_warning?: string;
+  returned_images?: number;
   error?: string; model: string; prompt: string; parameters: Record<string, unknown>; cost?: unknown; reference_billing?: boolean; estimated_credits?: number | null; credits_cost?: number | null; created_utc: string;
   completed_utc?: string; actual_time?: number;
   studio_task_id?: string; studio_owner_id?: string; studio_owner_email?: string; studio_owner_name?: string; studio_hidden_at?: string;

@@ -72,11 +72,14 @@ export function mergeArtwork(previous: Artwork[], artwork: Artwork): Artwork[] {
 
 export function cloudDelivery(task: CloudTask, requested = Number(task.parameters?.n) || 1) {
   const locallySaved = (task.images ?? []).filter(image => cloudImageUrl(image.url)?.startsWith('/studio-results/') && !image.download_error).length;
-  const delivered = Math.max(0, Math.min(requested, task.delivered_images ?? locallySaved));
-  const complete = task.status === 'completed' && delivered >= requested && (!task.delivery_status || task.delivery_status === 'complete');
+  // The public task retains the provider's count before unavailable URLs are removed.
+  const returned = task.returned_images ?? Math.max(requested, task.images?.length ?? 0);
+  const delivered = locallySaved;
+  const complete = task.status === 'completed' && returned > 0 && delivered >= returned;
+  const warning = complete && returned !== requested ? `请求 ${requested} 张，服务实际返回 ${returned} 张，已全部保存。` : undefined;
   const error = (task.images ?? []).find(image => image.download_error)?.download_error;
-  return { delivered, requested, complete, message: task.status === 'completed' && !complete
-    ? `云端生成已结束，本地已保存 ${delivered}/${requested} 张。${error ?? task.result_warning ?? '缓存尚未完整，可刷新记录重试转存。远程结果可能到期，请及时保存。'}` : undefined };
+  return { delivered, requested, complete, warning, message: task.status === 'completed' && !complete
+    ? `生成已结束，本地已保存 ${delivered}/${returned} 张返回图片。${error ?? '部分结果尚未保存，请刷新状态。'}` : undefined };
 }
 
 export function cloudJobUpdate(task: CloudTask, requested: number, waiting: boolean): Pick<Job, 'phase' | 'completed' | 'percent' | 'error' | 'taskCreditsCost' | 'taskCostSettled' | 'estimatedCredits' | 'referenceBilling'> {
@@ -121,7 +124,8 @@ export function taskArtworks(task: CloudTask, current = false): Artwork[] {
     taskId: task.studio_task_id ?? task.request_id, ownerId: task.studio_owner_id, ownerEmail: task.studio_owner_email, ownerName: task.studio_owner_name, hiddenAt: task.studio_hidden_at,
     generatedAt: task.created_utc, completedAt: task.completed_utc,
     duration: typeof task.actual_time === 'number' && Number.isFinite(task.actual_time) && task.actual_time >= 0 ? task.actual_time : undefined,
-    batchIndex: image.index, batchSize: Math.max(task.images.length, Number(task.parameters?.n) || 0), source: 'cloud' as const, locallySaved: url.startsWith('/studio-results/') && !image.download_error,
+    batchIndex: image.index, batchSize: task.status === 'completed' ? task.returned_images ?? task.images.length : Math.max(task.images.length, Number(task.parameters?.n) || 0), source: 'cloud' as const, locallySaved: url.startsWith('/studio-results/') && !image.download_error,
+    resultWarning: cloudDelivery(task).warning,
     downloadError: image.download_error, mimeType: image.mime_type,
     estimatedCredits: isCreditAmount(task.estimated_credits) ? task.estimated_credits : undefined,
     referenceBilling: task.reference_billing,

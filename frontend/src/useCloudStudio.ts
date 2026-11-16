@@ -9,6 +9,14 @@ export function useCloudStudio(client: SwarmClient, receiveArtwork: (artwork: Ar
   const [capabilityError, setCapabilityError] = useState('');
   const [tasks, setTasks] = useState<CloudTask[]>([]);
   const [job, setJob] = useState<Job | null>(null);
+  const acceptance = useRef<{id: string; run?: () => void} | null>(null);
+  const acknowledge = useCallback((task: {request_id: string; status: string}) => {
+    if (!mounted.current || acceptance.current?.id !== task.request_id ||
+        !['submitted', 'pending', 'processing', 'completed'].includes(task.status)) return;
+    const action = acceptance.current.run;
+    acceptance.current = null;
+    action?.();
+  }, []);
   const [account, setAccount] = useState<CloudAccount | null>(null);
   const [accountLoading, setAccountLoading] = useState(false);
   const [accountError, setAccountError] = useState('');
@@ -40,6 +48,7 @@ export function useCloudStudio(client: SwarmClient, receiveArtwork: (artwork: Ar
   }, [client, loadAccount]);
   const acceptTask = useCallback((task: CloudTask) => {
     if (!mounted.current || hidden.current.has(task.studio_task_id ?? task.request_id)) return;
+    acknowledge(task);
     setTasks(previous => [task, ...previous.filter(item => item.request_id !== task.request_id)]);
     for (const artwork of taskArtworks(task, active.current?.id === task.request_id)) receiveArtwork(artwork);
     if (active.current?.id === task.request_id) {
@@ -49,7 +58,7 @@ export function useCloudStudio(client: SwarmClient, receiveArtwork: (artwork: Ar
         completedAccountRefresh.current.add(task.request_id); void loadAccount();
       }
     }
-  }, [receiveArtwork, loadAccount]);
+  }, [receiveArtwork, loadAccount, acknowledge]);
   const refreshTasks = useCallback(async () => {
     const values = await client.cloudTasks();
     const latest = new Map(values.map(task => [task.request_id, task]));
@@ -90,6 +99,7 @@ export function useCloudStudio(client: SwarmClient, receiveArtwork: (artwork: Ar
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [backgroundIds, client, acceptTask]);
   const generate = async (request: CloudRequest, accepted?: () => void) => {
+    acceptance.current = {id: request.request_id, run: accepted};
     window.clearTimeout(pollTimer.current);
     active.current = { id: request.request_id, started: Date.now(), requested: request.n, completed: 0, phase: 'connecting', source: 'cloud' };
     waiting.current = true;
@@ -106,7 +116,7 @@ export function useCloudStudio(client: SwarmClient, receiveArtwork: (artwork: Ar
         }
       }
     };
-    try { await client.submitCloud(request); if (mounted.current) accepted?.(); }
+    try { acknowledge(await client.submitCloud(request)); }
     catch (error) {
       // Explicit validation rejection occurs before submission; there is no task to poll.
       if (error instanceof SwarmError && [400, 413, 422].includes(error.status ?? 0)) {
