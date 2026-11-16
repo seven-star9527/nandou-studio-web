@@ -149,6 +149,14 @@ class Store:
     def update_task(self, tid, **fields):
         allowed = {"model", "status", "requested", "completed", "started_at", "ended_at", "seconds", "credits", "record_json"}
         assert fields and set(fields) <= allowed
+        # The user's submitted brief is immutable across upstream polling and recovery.
+        if "record_json" in fields:
+            previous = self.one("SELECT record_json FROM tasks WHERE id=?", (tid,))
+            original = json.loads(previous["record_json"]).get("original_prompt") if previous else None
+            if isinstance(original, str):
+                record = json.loads(fields["record_json"])
+                record["original_prompt"] = original
+                fields["record_json"] = json.dumps(record, ensure_ascii=False)
         with self.db:
             self.db.execute("UPDATE tasks SET " + ",".join(key + "=?" for key in fields) + " WHERE id=?", (*fields.values(), tid))
 

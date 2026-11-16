@@ -20,8 +20,11 @@ export function parseArtwork(path: string, metadata: string | undefined, user: s
   let parsed: { sui_image_params?: Record<string, unknown>; sui_extra_data?: Record<string, unknown> } = {};
   try { parsed = JSON.parse(metadata ?? '{}'); } catch { /* Metadata is not guaranteed to be JSON. */ }
   const p = parsed.sui_image_params ?? {};
+  const original = parsed.sui_extra_data?.studio_original_prompt;
+  const actual = String(p.prompt ?? '');
+  const prompt = typeof original === 'string' && original.trim() ? original : actual;
   return {
-    id: path, url: imageUrl(path, user, appendUser), prompt: String(p.prompt ?? ''),
+    id: path, url: imageUrl(path, user, appendUser), prompt, generationPrompt: prompt !== actual ? actual : undefined,
     width: typeof p.width === 'number' ? p.width : undefined,
     height: typeof p.height === 'number' ? p.height : undefined,
     seed: p.seed == null ? undefined : String(p.seed), model: p.model == null ? undefined : String(p.model),

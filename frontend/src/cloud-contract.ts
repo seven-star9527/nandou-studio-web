@@ -120,7 +120,8 @@ export function cloudArtworkSettings(artwork: Artwork, model: CloudModelCapabili
 export function taskArtworks(task: CloudTask, current = false): Artwork[] {
   const safeParameters = Object.fromEntries(Object.entries(task.parameters ?? {}).filter(([key]) => ['operation', 'size', 'resolution', 'n', 'quality', 'reference_count', 'background', 'output_format', 'frame_count', 'frame_duration_ms'].includes(key)));
   return (task.images ?? []).flatMap(image => { const url = cloudImageUrl(image.url); return url ? [{ id: `${task.request_id}-${image.index}`, url,
-    prompt: task.prompt, width: image.width, height: image.height, model: task.model, current,
+    prompt: task.original_prompt?.trim() ? task.original_prompt : task.prompt,
+    generationPrompt: task.original_prompt?.trim() && task.original_prompt !== task.prompt ? task.prompt : undefined, width: image.width, height: image.height, model: task.model, current,
     taskId: task.studio_task_id ?? task.request_id, ownerId: task.studio_owner_id, ownerEmail: task.studio_owner_email, ownerName: task.studio_owner_name, hiddenAt: task.studio_hidden_at,
     generatedAt: task.created_utc, completedAt: task.completed_utc,
     duration: typeof task.actual_time === 'number' && Number.isFinite(task.actual_time) && task.actual_time >= 0 ? task.actual_time : undefined,

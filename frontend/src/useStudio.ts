@@ -292,6 +292,7 @@ export function useStudio(account: string) {
 
   const generate = (includeReferences: boolean, branch?: {id:string; prompt:string; references:ReferenceImage[]; settings:GenerationSettings}) => {
     const input = branch ?? { prompt: resolveMentions(prompt, references), references, settings };
+    const originalPrompt = input.prompt;
     let accepted = false;
     const restoreDefault = () => {
       if (branch || accepted) return;
@@ -314,6 +315,7 @@ export function useStudio(account: string) {
       if (!connected) throw new Error('请先连接图像服务。');
       if (cloudModel) {
         const request = buildCloudRequest(cloudModel, input.settings, includeReferences ? 'edit' : 'generate', input.prompt, includeReferences ? input.references : [], Boolean(cloud.capabilities?.configured));
+        request.original_prompt = originalPrompt;
         if (branch) request.request_id = branch.id;
         void cloud.generate(request, restoreDefault);
         return;
@@ -324,6 +326,7 @@ export function useStudio(account: string) {
       const request = buildGenerationRequest(input.settings, input.prompt, includeReferences ? input.references : [], paramsRef.current, configRef.current);
       const newJob: Job = { id: branch?.id ?? createId(), started: Date.now(), requested: input.settings.count, completed: 0, phase: 'connecting', source: 'local' };
       request.studio_task_id = newJob.id;
+      request.extra_metadata = {...(request.extra_metadata as Record<string, unknown>), studio_original_prompt: originalPrompt};
       activeJob.current = newJob; setJob(newJob);
       const completedIndices = new Set<number>();
       socket.current = client.generate(request, message => {
@@ -357,7 +360,8 @@ export function useStudio(account: string) {
           artwork.id = `${newJob.id}-${index}`; artwork.current = true; artwork.batchIndex = index;
           artwork.taskId = message.studio_task_id ?? newJob.id; artwork.source = 'local';
           artwork.ownerId = message.studio_owner_id; artwork.ownerEmail = message.studio_owner_email; artwork.ownerName = message.studio_owner_name;
-          artwork.prompt ||= input.prompt; artwork.width ??= input.settings.width; artwork.height ??= input.settings.height;
+          artwork.prompt = originalPrompt;
+          artwork.generationPrompt = input.prompt !== originalPrompt ? input.prompt : undefined; artwork.width ??= input.settings.width; artwork.height ??= input.settings.height;
           artwork.model ??= input.settings.model; artwork.steps ??= input.settings.steps;
           artwork.generatedAt = new Date(newJob.started).toISOString();
           artwork.duration = (Date.now() - newJob.started) / 1000;

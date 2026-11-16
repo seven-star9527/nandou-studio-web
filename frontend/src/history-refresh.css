@@ -129,3 +129,6 @@ html body .artwork-backdrop > .modal.artwork-modal {
 .artwork-viewer .artwork-zoom-controls {display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;flex:none;min-height:60px;margin:0;padding:10px 12px;background:var(--studio-ground,var(--bg));border-top:1px solid var(--glass-line)}
 .artwork-zoom-controls output {min-width:5ch;color:var(--glass-muted);font-size:13px}
 .artwork-zoom-controls .quiet-button {padding:8px 12px}
+
+.artwork-detail .polished-prompt {margin:14px 0 20px}
+.artwork-detail .polished-prompt .detail-prompt {margin-top:10px;white-space:pre-wrap;font-size:13px;color:var(--glass-muted)}

@@ -56,6 +56,7 @@ export interface Artwork {
   source?: 'local' | 'cloud' | 'quick';
   originalUrl?: string;
   resultWarning?: string;
+  generationPrompt?: string;
   locallySaved?: boolean; downloadError?: string; mimeType?: string;
   taskCreditsCost?: number; referenceBilling?: boolean; estimatedCredits?: number; taskCostSettled?: boolean;
   taskId?: string; ownerId?: string; ownerEmail?: string; ownerName?: string; hiddenAt?: string;
@@ -92,6 +93,7 @@ export interface CloudQuote {
   label: string; additional_input_cost_unknown: boolean;
 }
 export interface CloudRequest extends CloudAnimation {
+  original_prompt?: string;
   background?: 'transparent';
   request_id: string; model: string; operation: CloudOperation; prompt: string; size: string;
   resolution: string; n: number; quality?: string; reference_images: string[];
@@ -103,6 +105,7 @@ export interface CloudTask {
   operation?: CloudOperation; reference_count?: number;
   poll_error?: string; result_warning?: string;
   returned_images?: number;
+  original_prompt?: string;
   error?: string; model: string; prompt: string; parameters: Record<string, unknown>; cost?: unknown; reference_billing?: boolean; estimated_credits?: number | null; credits_cost?: number | null; created_utc: string;
   completed_utc?: string; actual_time?: number;
   studio_task_id?: string; studio_owner_id?: string; studio_owner_email?: string; studio_owner_name?: string; studio_hidden_at?: string;

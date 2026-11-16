@@ -444,6 +444,9 @@ class Gateway:
         fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
         references = await asyncio.to_thread(generation_references, data.get('reference_images', []))
         upstream_data = {**data, 'reference_images': references}
+        original_prompt = upstream_data.pop('original_prompt', data.get('prompt', ''))
+        if not isinstance(original_prompt, str) or len(original_prompt) > 12000:
+            return error('原始提示词无效。')
         if not self.store.claim(tid, user["id"], "cloud", data.get("model"), data.get("n"), fingerprint):
             old = self.store.task(tid)
             if old["owner_id"] != user["id"] or old["fingerprint"] != fingerprint or old.get("hidden_at"):
@@ -453,6 +456,10 @@ class Gateway:
             if not record.get("request_id"):
                 record = {"request_id": tid, "status": "outcome_unknown", "model": old["model"], "prompt": data.get("prompt", ""), "images": [], "error": "提交结果待核对，不会重复提交。"}
             return web.json_response(self.store.public_task(record, old))
+        self.store.update_task(tid, record_json=json.dumps({
+            "request_id": tid, "status": "initializing", "model": data.get("model"),
+            "prompt": data.get("prompt", ""), "original_prompt": original_prompt, "images": []
+        }, ensure_ascii=False))
         try:
             await asyncio.to_thread(save_task_references, self.root, tid, data.get('reference_images', []))
         except (OSError, ValueError):
@@ -463,7 +470,7 @@ class Gateway:
             result = await self.upstream_api(user, "SubmitStudioCloudImage", upstream_data, False)
             if result.get("request_id"):
                 self.save_cloud(user, result)
-                return web.json_response(self.store.public_task(result, self.store.task(tid)))
+                return web.json_response(self.store.public_task(json.loads(self.store.task(tid)["record_json"]), self.store.task(tid)))
             self.store.update_task(tid, status="failed", ended_at=time.time(), record_json=json.dumps({"request_id": tid, "status": "failed", "model": data.get("model"), "prompt": data.get("prompt", ""), "images": [], "error": result.get("error", "提交被拒绝")}, ensure_ascii=False))
             return web.json_response(result)
         except Exception:
@@ -471,6 +478,8 @@ class Gateway:
             return error("提交响应未确认，请刷新任务核对；禁止重复提交。", 502, "outcome_unknown")
 
     def save_cloud(self, owner, record):
+        record = dict(record)
+        record.pop("original_prompt", None)  # Only the authenticated submission can supply this field.
         tid = str(uuid.UUID(record["request_id"]))
         old = self.store.task(tid)
         if old and old["owner_id"] != owner["id"]:
