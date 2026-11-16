@@ -1,7 +1,7 @@
 import { ownImageUrl, type WorkImage } from '../workbench-api';
 import GlassTabs from './GlassTabs';
 import GlassSelect from './GlassSelect';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Artwork, CloudTask, Job } from '../types';
 import { useModalDialog } from '../useModalDialog';
 import Icon from './Icon';
@@ -12,6 +12,7 @@ import { emptyHistoryState, filterArtworks, filterCloudTasks, historyTimestamp, 
 import '../history-refresh.css';
 import { queueEstimateLabel } from '../queue-contract';
 import TaskReferences from './TaskReferences';
+import { ImageDetailPreview } from './QuickPreview';
 import { authRequest } from '../auth';
 
 function historyModelLabel(model: string) {
@@ -122,6 +123,12 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
   const dialog = useRef<HTMLElement>(null);
   const removeDialog = useRef<HTMLElement>(null);
   useModalDialog(Boolean(selected), dialog, () => setSelected(null));
+  useLayoutEffect(() => {
+    const node = dialog.current;
+    if (selected && node && !node.contains(document.activeElement)) {
+      (node.querySelector<HTMLElement>('.detail-preview') ?? node).focus({preventScroll:true});
+    }
+  }, [selected?.id, selected?.url]);
   useModalDialog(Boolean(removing), removeDialog, () => { if (!removeBusy) setRemoving(null); });
   // Older gateways omit owner names. Read the existing admin directory once during a rolling release.
   const needsDirectory = isAdmin && artworks.some(item => item.ownerId && item.ownerName === undefined);
@@ -251,7 +258,7 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
           <span role="status" aria-live="polite">{selectedIndex >= 0 ? (selectedIndex + 1) + ' / ' + visible.length : '当前图片'}</span>
           <button className="quiet-button" aria-disabled={selectedIndex < 0 || selectedIndex >= visible.length - 1} onClick={() => navigateArtwork(1)} title="下一张（→）">下一张<Icon name="chevron" className="next-icon" size={16} /></button>
         </nav>
-        <div className="artwork-full"><ArtworkImage key={selected.id} artwork={selected} /></div>
+        <div className="artwork-full"><ImageDetailPreview key={selected.id + selected.url} image={{url:selected.url,name:selected.prompt || '生成图像',width:selected.width,height:selected.height}} /></div>
         <div className="artwork-detail"><h2>图像详情</h2><p className="detail-prompt">{selected.prompt || '此图像没有提示词记录。'}</p>
           <dl><dt>提交时间</dt><dd><HistoryTime value={selected.generatedAt} /></dd>{historyTimestamp(selected.completedAt) ? <><dt>完成时间</dt><dd><HistoryTime value={selected.completedAt} label="完成时间" /></dd></> : null}{selected.width && selected.height ? <><dt>尺寸</dt><dd>{selected.width} × {selected.height} px</dd></> : null}{selected.seed != null ? <><dt>种子</dt><dd>{selected.seed}</dd></> : null}{selected.steps != null ? <><dt>步数</dt><dd>{selected.steps}</dd></> : null}{selected.duration != null ? <><dt>{selected.source === 'cloud' ? '生成耗时' : '请求耗时'}</dt><dd>{selected.duration.toFixed(1)} 秒</dd></> : null}{selected.model ? <><dt>模型</dt><dd>{selected.model}</dd></> : null}{selected.source === 'cloud' ? <><dt>任务积分</dt><dd>{taskCostLabel(selected.taskCreditsCost, selected.taskCostSettled, selected.referenceBilling, selected.estimatedCredits)}</dd></> : null}</dl>
           {selected.resultWarning && <p className="delivery-warning">{selected.resultWarning}</p>}

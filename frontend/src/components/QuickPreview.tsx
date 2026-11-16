@@ -19,11 +19,11 @@ function geometry(box:Box, image:WorkImage | undefined, view:Camera, fitLimit:nu
 interface PaneProps {
   label:string; image?:WorkImage; backdrop?:string; view:Camera; empty:ReactNode;
   update:(v:Camera)=>void; marks?:SubjectMark[]; onPick?:(p:Point)=>void;
-  onSize?:(width:number,height:number)=>void;
+  onSize?:(width:number,height:number)=>void; onError?:()=>void;
   onFitScale?:(scale:number)=>void; maxZoom:number; fitLimit?:number; actualZoom:number;
 }
 
-function Pane({label,image,backdrop='',view,empty,update,marks,onPick,onSize,onFitScale,maxZoom,fitLimit=1,actualZoom}:PaneProps){
+function Pane({label,image,backdrop='',view,empty,update,marks,onPick,onSize,onError,onFitScale,maxZoom,fitLimit=1,actualZoom}:PaneProps){
   const frame=useRef<HTMLDivElement>(null);
   const gesture=useRef<{id:number; start:Point; left:number; top:number; moved:boolean; select:boolean}|null>(null);
   const [space,setSpace]=useState(false),[dragging,setDragging]=useState(false);
@@ -104,12 +104,12 @@ function Pane({label,image,backdrop='',view,empty,update,marks,onPick,onSize,onF
   const cursor=dragging?'grabbing':space?'grab':onPick?'crosshair':view.zoom>1?'grab':'zoom-in';
   return <figure><figcaption>{label}{image?.width && image.height ? <small>{image.width} × {image.height}{label==='处理结果'?' · PNG':''}</small>:null}</figcaption>
     <div ref={frame} className={'work-preview detail-preview '+backdrop} style={image?{cursor}:undefined}
-      aria-label={label+'预览'} tabIndex={image?0:undefined} onKeyDown={key} onKeyUp={e=>{if(e.code==='Space')setSpace(false);}}
+      aria-label={label+'预览'} tabIndex={image || onError?0:undefined} onKeyDown={key} onKeyUp={e=>{if(e.code==='Space')setSpace(false);}}
       onBlur={()=>setSpace(false)} onPointerDown={down} onPointerMove={move} onPointerUp={up}
       onLostPointerCapture={()=>{gesture.current=null;setDragging(false);}}
       onDoubleClick={e=>{if(!onPick && image)zoomAt(view.zoom>1?1:Math.max(2,actualZoom),local(e.clientX,e.clientY));}}>
       {image?<div className="detail-image" style={{width:image.width||1,height:image.height||1,transform:`translate3d(${g.left}px,${g.top}px,0) scale(${g.fit*view.zoom})`}}>
-        <img src={image.url} alt={label} draggable={false} onLoad={e=>onSize?.(e.currentTarget.naturalWidth,e.currentTarget.naturalHeight)}/>
+        <img src={image.url} alt={label} draggable={false} onError={onError} onLoad={e=>onSize?.(e.currentTarget.naturalWidth,e.currentTarget.naturalHeight)}/>
         </div>:empty}
       {image && marks?.map(({mode,x,y},i)=><span className={'subject-mark '+mode} key={i} style={{left:0,top:0,transform:`translate3d(${g.left+g.width*x}px,${g.top+g.height*y}px,0) translate(-50%,-50%)`}}>{mode==='keep'?'＋':'−'}{i+1}</span>)}
     </div></figure>;
@@ -153,4 +153,29 @@ export default function QuickPreview({source,result,backdrop,marks,onPick,onSize
     <button className="quiet-button" onClick={()=>setView(initialView)}>适应窗口</button>
     <small>滚轮缩放 · 拖动平移</small>
   </div>}</>;
+}
+
+/** Uses the same image camera and pointer handling as the retouch preview. Remount on image change. */
+export function ImageDetailPreview({image}: {image:WorkImage}) {
+  const [view,setView]=useState(initialView);
+  const [size,setSize]=useState({width:image.width,height:image.height});
+  const [fit,setFit]=useState(1);
+  const [loaded,setLoaded]=useState(false),[failed,setFailed]=useState(false);
+  const maxZoom=Math.max(16,4/fit);
+  const ready=loaded && !failed;
+  function scale(value:number){setView(v=>({...v,zoom:clamp(value,1,maxZoom)}));}
+  return <div className={'artwork-viewer'+(!ready?' is-loading':'')}>
+    <Pane label="图像" image={failed?undefined:{...image,...size}} backdrop="checker" view={view} update={setView}
+      maxZoom={maxZoom} actualZoom={1/fit} onFitScale={setFit}
+      onSize={(width,height)=>{setSize({width,height});setLoaded(true);}} onError={()=>setFailed(true)}
+      empty={<p role="alert">图像暂时无法预览，请重新打开或下载原图。</p>} />
+    {!loaded && !failed && <span className="artwork-image-loading" role="status">正在读取原图…</span>}
+    <div className="work-controls preview-tools artwork-zoom-controls" role="group" aria-label="图像缩放">
+      <button className="quiet-button" aria-label="缩小图像" disabled={!ready || view.zoom<=1} onClick={()=>scale(view.zoom/1.5)}>−</button>
+      <output>{ready?Math.round(view.zoom*fit*100)+'%':'—'}</output>
+      <button className="quiet-button" aria-label="放大图像" disabled={!ready || view.zoom>=maxZoom} onClick={()=>scale(view.zoom*1.5)}>＋</button>
+      <button className="quiet-button" title="按实际像素查看（1）" disabled={!ready} onClick={()=>scale(1/fit)}>1:1</button>
+      <button className="quiet-button" disabled={!ready} onClick={()=>setView(initialView)}>适应窗口</button>
+    </div>
+  </div>;
 }
