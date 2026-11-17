@@ -77,12 +77,17 @@ export interface CloudModelCapability {
   ratios: string[]; resolutions: string[]; sizeMap: Record<string, Record<string, [number, number] | null>>;
   maxReferences: number | null; appMaxReferences: number; maxImages: number; qualities: string[];
   exactSize: { supported: boolean; multiple: number; maxSide: number; minPixels: number; maxPixels: number; maxAspect: number } | null;
+  formats?: ('png' | 'gif' | 'svg')[];
 }
-export interface CloudCapabilities { provider: 'apimart'; configured: boolean; models: CloudModelCapability[]; localReadiness?: Record<string, boolean>; }
+export interface LocalModelPolicy {maxImages: number; maxReferences: number; maxSide: number; maxSteps: number}
+export interface CloudCapabilities { provider: 'apimart'; configured: boolean; models: CloudModelCapability[]; localReadiness?: Record<string, boolean>; localPolicies?: Record<string,LocalModelPolicy>; }
+export interface CreditUsage { total: number | null; daily: number | null; used: number; usedToday: number; pending: number; available: number | null }
+export interface StudioQuota extends CreditUsage {models: Record<string,CreditUsage>}
 export interface CloudAccount {
   configured: boolean; state: 'ready' | 'partial' | 'unavailable' | 'not_configured';
   remaining_credits: number | null; account_credits: number | null; token_credits: number | null;
   token_unlimited: boolean; checked_utc: string; error?: string;
+  studio_quota?: StudioQuota;
 }
 export interface CloudAnimation { output_format?: 'gif' | 'svg'; frame_count?: number; frame_duration_ms?: number; }
 export interface CloudQuoteRequest extends CloudAnimation { model: string; size: string; resolution: string; quality?: string; n: number; }

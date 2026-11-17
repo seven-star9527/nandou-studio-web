@@ -27,6 +27,7 @@ from .agent import CreativeAgent
 from .workbench import Workbench, private_history
 from .image_uploads import ImageUploadError, check_upload_batch, generation_references
 from .task_references import reference_directory, save_task_references, task_references
+from .model_management import LOCAL_MODELS, ModelManagement, ModelPolicyError, units
 
 
 COOKIE = "nandou_session"
@@ -94,6 +95,10 @@ class Gateway:
     def __init__(self, root, database, upstream="http://127.0.0.1:7802", reconcile_interval=15):
         self.root = Path(root).resolve()
         self.store = Store(database)
+        catalog = self.root / 'server/SwarmUI/Data/StudioCloudModels.json'
+        if not catalog.is_file():
+            catalog = Path(__file__).resolve().parents[1] / 'integrations/swarm/overlay/Data/StudioCloudModels.json'
+        self.models = ModelManagement(self.store, json.loads(catalog.read_text(encoding='utf-8-sig'))['models'])
         self.upstream = upstream.rstrip("/")
         self.output = self.root / "server/SwarmUI/Output"
         self.results = self.root / "server/SwarmUI/src/wwwroot/studio-results"
@@ -131,6 +136,8 @@ class Gateway:
             self.store.touch(user, request.remote or "unknown")
         try:
             response = await handler(request)
+        except ModelPolicyError as exc:
+            response = error(str(exc), exc.status, exc.code)
         except ImageUploadError as exc:
             response = error(str(exc), 400, exc.code)
         except (ValueError, json.JSONDecodeError):
@@ -234,6 +241,10 @@ class Gateway:
         user = request["user"]
         if action == "me" and request.method == "GET":
             return web.json_response({"user": public_user(user), "admin_entry": local_entry(request)})
+        if action == 'admin/model-management':
+            if not user or user['role'] != 'admin' or not local_entry(request):
+                return error('无法访问。', 403)
+            return await self.model_management(request)
         if action == "history" and request.method == "GET":
             if not user:
                 return error("请先登录。", 401)
@@ -378,10 +389,21 @@ class Gateway:
             return result
 
     async def upstream_api(self, user, endpoint, data=None, retry_read=True):
+        internal_dispatch = endpoint == 'SubmitStudioCloudImage' and data is not None and 'studio_official_only' not in data
+        if internal_dispatch:
+            tid = str(uuid.UUID(data['request_id']))
+            try:
+                data = await self.managed_dispatch(user,tid,tid,data)
+            except ModelPolicyError as exc:
+                return {'error': str(exc), 'error_id': exc.code}
         session = self.sessions.get(user["id"]) or await self.new_session(user)
         value = {"session_id": session["session_id"], **(data or {})}
         async with self.client.post(self.upstream + "/API/" + endpoint, json=value, headers={"X-SWARM-USER_ID": user["swarm_id"]}) as response:
             result = await response.json()
+        if endpoint in {'SubmitStudioCloudImage','GetStudioCloudTask'} and data and result.get('request_id') == data.get('request_id'):
+            self.models.settle(result)
+        elif internal_dispatch and result.get('error'):
+            self.models.settle({'request_id':data['request_id'],'status':'failed','credits_cost':0})
         if result.get("error_id") == "invalid_session_id" and retry_read and endpoint not in {"SubmitStudioCloudImage", "PolishStudioPrompt", "InterruptAll"}:
             await self.new_session(user)
             return await self.upstream_api(user, endpoint, data, False)
@@ -416,6 +438,8 @@ class Gateway:
             return web.json_response({"files": self.local_history(user), "folders": []})
         if endpoint == "SubmitStudioCloudImage":
             return await self.submit_cloud(user, data)
+        if endpoint == 'GetStudioCloudAccount' and user['role'] != 'admin':
+            return web.json_response({'studio_quota': self.models.snapshot(user['id'])})
         if endpoint == "GetStudioCloudTask":
             task = self.store.task(str(data.get("request_id", "")))
             if not self.store.task_visible(task, user) or task["kind"] != "cloud":
@@ -429,18 +453,94 @@ class Gateway:
         if endpoint == "ListStudioCloudTasks":
             await self.synchronize(user)
             return web.json_response({"tasks": self.cloud_history(user)})
+        if endpoint == 'GetStudioCloudQuote':
+            self.models.validate(user, {'operation':'generate', **data})
         result = await self.upstream_api(user, endpoint, data, endpoint != "PolishStudioPrompt")
+        if endpoint == 'GetStudioCloudCapabilities':
+            result = self.models.public_models(result,user)
+        if endpoint == 'ListT2IParams' and user['role'] != 'admin' and isinstance(result.get('models'),dict):
+            entries = result['models'].get('Stable-Diffusion',[])
+            result['models'] = {'Stable-Diffusion': [entry for entry in entries if entry[0] in LOCAL_MODELS and self.models.model(entry[0])['enabled']]}
         if endpoint == "GetCurrentStatus":
             result["studio_queue"] = self.local_queue.latest(user["id"])
             result["studio_task"] = self.local_queue.latest_task(user["id"])
         return web.json_response(result)
 
+    async def model_management(self, request):
+        if request.method == 'POST':
+            body = await self.body(request)
+            action = body.get('action')
+            if action == 'save-model' and set(body) == {'action','model','policy'}:
+                self.models.set_model(body['model'],body['policy'])
+            elif action == 'save-limits' and set(body) == {'action','account','limits'}:
+                self.models.set_limits(body['account'],body['limits'])
+            elif action == 'reset-user' and set(body) == {'action','account'} and isinstance(body['account'],str):
+                return web.json_response({'reset': self.models.reset(body['account'])})
+            elif action == 'reset-all' and set(body) == {'action','confirm'} and body['confirm'] is True:
+                return web.json_response({'reset': self.models.reset()})
+            else:
+                raise ValueError('invalid model action')
+        elif request.method != 'GET':
+            raise web.HTTPMethodNotAllowed(request.method,['GET','POST'])
+        return web.json_response({'models': [{'supported': m, 'policy': self.models.model(m['id'])} for m in self.models.catalog.values()],
+            'users': [{**row, 'quota': self.models.snapshot(row['id'])} for row in self.store.all("SELECT id,email,name FROM users WHERE role!='admin' ORDER BY name,email")]})
+
+    async def managed_dispatch(self, user, tid, parent, data):
+        self.models.validate(user,data)
+        estimate = None
+        if user['role'] != 'admin' and self.models.has_limit(user['id'], data['model']):
+            params = {k:v for k,v in data.items() if k in {'model','size','resolution','quality','n','output_format','frame_count','frame_duration_ms'}}
+            try:
+                quote = await self.upstream_api(user,'GetStudioCloudQuote',params)
+                if not quote.get('stale') and not quote.get('error'):
+                    estimate = units(quote.get('credits_total_reference'))
+                    if estimate is None and type(params.get('n')) is int:
+                        high = units(quote.get('max_credits_per_image'))
+                        estimate = None if high is None else high * params['n']
+            except (ClientError, asyncio.TimeoutError, ConnectionError):
+                pass
+        official_only = self.models.reserve(user,tid,parent,data,estimate)
+        if official_only:
+            try:
+                capabilities = await self.upstream_api(user,'GetStudioCloudCapabilities')
+                if capabilities.get('studioCreditGuard') != 1:
+                    raise ConnectionError('cloud credit guard is not available')
+            except (ClientError, asyncio.TimeoutError, ConnectionError):
+                self.models.settle({'request_id':tid,'status':'failed','credits_cost':0})
+                raise ModelPolicyError('备用通道的积分保护尚未就绪。本次未提交。','credit_guard_unavailable',503)
+        return {**data, 'studio_official_only': official_only}
+
+    async def cloud_quote(self, user, data):
+        params = {k: v for k, v in data.items() if k in {'model', 'size', 'resolution', 'quality', 'n', 'output_format', 'frame_count', 'frame_duration_ms'}}
+        first = await self.upstream_api(user, 'GetStudioCloudQuote', params)
+        workflow = (data.get('retouch_category') is not None or ai_retouch.wants_retouch(data.get('prompt', ''))) and data.get('operation') == 'edit'
+        transparent = data.get('background') == 'transparent' or bool(re.search(r'透明(?:底|背景|PNG)|transparent', data.get('prompt', ''), re.I))
+        if not workflow or transparent or data.get('n') != 1 or data.get('output_format', 'png') != 'png':
+            return first
+        second = await self.upstream_api(user, 'GetStudioCloudQuote', ai_retouch.rebuild_options(data.get('size', '1:1')))
+        if first.get('error') or second.get('error'):
+            return {'error': '精修与去纹报价暂不可用，请稍后重试。'}
+        result = dict(first)
+        for key in ('credits_total_reference', 'credits_per_image', 'min_credits_per_image', 'max_credits_per_image'):
+            a, b = first.get(key), second.get(key)
+            result[key] = round(a + b, 8) if isinstance(a, (int, float)) and isinstance(b, (int, float)) else None
+        result.update(label='包含精修与 AI 去纹，输入费用另计；按实际用量结算', stale=bool(first.get('stale') or second.get('stale')),
+                      additional_input_cost_unknown=True)
+        return result
+
     async def submit_cloud(self, user, data):
+        if 'studio_official_only' in data:
+            return error('预留策略由服务端配置。', 400)
         if not inline_references(data.get("reference_images", []), 16):
             return error("参考图必须为上传的内联图像，不能使用文件路径或图片链接。")
         tid = str(uuid.UUID(str(data.get("request_id", ""))))
         if tid != data.get("request_id"):
             raise ValueError("canonical UUID required")
+        if not self.store.task(tid):
+            try:
+                self.models.validate(user,data)
+            except ModelPolicyError as exc:
+                return error(str(exc),exc.status,exc.code)
         fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
         references = await asyncio.to_thread(generation_references, data.get('reference_images', []))
         upstream_data = {**data, 'reference_images': references}
@@ -465,12 +565,19 @@ class Gateway:
         except (OSError, ValueError):
             self.store.update_task(tid, status='failed', ended_at=time.time(), credits=0)
             return error('参考图保存失败，未提交生成。', 503, 'reference_save_failed')
+        try:
+            upstream_data = await self.managed_dispatch(user,tid,tid,upstream_data)
+        except ModelPolicyError as exc:
+            self.store.update_task(tid,status='failed',ended_at=time.time(),credits=0,
+                record_json=json.dumps(dict(request_id=tid,model=data.get('model'),status='failed',images=[],error=str(exc),error_id=exc.code,credits_cost=0)))
+            return error(str(exc),exc.status,exc.code)
         self.store.update_task(tid, status="submitting", record_json=json.dumps({"request_id": tid, "model": data.get("model"), "prompt": data.get("prompt", ""), "status": "submitting", "images": []}, ensure_ascii=False))
         try:
             result = await self.upstream_api(user, "SubmitStudioCloudImage", upstream_data, False)
             if result.get("request_id"):
                 self.save_cloud(user, result)
                 return web.json_response(self.store.public_task(json.loads(self.store.task(tid)["record_json"]), self.store.task(tid)))
+            self.models.settle({'request_id':tid,'status':'failed','credits_cost':0})
             self.store.update_task(tid, status="failed", ended_at=time.time(), record_json=json.dumps({"request_id": tid, "status": "failed", "model": data.get("model"), "prompt": data.get("prompt", ""), "images": [], "error": result.get("error", "提交被拒绝")}, ensure_ascii=False))
             return web.json_response(result)
         except Exception:
@@ -487,6 +594,7 @@ class Gateway:
         if old and old["status"] in TERMINAL and record.get("status") not in TERMINAL:
             # A concurrent list read can finish after the terminal status was recorded.
             return
+        self.models.settle(record)
         if not old:
             self.store.claim(tid, owner["id"], "cloud", record.get("model"), record.get("parameters", {}).get("n"))
             try:
@@ -693,6 +801,7 @@ class Gateway:
             count = int(data.get("images", 1))
             if not 1 <= count <= 4:
                 raise ValueError("生成数量超出范围")
+            self.models.validate(user,data,local=True)
             metadata = data.get("extra_metadata", {})
             if not isinstance(metadata, dict):
                 raise ValueError("invalid metadata")
@@ -712,6 +821,9 @@ class Gateway:
         except ImageUploadError as exc:
             if not socket.closed:
                 await socket.send_json({"error": str(exc), "error_id": exc.code, "socket_intention": "close"})
+        except ModelPolicyError as exc:
+            if not socket.closed:
+                await socket.send_json({'error':str(exc),'error_id':exc.code,'socket_intention':'close'})
         except (ValueError, KeyError) as exc:
             messages = {
                 '会话不属于当前账号': ('图像会话无效，请重新连接图像服务。', 'invalid_session_id'),

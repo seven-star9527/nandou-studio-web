@@ -58,6 +58,17 @@ export function useStudio(account: string) {
   const loadCloudCapabilities = cloud.loadCapabilities;
   const refreshCloudTasks = cloud.refreshTasks;
   const cloudModel = cloud.capabilities?.models.find(model => model.id === cloudModelId);
+  const localPolicy = cloud.capabilities?.localPolicies?.[settings.model];
+  useEffect(() => {
+    if (!cloud.capabilities || cloudModelId === null || cloudModel) return;
+    const next = cloud.capabilities.models[0];
+    if (!next) { setCloudModelId(null); return; }
+    const resolution = next.resolutions[0];
+    const ratio = next.ratios.includes('1:1') ? '1:1' : next.ratios[0];
+    setCloudModelId(next.id);
+    setSettings(previous=>({...previous,ratio,resolution,...cloudDimensions(next,ratio,resolution),count:1,
+      outputFormat:next.formats?.[0] ?? 'png',quality:next.qualities.includes('medium')?'medium':next.qualities[0] ?? ''}));
+  }, [cloud.capabilities,cloudModelId,cloudModel]);
   const creditQuote = useCloudQuote(client, connected, cloudModel, settings);
   const displayJob = cloud.job && (!job || cloud.job.started > job.started) ? cloud.job : job;
   const backendReady = ['running', 'some_loading'].includes(status.backend_status?.status ?? '');
@@ -277,7 +288,7 @@ export function useStudio(account: string) {
     setCloudModelId(id);
     const ratio = model.ratios.includes('1:1') ? '1:1' : model.ratios[0];
     const resolution = model.resolutions[0];
-    setSettings(previous => ({ ...previous, outputFormat: 'png', ratio, resolution, ...cloudDimensions(model, ratio, resolution), count: Math.min(previous.count, model.maxImages), quality: model.qualities.includes('medium') ? 'medium' : model.qualities[0] ?? '' }));
+    setSettings(previous => ({ ...previous, outputFormat: model.formats?.[0] ?? 'png', ratio, resolution, ...cloudDimensions(model, ratio, resolution), count: Math.min(previous.count, model.maxImages), quality: model.qualities.includes('medium') ? 'medium' : model.qualities[0] ?? '' }));
   };
   const selectLocal = () => {
     setCloudModelId(null);
@@ -450,7 +461,7 @@ export function useStudio(account: string) {
     ready: connected && presetsInitialized && (cloudModelId !== null ? Boolean(cloudModel && cloud.capabilities?.configured) : Boolean(settings.model) && backendReady && localReady && !configurationError),
     presetControls: {presets, presetsLoaded: presetsRead, initialized: presetsInitialized, busy: presetBusy, error: presetError, read: readPresets, change: changePreset, apply: applyPreset, cloudModelId},
     settings, setSettings, references, prompt, setPrompt, minReferences, setTemplate, draftReady, draftError, history, job: displayJob, loadingHistory,
-    cloudModel, cloudModels: cloud.capabilities?.models ?? [], cloudConfigured: Boolean(cloud.capabilities?.configured), cloudCapabilityError: cloud.capabilityError, cloudTasks: cloud.tasks,
+    cloudModel, localPolicy, cloudModels: cloud.capabilities?.models ?? [], cloudConfigured: Boolean(cloud.capabilities?.configured), cloudCapabilityError: cloud.capabilityError, cloudTasks: cloud.tasks,
     cloudAccount: cloud.account, accountLoading: cloud.accountLoading, accountError: cloud.accountError, refreshAccount: cloud.loadAccount, creditQuote,
     connect, refreshHistory, hideTask, setGeometry, addReferences, appendReference, removeReference, reorderReferences, selectModel, selectCloudModel, selectLocal, generate, stop, reuse,
     modes: availableModes(models, config),

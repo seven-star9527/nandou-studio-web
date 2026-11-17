@@ -46,6 +46,11 @@ export function useCloudStudio(client: SwarmClient, receiveArtwork: (artwork: Ar
     try { const value = await client.cloudCapabilities(); if (mounted.current) { setCapabilities(value); setCapabilityError(''); void loadAccount(); } }
     catch (error) { if (mounted.current) setCapabilityError(error instanceof Error ? error.message : String(error)); }
   }, [client, loadAccount]);
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') void loadAccount(); };
+    document.addEventListener('visibilitychange',refresh);
+    return () => document.removeEventListener('visibilitychange',refresh);
+  }, [loadAccount]);
   const acceptTask = useCallback((task: CloudTask) => {
     if (!mounted.current || hidden.current.has(task.studio_task_id ?? task.request_id)) return;
     acknowledge(task);

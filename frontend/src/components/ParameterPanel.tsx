@@ -1,8 +1,8 @@
 import GlassTabs from './GlassTabs';
 import { motion, useReducedMotion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { megapixels, RATIOS, RESOLUTIONS, snap32 } from '../resolution-policy';
-import type { CloudModelCapability, DeploymentConfig, GenerationSettings, RatioId, ResolutionId } from '../types';
+import { dimensions, megapixels, RATIOS, RESOLUTIONS, snap32 } from '../resolution-policy';
+import type { CloudModelCapability, DeploymentConfig, GenerationSettings, LocalModelPolicy, RatioId, ResolutionId } from '../types';
 import Icon from './Icon';
 
 function navigateChoices(event: ReactKeyboardEvent<HTMLDivElement>) {
@@ -16,9 +16,10 @@ function navigateChoices(event: ReactKeyboardEvent<HTMLDivElement>) {
   choices[index].click(); choices[index].focus();
 }
 
-export default function ParameterPanel({ settings, config, cloudModel, setGeometry, update, close }: {
+export default function ParameterPanel({ settings, config, cloudModel, localPolicy, setGeometry, update, close }: {
   settings: GenerationSettings; config: DeploymentConfig;
   cloudModel?: CloudModelCapability;
+  localPolicy?: LocalModelPolicy;
   setGeometry: (ratio: RatioId, resolution: ResolutionId) => void;
   update: (changes: Partial<GenerationSettings>) => void; close: () => void;
 }) {
@@ -47,13 +48,17 @@ export default function ParameterPanel({ settings, config, cloudModel, setGeomet
   const custom = (key: 'width' | 'height', value: string) => {
     const number = Number(value);
     const multiple = cloudModel?.exactSize?.multiple ?? 32;
-    if (Number.isFinite(number) && number > 0) update({ [key]: cloudModel ? Math.max(multiple, Math.round(number / multiple) * multiple) : snap32(number), ratio: 'custom' });
+    if (Number.isFinite(number) && number > 0) update({ [key]: cloudModel ? Math.max(multiple, Math.round(number / multiple) * multiple) : Math.min(snap32(number), Math.floor((localPolicy?.maxSide ?? 4096)/32)*32), ratio: 'custom' });
   };
   const ratioOptions = cloudModel ? cloudModel.ratios.map(id => {
     const [w, h] = id.split(':').map(Number);
     return { id, label: id === 'auto' ? '智能' : id, ratio: w > 0 && h > 0 ? w / h : 1 };
   }) : RATIOS;
-  const resolutionOptions = cloudModel ? cloudModel.resolutions.map(id => ({ id })) : RESOLUTIONS;
+  const resolutionOptions = cloudModel ? cloudModel.resolutions.map(id => ({ id })) : RESOLUTIONS.filter(({id})=>{
+    if(!localPolicy) return true;
+    const {width,height}=dimensions(settings.ratio==='custom'?'1:1':settings.ratio,id);
+    return Math.max(width,height)<=localPolicy.maxSide;
+  });
   const allowsCustom = !cloudModel || cloudModel.exactSize?.supported;
   const knownSize = settings.width > 0 && settings.height > 0;
   const capability = (id: ResolutionId) => config.resolutions?.[id] ?? (id === '1K'
@@ -63,7 +68,7 @@ export default function ParameterPanel({ settings, config, cloudModel, setGeomet
     <button className="icon-button panel-close" onClick={close} aria-label="关闭尺寸设置"><Icon name="close" size={16} /></button>
     {cloudModel?.id.startsWith('gpt-image-2.6-') && <fieldset><legend>输出格式</legend>
       <GlassTabs className="segmented" role="radiogroup" aria-label="输出格式" onKeyDown={navigateChoices}>
-        {(['png','gif','svg'] as const).map(format => <button key={format} role="radio" aria-checked={(settings.outputFormat ?? 'png') === format} className={(settings.outputFormat ?? 'png') === format ? 'selected' : ''} onClick={() => update({outputFormat: format, ...(format === 'svg' ? {count: 1} : {})})}>{format === 'gif' ? 'GIF 动图' : format === 'svg' ? 'SVG 矢量图' : '静态 PNG'}</button>)}
+        {(cloudModel.formats ?? ['png','gif','svg'] as const).map(format => <button key={format} role="radio" aria-checked={(settings.outputFormat ?? 'png') === format} className={(settings.outputFormat ?? 'png') === format ? 'selected' : ''} onClick={() => update({outputFormat: format, ...(format === 'svg' ? {count: 1} : {})})}>{format === 'gif' ? 'GIF 动图' : format === 'svg' ? 'SVG 矢量图' : '静态 PNG'}</button>)}
       </GlassTabs>{settings.outputFormat === 'svg' && <><label><input type="checkbox" checked={!!settings.svgTransparent} onChange={e => update({svgTransparent:e.target.checked})}/>指定透明背景</label><p className="panel-note">每次一张，按图像与 gpt-5.4-mini 写作用量分别计费。</p></>}</fieldset>}
     {settings.outputFormat === 'gif' && cloudModel?.id.startsWith('gpt-image-2.6-') ? <fieldset><legend>动图规格</legend>
       <div className="advanced-fields">
@@ -105,7 +110,7 @@ export default function ParameterPanel({ settings, config, cloudModel, setGeomet
     <fieldset>
       <legend>生成数量</legend>
       <GlassTabs className="segmented" role="radiogroup" aria-label="生成数量" onKeyDown={navigateChoices}>
-        {Array.from({ length: settings.outputFormat === 'svg' ? 1 : cloudModel?.maxImages ?? 4 }, (_, index) => index + 1).map(count => <button key={count} role="radio" tabIndex={settings.count === count ? 0 : -1} aria-checked={settings.count === count} className={settings.count === count ? 'selected' : ''} onClick={() => update({ count })}>{count}</button>)}
+        {Array.from({ length: settings.outputFormat === 'svg' ? 1 : cloudModel?.maxImages ?? localPolicy?.maxImages ?? 4 }, (_, index) => index + 1).map(count => <button key={count} role="radio" tabIndex={settings.count === count ? 0 : -1} aria-checked={settings.count === count} className={settings.count === count ? 'selected' : ''} onClick={() => update({ count })}>{count}</button>)}
       </GlassTabs>
     </fieldset>
   </motion.div>;

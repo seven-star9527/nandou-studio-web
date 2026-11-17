@@ -87,6 +87,7 @@ public static partial class StudioCloudAPI
                     continue;
                 }
                 record["status"] = status >= 500 || status == 408 ? "outcome_unknown" : "failed";
+                if ((string)record["status"] == "failed") record["credits_cost"] = 0;
                 record["error"] = status switch
                 {
                     401 or 403 => "模型访问被拒绝，请管理员检查密钥和模型权限。",
@@ -133,7 +134,9 @@ public static partial class StudioCloudAPI
             return;
         }
         record["status"] = "failed";
-        record["error"] = "所有生图密钥额度已耗尽，备用密钥尚未配置。";
+        record["error"] = (bool?)input["studio_official_only"] == true
+            ? "官方直连额度已用完，当前用户积分不足，未切换到备用服务。"
+            : "所有生图密钥额度已耗尽，备用密钥尚未配置。";
         record["credits_cost"] = 0;
         Save(user, record);
     }

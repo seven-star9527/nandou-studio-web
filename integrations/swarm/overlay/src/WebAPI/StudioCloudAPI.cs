@@ -52,6 +52,7 @@ public static partial class StudioCloudAPI
     {
         JObject caps = Capabilities;
         caps["provider"] = "apimart";
+        caps["studioCreditGuard"] = 1;
         caps["configured"] = Key().Length > 0 || OfficialKeys().Length > 0;
         string models = Path.Combine(Root, "models/qwen-image-2.1");
         bool commonReady = File.Exists(Path.Combine(models, "text_encoders/qwen3vl_8b_int8_convrot.safetensors")) && File.Exists(Path.Combine(models, "vae/qwen_image_2.1_vae_bf16.safetensors"));
@@ -232,7 +233,8 @@ public static partial class StudioCloudAPI
         JObject body;
         try { id = Id((string)rawInput["request_id"]); body = ValidateRequest(rawInput, Capabilities); }
         catch (Exception e) when (e is ArgumentException or FormatException) { return Error(e.Message); }
-        string key = Key();
+        bool officialOnly = (bool?)rawInput["studio_official_only"] == true;
+        string key = officialOnly ? "" : Key();
         string[] keys = CanUseOfficial(body, rawInput) ? OfficialKeys() : [];
         var gate = Lock(user, id);
         await gate.WaitAsync();
@@ -242,7 +244,9 @@ public static partial class StudioCloudAPI
             string fingerprint = RequestFingerprint(rawInput);
             JObject record = Read(user, id);
             if (record is not null) return (string)record["fingerprint"] == fingerprint ? Public(record) : Error("同一request_id不能用于不同请求");
-            if (keys.Length == 0 && key.Length == 0) return Error("此模型或格式尚未配置可用的生图密钥", "cloud_not_configured");
+            if (keys.Length == 0 && key.Length == 0) return officialOnly
+                ? Error("可用积分不足，且当前模型没有官方直连通道。", "credit_limit")
+                : Error("此模型或格式尚未配置可用的生图密钥", "cloud_not_configured");
             record = new() { ["request_id"] = id, ["fingerprint"] = fingerprint, ["status"] = "uploading", ["model"] = body["model"], ["prompt"] = body["prompt"], ["operation"] = rawInput["operation"], ["parameters"] = body.DeepClone(), ["reference_count"] = (rawInput["reference_images"] as JArray)?.Count ?? 0, ["created_utc"] = DateTime.UtcNow.ToString("o"), ["images"] = new JArray() };
             Save(user, record);
             if (keys.Length > 0)
@@ -303,12 +307,14 @@ public static partial class StudioCloudAPI
         }
         catch (ProviderError e)
         {
-            record["status"] = submitted && e.Code >= 500 ? "outcome_unknown" : "failed";
+            record["status"] = submitted && (e.Code >= 500 || e.Code == 408) ? "outcome_unknown" : "failed";
+            if ((string)record["status"] == "failed") record["credits_cost"] = 0;
             record["error"] = e.SafeMessage;
         }
         catch
         {
             record["status"] = submitted ? "outcome_unknown" : "failed";
+            if (!submitted) record["credits_cost"] = 0;
             record["error"] = submitted ? "提交响应未确认，禁止自动重发；请核对APIMart任务记录" : "参考图上传失败，未提交生成任务";
         }
         Save(user, record);

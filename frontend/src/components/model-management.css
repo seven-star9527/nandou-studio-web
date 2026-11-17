@@ -1,0 +1,9 @@
+.modal.admin-usage.model-management{display:grid;align-content:start;gap:16px;width:min(760px,calc(100vw - 48px));padding:22px;overflow:auto;max-height:calc(100dvh - 48px)}
+.model-management-form{display:grid;justify-items:start;gap:14px}
+.model-management-form fieldset{width:100%;margin:0;border:1px solid var(--glass-line);border-radius:12px;padding:12px;min-width:0}
+.model-management-form legend{padding:0 5px;color:var(--glass-muted)}
+.model-management-options{display:flex;gap:9px 16px;align-items:center;flex-wrap:wrap}
+.model-management-options [aria-pressed=true]{border-color:var(--glass-accent);color:var(--glass-accent)}
+.model-management-field{display:grid;gap:6px;max-width:100%}
+.model-management-field :is(input,select){border:1px solid var(--glass-line);border-radius:10px;padding:7px 10px;background:var(--glass-control);color:var(--glass-ink);min-width:0}
+.model-management-field input{width:135px}

@@ -6,7 +6,7 @@ import { useCallback, useId, useRef, useState } from 'react';
 import { useDismissibleLayer } from '../useDismissibleLayer';
 import { availableModes } from '../generation-contract';
 import { referenceLimit } from '../cloud-contract';
-import type { CloudModelCapability, CloudQuote, DeploymentConfig, GenerationSettings, Model, ParamSchema, RatioId, ReferenceImage, ResolutionId } from '../types';
+import type { CloudModelCapability, CloudQuote, DeploymentConfig, GenerationSettings, LocalModelPolicy, Model, ParamSchema, RatioId, ReferenceImage, ResolutionId } from '../types';
 import Icon from './Icon';
 import ParameterPanel from './ParameterPanel';
 import GenerationPresets from './GenerationPresets';
@@ -25,7 +25,7 @@ const modelDescriptions: Record<string, string> = {
 };
 
 export default function Composer({ openBoard, editorRef, settings, config, params, models, prompt, references, editing, setPrompt, update,
-  setGeometry, addReferences, reorderReferences, removeReference, selectModel, selectLocal, selectCloud, cloudModel, cloudModels, cloudConfigured, cloudCapabilityError, creditQuote, presetControls, polisher, generate, busy, ready }: {
+  setGeometry, addReferences, reorderReferences, removeReference, selectModel, selectLocal, selectCloud, cloudModel, localPolicy, cloudModels, cloudConfigured, cloudCapabilityError, creditQuote, presetControls, polisher, generate, busy, ready }: {
   settings: GenerationSettings; config: DeploymentConfig; params: ParamSchema[]; models: Model[];
   openBoard: (image: WorkImage) => void;
   editorRef: Ref<PromptEditorHandle>; prompt: string; references: ReferenceImage[]; editing: boolean;
@@ -35,6 +35,7 @@ export default function Composer({ openBoard, editorRef, settings, config, param
   addReferences: (files: FileList | File[]) => Promise<void>; removeReference: (id: string) => void; reorderReferences: (images: ReferenceImage[]) => void;
   selectModel: (model: string) => void; generate: () => void; busy: boolean; ready: boolean;
   selectLocal: () => void; selectCloud: (id: string) => void; cloudModel?: CloudModelCapability; cloudModels: CloudModelCapability[]; cloudConfigured: boolean; cloudCapabilityError: string;
+  localPolicy?: LocalModelPolicy;
   creditQuote: { quote: CloudQuote | null; loading: boolean; error: string };
   polisher: ReactNode;
   presetControls: ReturnType<typeof useStudio>['presetControls'];
@@ -50,7 +51,7 @@ export default function Composer({ openBoard, editorRef, settings, config, param
   const modes = availableModes(models, config);
   const mode = modes.find(item => item.model === settings.model);
   const ratioLabel = ['smart', 'auto'].includes(settings.ratio) ? '智能' : settings.ratio === 'custom' ? '自定义' : settings.ratio;
-  const maxReferences = cloudModel ? referenceLimit(cloudModel) : config.maxReferences ?? 3;
+  const maxReferences = cloudModel ? referenceLimit(cloudModel) : Math.min(localPolicy?.maxReferences ?? Infinity, config.maxReferences ?? 3);
   const steps = params.find(param => param.id === 'steps');
   const cfg = params.find(param => param.id === 'cfgscale');
 
@@ -100,7 +101,7 @@ export default function Composer({ openBoard, editorRef, settings, config, param
               <GlassTabs className="segmented mode-options">{modes.map(item => <button key={item.id} className={item.model === settings.model ? 'selected' : ''} onClick={() => selectModel(item.model)}>{item.label}</button>)}</GlassTabs>
               {mode?.detail ? <p className="panel-note">{mode.detail}</p> : null}
               <div className="advanced-fields">
-                <label>采样步数<input type="number" min={steps?.min ?? 1} max={steps?.max ?? 200} value={settings.steps} onChange={event => update({ steps: Number(event.target.value) })} /></label>
+                <label>采样步数<input type="number" min={steps?.min ?? 1} max={Math.min(localPolicy?.maxSteps ?? Infinity, steps?.max ?? 200)} value={settings.steps} onChange={event => update({ steps: Number(event.target.value) })} /></label>
                 <label>提示词引导<input type="number" min={cfg?.min ?? 0} max={cfg?.max ?? 100} step="0.1" value={settings.cfg} onChange={event => update({ cfg: Number(event.target.value) })} /></label>
                 <label className="seed-field">种子<span><input inputMode="numeric" value={settings.seed} onChange={event => update({ seed: event.target.value })} /><button className="icon-button" title="随机种子" aria-label="设为随机种子" onClick={() => update({ seed: '-1' })}><Icon name="refresh" size={16} /></button></span></label>
               </div>
@@ -112,7 +113,7 @@ export default function Composer({ openBoard, editorRef, settings, config, param
             <button className={`toolbar-button size-button ${panel === 'size' ? 'active' : ''}`} aria-expanded={panel === 'size'} data-layer-trigger onClick={() => setPanel(panel === 'size' ? null : 'size')}>
               <Icon name="expand" size={17} /><span>{settings.outputFormat === 'gif' ? `GIF · ${settings.gifWidth ?? 512}×${settings.gifHeight ?? 512}` : `${settings.outputFormat === 'svg' ? 'SVG · ' : ''}${ratioLabel} · ${settings.resolution}`}<span className="control-dot">·</span>{settings.count} 张</span><Icon name="chevron" size={13} />
             </button>
-            <AnimatePresence>{panel === 'size' ? <ParameterPanel key="size" settings={settings} config={config} cloudModel={cloudModel} update={update} setGeometry={setGeometry} close={closePanel} /> : null}</AnimatePresence>
+            <AnimatePresence>{panel === 'size' ? <ParameterPanel key="size" settings={settings} config={config} cloudModel={cloudModel} localPolicy={localPolicy} update={update} setGeometry={setGeometry} close={closePanel} /> : null}</AnimatePresence>
           </div>
           <GenerationPresets controls={presetControls} settings={settings} modelLabel={cloudModel?.label ?? `Qwen · ${mode?.label ?? '本地'}`}/>
         </div>
