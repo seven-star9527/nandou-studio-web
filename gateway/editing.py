@@ -181,9 +181,9 @@ class Editing:
         option='|'.join((category,background,'0','center' if center else 'frame'))
         retouch_settings(option)
         if designer:
-            if background!='white' or center:
-                return {'error':'设计师白底工作流保留原图构图，请选白底且关闭居中。'}
-            return await self.edit({'ref_id':aid,'engine':'photocraft','designer':category,'steps':[],'format':'png'},
+            if background!='white':
+                return {'error':'设计师白底工作流需要白色背景。'}
+            return await self.edit({'ref_id':aid,'engine':'photocraft','designer':category,'center':center,'steps':[],'format':'png'},
                                    cid,tid,user,ctx)
         return await self.edit({'ref_id':aid,'engine':'photocraft','retouch':option,'steps':[],'format':'png'},
                                cid,tid,user,ctx)
@@ -356,7 +356,7 @@ class Editing:
                         self.update(jid,'running',i+1)
                     async with self.connection(folder,False) as editor:
                         category=await designer_workflow.render(editor,self.agent.g.workbench.cutout_model,local,folder,args['designer'],
-                            lambda i:emit('edit_step',phase(i,'running')),complete)
+                            lambda i:emit('edit_step',phase(i,'running')),complete,center=args.get('center',False))
                         label={'brush':'画笔','paper':'水彩纸／本','palette':'调色盘','paint':'颜料','toy':'玩具','miniature':'微缩模型','general':'通用商品'}[category]
                         origin='自动识别' if args['designer']=='auto' else '手动指定'
                         emit('notice',{'text':f'{origin}采用「{label}」精修。'})

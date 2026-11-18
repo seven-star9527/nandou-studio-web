@@ -126,7 +126,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
       field?.focus({preventScroll:true});field?.scrollIntoView({block:'center',behavior:'instant'});
     });
   };
-  const busy = isBusy(studio.job);
+  const busy = isBusy(studio.job) || studio.polishing;
   const connectedLabel = studio.connecting ? '连接中' : studio.connected ? '已连接' : '未连接';
   return <div className="app-shell">
     <header className="app-header"><a className="brand" href="/studio/" aria-label="Nandou Studio 首页"><img className="brand-logo" src={`${import.meta.env.BASE_URL}brand/nandou-mark-on-dark.svg`} width="34" height="34" alt="" /><span>Nandou Studio</span></a>
@@ -160,10 +160,10 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
           setGeometry={(ratio, resolution) => studio.setGeometry(ratio, resolution, editing)} addReferences={studio.addReferences} reorderReferences={studio.reorderReferences} removeReference={studio.removeReference} selectModel={studio.selectModel}
           selectLocal={studio.selectLocal} selectCloud={studio.selectCloudModel} cloudModel={studio.cloudModel} localPolicy={studio.localPolicy} cloudModels={studio.cloudModels} cloudConfigured={studio.cloudConfigured} cloudCapabilityError={studio.cloudCapabilityError}
           creditQuote={studio.creditQuote} presetControls={studio.presetControls}
-          polisher={<PromptPolisher client={studio.client} prompt={readablePrompt} setPrompt={value => studio.setPrompt(bindMentions(value, studio.references))} width={studio.settings.width} height={studio.settings.height} model={studio.cloudModel?.id ?? studio.settings.model} referenceCount={editing ? studio.references.length : 0} referenceIds={editing ? studio.references.map(reference => reference.id).join(',') : ''} busy={busy} />}
+          polisher={<PromptPolisher client={studio.client} prompt={readablePrompt} setPrompt={value => studio.setPrompt(bindMentions(value, studio.references))} applyPrompt={studio.applyPolishedPrompt} aspectRatio={studio.settings.ratio} width={studio.settings.width} height={studio.settings.height} model={studio.cloudModel?.id ?? studio.settings.model} references={editing ? studio.references : []} referenceCount={editing ? studio.references.length : 0} referenceIds={editing ? studio.references.map(reference => reference.id).join(',') : ''} busy={busy} />}
           generate={() => studio.generate(editing)} busy={busy} ready={studio.ready && studio.references.length>=studio.minReferences} />
         {studio.presetControls.error && <div className="service-notice" role="alert">{studio.presetControls.error}<button onClick={() => void studio.presetControls.read()}>重新读取</button></div>}
-        {studio.job && studio.job.phase !== 'complete' && <div className="composer-status"><GenerationStatus job={studio.job} stop={()=>void studio.stop()}/>{!busy && !historyOpen && <button className="quiet-button" onClick={()=>setHistoryOpen(true)}>查看创作记录</button>}</div>}
+        {(studio.polishing || studio.job && studio.job.phase !== 'complete') && <div className="composer-status"><GenerationStatus job={studio.polishing ? undefined : studio.job ?? undefined} preparation={studio.polishing ? (studio.references.length ? '结合参考图完善描述，完成后自动生成' : '完善描述，完成后自动生成') : undefined} stop={()=>void studio.stop()}/>{!busy && !historyOpen && <button className="quiet-button" onClick={()=>setHistoryOpen(true)}>查看创作记录</button>}</div>}
         {studio.references.length<studio.minReferences && <p className="panel-note">此提示词还需 {studio.minReferences-studio.references.length} 张参考图。</p>}
         {editing && studio.references.length > 0 ? <p className="edit-notice">{IMAGE_UPLOAD_HINT}。较大原图会另建缩图作为生图参考；原尺寸精修请使用修图 Agent。</p> : null}
         {studio.error ? <div className="error-banner" role="alert"><span>{studio.error}</span><button className="icon-button" onClick={() => studio.setError('')} aria-label="关闭错误提示"><Icon name="close" size={15} /></button></div> : null}

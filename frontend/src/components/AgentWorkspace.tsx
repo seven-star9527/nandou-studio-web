@@ -198,9 +198,9 @@ export default function AgentWorkspace({ user, client, cloudConfigured, refreshA
   useEffect(() => {
     const abort = new AbortController(); setQuote(null);
     if (isRetouch || !cloudConfigured || !model) return () => abort.abort();
-    void client.cloudQuote({...quoteRequest(opts.model, imageSettings), n:1}, abort.signal).then(q => setQuote(q.credits_total_reference)).catch(() => {});
+    void client.cloudQuote({...quoteRequest(opts.model, imageSettings), n:1, prompt:instructionsOnly(text), operation:uploads.length+refs.length>0?'edit':'generate'}, abort.signal).then(q => {if(!abort.signal.aborted)setQuote(q.credits_total_reference);}).catch(() => {});
     return () => abort.abort();
-  }, [opts, client, isRetouch, cloudConfigured, model]);
+  }, [opts, client, isRetouch, cloudConfigured, model, text, uploads.length, refs.length]);
 
   async function send(override?: string) {
     const raw = override ?? text;

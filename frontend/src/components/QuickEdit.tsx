@@ -5,6 +5,7 @@ import { MAX_IMAGE_PIXELS } from '../image-upload-limits';
 import { useModalDialog } from '../useModalDialog';
 import { toolNames, uploadImage, workRequest, type QuickJob, type SubjectMark, type QuickTool, type WorkImage } from '../workbench-api';
 import QuickPreview from './QuickPreview';
+import AiRetouch from './AiRetouch';
 import MaskBrush, { type MaskStroke } from './MaskBrush';
 import Icon from './Icon';
 import GlassTabs from './GlassTabs';
@@ -23,9 +24,15 @@ function remember(tool: QuickTool, id: string) {
 
 export default function QuickEdit({tool, switchTool, initial, close, compare, compareLabel='加入对比画布'}: {
   switchTool: (tool:QuickTool, source?:WorkImage) => void;
-  tool: QuickTool; initial?: WorkImage; close: () => void; compare?: (image: WorkImage) => void; compareLabel?:string;
+  tool: QuickTool; initial?: WorkImage; close: () => void; compare?: (...images: WorkImage[]) => void; compareLabel?:string;
 }) {
-  const [source, setSource] = useState(initial);
+  const [savedAI]=useState<WorkImage|undefined>(()=>{try{return tool==='retouch'&&!initial?JSON.parse(sessionStorage.getItem(accountStorageKey('retouch-last-source'))||'null')??undefined:undefined;}catch{return undefined;}});
+  const [source, setSource] = useState(initial??savedAI);
+  const [ai,setAi]=useState(() => {
+    try { return Boolean(savedAI || initial) || !sessionStorage.getItem(pendingKey('retouch')); }
+    catch { return true; }
+  });
+  useEffect(()=>{if(tool!=='retouch')return;const key=accountStorageKey('retouch-last-source');if(ai&&source)sessionStorage.setItem(key,JSON.stringify(source));else sessionStorage.removeItem(key);},[tool,ai,source]);
   const [option, setOption] = useState(options[tool][0][0]);
   const [background,setBackground] = useState('original'), [exposure,setExposure] = useState('0');
   const [marks,setMarks]=useState<SubjectMark[]>([]);
@@ -36,7 +43,7 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
   const [job, setJob] = useState<QuickJob>();
   const [error, setError] = useState('');
   const [watch, setWatch] = useState(() => {
-    try { return initial ? '' : sessionStorage.getItem(pendingKey(tool)) ?? ''; } catch { return ''; }
+    try { return initial || savedAI ? '' : sessionStorage.getItem(pendingKey(tool)) ?? ''; } catch { return ''; }
   });
   const [uploading,setUploading]=useState(false);
   const [busy, setBusy] = useState(Boolean(watch));
@@ -126,13 +133,14 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
       }
     } finally { working.current = false; }
   }
-  function selectTool(next: QuickTool, nextSource=source) {
+  function selectTool(next: QuickTool, nextSource=source, useMatte=false) {
     if (next === tool || working.current || busy) return;
     let previous = '';
     if (!nextSource) {
       try { previous = sessionStorage.getItem(pendingKey(next)) ?? ''; } catch { /* Storage is optional. */ }
     }
     setOption(options[next][0][0]);setMarks([]);setFraming('frame');setEnhance(true);
+    if(next==='retouch') setAi(!useMatte && !previous);
     setWatch(previous);
     setBusy(Boolean(previous));
     setJob(undefined);
@@ -174,18 +182,19 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
     <GlassTabs className="segmented work-tabs" aria-label="修图工具">{(Object.keys(toolNames) as QuickTool[]).map(t => <button key={t} disabled={busy} className={tool===t?'selected':''} aria-pressed={tool===t} onClick={() => selectTool(t)}>{toolNames[t]}</button>)}</GlassTabs>
     <div className="work-controls">
       <button className="quiet-button" disabled={busy} onClick={() => file.current?.click()}>{source ? '更换图片' : '选择图片'}</button>
+      {tool==='retouch' && <GlassTabs className="segmented work-tabs" aria-label="精修方式">{[['local','本地精修'],['ai','AI 精修']].map(([v,t])=><button key={v} disabled={busy} className={(ai===(v==='ai'))?'selected':''} onClick={()=>setAi(v==='ai')}>{t}</button>)}</GlassTabs>}
       <input hidden ref={file} type="file" accept="image/png,image/jpeg,image/webp" onChange={e => { void choose(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
       {!composite && <GlassTabs className="segmented work-tabs" aria-label={tool==='cutout'?'保留主体':tool==='retouch'?'商品类目':'放大倍率'}>{choices.map(([value,label]) => <button key={value} className={option===value?'selected':''} disabled={busy} aria-pressed={option===value} onClick={()=>chooseOption(value)}>{label}</button>)}</GlassTabs>}
       {tool==='upscale' && <GlassTabs className="segmented work-tabs" aria-label="放大方式">{['保真放大','细节增强'].map((label,i)=><button key={label} disabled={busy} className={enhance===Boolean(i)?'selected':''} aria-pressed={enhance===Boolean(i)} onClick={()=>{if(enhance!==Boolean(i)){setEnhance(Boolean(i));setJob(undefined);remember(tool,'');}}}>{label}</button>)}</GlassTabs>}
-      {tool==='retouch' && <>
+      {tool==='retouch' && !ai && <>
         <GlassTabs className="segmented work-tabs" aria-label="主图背景">{[['original','保留背景'],['white','纯白背景']].map(([v,t])=><button key={v} disabled={busy} className={v===background?'selected':''} onClick={()=>{setBackground(v);setJob(undefined);remember(tool,'');}}>{t}</button>)}</GlassTabs>
         <GlassTabs className="segmented work-tabs" aria-label="曝光调整">{[['-0.5','压暗'],['0','原曝光'],['0.5','提亮']].map(([v,t])=><button key={v} disabled={busy} className={v===exposure?'selected':''} onClick={()=>{setExposure(v);setJob(undefined);remember(tool,'');}}>{t}</button>)}</GlassTabs>
       </>}
-      {tool==='retouch' && background==='white' && <label><input type="checkbox" checked={framing==='center'} disabled={busy} onChange={e=>{setFraming(e.target.checked?'center':'frame');setJob(undefined);remember(tool,'');}}/> 主体居中放大</label>}
+      {tool==='retouch' && !ai && background==='white' && <label><input type="checkbox" checked={framing==='center'} disabled={busy} onChange={e=>{setFraming(e.target.checked?'center':'frame');setJob(undefined);remember(tool,'');}}/> 主体居中放大</label>}
       {picking && <><small>在原图点选要{option==='remove'?'移除':'保留'}的物体，选好后一起处理。</small>
         <button className="quiet-button" disabled={busy||!marks.length} onClick={()=>{setMarks(marks.slice(0,-1));setJob(undefined);setError('');remember(tool,'');}}>撤销选点</button></>}
     </div>
-    <QuickPreview key={source?.url || 'empty'} source={source} result={result} busy={busy} activity={activity} marks={marks}
+    {tool==='retouch' && ai ? <AiRetouch key={source?.url} source={source} category={option} choose={()=>file.current?.click()} compare={compare}/> : <><QuickPreview comparison={tool==='retouch'} key={source?.url || 'empty'} source={source} result={result} busy={busy} activity={activity} marks={marks}
       backdrop={tool==='cutout'?({'棋盘':'checker','白色':'white','深色':'dark'}[backdrop]):''}
       onPick={picking&&!busy&&!composite?pick:undefined} choose={()=>file.current?.click()}
       onSize={(w,h)=>{if(source && !width)setSource({...source,width:w,height:h});}}/>
@@ -194,7 +203,7 @@ export default function QuickEdit({tool, switchTool, initial, close, compare, co
     {tool==='retouch' && <small>{option==='auto' ? (result && job?.subject ? job.subject==='general' ? '已按通用商品处理' : '识别为'+(options.retouch.find(([id])=>id===job.subject)?.[1] ?? '商品') : '处理时自动识别主体，也可手动指定。') : {palette:'保留调色槽、侧翼和指孔。',brush:'保留笔锋与笔箍刻字。',paint:'保留颜料色序和包装文字。',paper:'保留纸纹和装订细节。',miniature:'保留涂装分区、刻线和细小部件。',toy:'保留零件和接缝。'}[option]}</small>}
     {tool==='upscale' && <small>{width && height ? `输出 ${outputWidth} × ${outputHeight} px` : '从原尺寸放大'}</small>}</div>
     {(tooLarge || error || job?.error) && <p className="history-error" role="alert">{tooLarge ? (width && height && width*height>=MAX_IMAGE_PIXELS ? '原图已达 6400 万像素上限。' : '所选倍率超过 6400 万像素，请选择「上限内放大」。') : job?.error || error}</p>}
-    <footer className="work-controls">{result && <>{tool==='cutout' && !composite && <button className="quiet-button" onClick={()=>{setBackground('white');selectTool('retouch',result);}}>用此蒙版精修</button>}{tool==='retouch' && background==='white' && <button className="quiet-button" onClick={()=>selectTool('cutout')}>修正主体范围</button>}{composite && <button className="quiet-button" onClick={showMatte}>返回透明底</button>}{tool!=='upscale' && !composite && <button className="quiet-button" onClick={()=>setCorrecting(true)}>{tool==='cutout'?'调整边缘':'局部去瑕'}</button>}<a className="quiet-button" href={result.url} download={result.name}>下载 PNG</a>{compare && <button className="quiet-button" onClick={() => compare(result)}>{compareLabel}</button>}</>}
-    {!composite && <button className="primary-button" disabled={!source || busy || tooLarge || (picking && !marks.length && !result)} onClick={() => void run()}>{busy ? activity : result ? '重新处理' : '开始处理'}</button>}</footer></>}
+    <footer className="work-controls">{result && <>{tool==='cutout' && !composite && <button className="quiet-button" onClick={()=>{setBackground('white');selectTool('retouch',result,true);}}>用此蒙版精修</button>}{tool==='retouch' && !ai && background==='white' && <button className="quiet-button" onClick={()=>selectTool('cutout')}>修正主体范围</button>}{composite && <button className="quiet-button" onClick={showMatte}>返回透明底</button>}{tool!=='upscale' && !composite && <button className="quiet-button" onClick={()=>setCorrecting(true)}>{tool==='cutout'?'调整边缘':'局部去瑕'}</button>}<a className="quiet-button" href={result.url} download={result.name}>下载 PNG</a>{compare && <button className="quiet-button" onClick={() => compare(...(source?[source,result]:[result]))}>{compareLabel}</button>}</>}
+    {!composite && <button className="primary-button" disabled={!source || busy || tooLarge || (picking && !marks.length && !result)} onClick={() => void run()}>{busy ? activity : result ? '重新处理' : '开始处理'}</button>}</footer></>}</>}
   </section></div></ModalPortal>;
 }

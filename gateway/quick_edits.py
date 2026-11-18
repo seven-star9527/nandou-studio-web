@@ -153,7 +153,20 @@ def retouch_color(rgb, option, ev, balance):
                                        for band,gain in zip(channels,balance)])
         spread = ImageChops.subtract(ImageChops.lighter(ImageChops.lighter(*channels[:2]),channels[2]),
                                      ImageChops.darker(ImageChops.darker(*channels[:2]),channels[2]))
-        rgb = Image.composite(corrected,rgb,spread.point([max(0,255-4*v) for v in range(256)]))
+        balanced = Image.composite(corrected,rgb,spread.point([max(0,255-4*v) for v in range(256)]))
+        if option=='paper':
+            # The table and the paper do not always reflect the same light.
+            # On a near-white sheet stop at the closest neutral along the
+            # measured correction, before a cool white turns straw-yellow.
+            import numpy as np
+            raw=np.asarray(rgb,dtype=np.float32)
+            change=np.asarray(balanced,dtype=np.float32)-raw
+            chroma=raw-raw.mean(2,keepdims=True)
+            drift=change-change.mean(2,keepdims=True)
+            amount=np.clip(-(chroma*drift).sum(2)/(np.square(drift).sum(2)+.001),0,1)
+            pale=np.clip((raw.min(2)-160)/38,0,1)*np.clip((27-np.ptp(raw,axis=2))/12,0,1)
+            balanced=Image.fromarray(np.uint8(np.rint(np.clip(raw+change-(pale*(1-amount))[:,:,None]*drift,0,255))))
+        rgb=balanced
     brightness = rgb.convert('L')
     # Anchor black and white and restrict local contrast around fine labels and nibs.
     contrast, sharpness, limit = {'general':(.055,38,2),'palette':(.075,46,3),'brush': (.12, 65, 4), 'paint': (.06, 35, 2),
@@ -244,9 +257,11 @@ def panel_lighting(image):
                 variation=coeff[1:]*np.array([np.ptp(u),np.ptp(v)])
                 minor=1+np.argmin(abs(variation))
                 fit=design@coeff
-                flatten=.64*coeff[minor]*(design[:,minor]-np.median(design[:,minor]))
+                flatten=.96*coeff[minor]*(design[:,minor]-np.median(design[:,minor]))
+                major=3-minor
+                sweep=.22*coeff[major]*(design[:,major]-np.median(design[:,major]))
                 broad=cv2.GaussianBlur(cv2.morphologyEx(lum,cv2.MORPH_OPEN,np.ones((3,3),np.uint8)),(0,0),2.)
-                delta=np.clip(fit-broad[y,x]-flatten-np.clip(np.median(light)*.14,0,8),-19,7)
+                delta=np.clip(fit-broad[y,x]-flatten+sweep-np.clip(np.median(light)*.16,0,9),-21,9)
                 field=np.zeros_like(lum); weights=np.zeros_like(lum)
                 field[y,x]=delta; weights[y,x]=1
                 smooth=lambda t:cv2.GaussianBlur(t,(0,0),2.)
@@ -254,6 +269,150 @@ def panel_lighting(image):
     if not np.any(correction):
         return None
     return Image.fromarray(np.uint8(np.clip(np.rint(128+correction*6),0,255)))
+
+
+def ferrule_lighting(photo):
+    """Even long reflections on a silver brush ferrule while protecting its stamped markings."""
+    import cv2
+    import numpy as np
+    size=tuple(max(1,round(n*min(1,1152/max(photo.size)))) for n in photo.size)
+    view=photo.resize(size,Image.Resampling.LANCZOS)
+    rgb=np.asarray(view.convert('RGB'))
+    lum=cv2.cvtColor(rgb,cv2.COLOR_RGB2GRAY)
+    valid=(np.asarray(view.getchannel('A'))>238)&(np.ptp(rgb,axis=2)<28)
+    k=max(3,int(max(size)/220)|1)
+    light=cv2.morphologyEx(np.uint8(valid&(lum>145)),cv2.MORPH_CLOSE,cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(k,k)))
+    count,labels,stats,_=cv2.connectedComponentsWithStats(light)
+    field=np.zeros_like(lum,dtype=np.float32)
+    for i in range(1,count):
+        x,y,w,h,area=stats[i]
+        if not lum.size*.0013<area<lum.size*.32:
+            continue
+        yy,xx=np.where(labels[y:y+h,x:x+w]==i)
+        center,(rw,rh),angle=cv2.minAreaRect(np.float32(np.column_stack((xx+x,yy+y))))
+        if min(rw,rh)<max(size)*.018 or area/(rw*rh)<.53:
+            continue
+        corners=cv2.boxPoints((center,(rw*1.21,rh*1.20),angle))
+        mask=np.zeros_like(lum)
+        cv2.fillConvexPoly(mask,np.int32(corners),255)
+        candidate=(mask!=0)&valid
+        if candidate.sum()<160 or np.ptp(np.percentile(lum[candidate],(8,90)))<67:
+            continue
+        left,top=np.maximum(0,np.floor(corners.min(0)).astype(int)-2)
+        right,bottom=np.minimum(size,np.ceil(corners.max(0)).astype(int)+3)
+        sl=np.s_[top:bottom,left:right]
+        a=lum[sl].astype('float32')
+        ys,xs=np.indices(a.shape,dtype=np.float32)
+        delta=np.zeros_like(a)
+        for direction in (angle,angle+90):
+            reach=max(3,min(rw,rh)*.11)
+            dx,dy=reach*np.array([np.cos(np.deg2rad(direction)),np.sin(np.deg2rad(direction))])
+            samples=[cv2.remap(a,xs+np.float32(t*dx),ys+np.float32(t*dy),cv2.INTER_LINEAR,borderMode=cv2.BORDER_REPLICATE)
+                     for t in np.linspace(-1,1,11)]
+            low,median,high=np.percentile(samples,(20,50,80),axis=0).astype('float32')
+            # Long reflection bands have similar tones along the strip.
+            # Embossed letters and rivets break that continuity.
+            support=np.clip((155-median)/45,0,1)*np.clip((65-high+low)/28,0,1)
+            lift=(median+np.clip((152-median)*.45,0,43)-a)*support
+            delta=np.where(abs(lift)>abs(delta),lift,delta)
+        coverage=cv2.GaussianBlur(candidate[sl].astype('float32'),(0,0),1.6)
+        field[sl]+=np.clip(delta,-37,43)*coverage
+    if not np.any(field):
+        return None
+    return Image.fromarray(np.uint8(np.clip(np.rint(128+field*2.8),0,255)))
+
+
+def moulded_rim_light(photo):
+    """Fit a rounded rim only to repeated wells with four supported photographic edges."""
+    import cv2
+    import numpy as np
+    view=photo.copy()
+    view.thumbnail((1280,1280),Image.Resampling.LANCZOS)
+    wells,grid=mixing_wells(view.convert('RGB'))
+    if len(wells)<6:
+        return None
+    factor=np.array(view.size)/grid
+    rgb=np.asarray(view.convert('RGB'))
+    lum=cv2.GaussianBlur(cv2.cvtColor(rgb,cv2.COLOR_RGB2GRAY).astype('float32'),(0,0),.8)
+    variation=np.zeros(lum.shape,'float32')
+    # Include one occluded row when the image actually contains the translated well.
+    candidates=set(wells)
+    for x,y,w,h in wells:
+        for nx,ny,_,_ in wells:
+            if abs(nx-x)>w*.18 or not h*.85<abs(ny-y)<h*1.48:
+                continue
+            predicted=2*y-ny
+            if any(abs(px-x)<w*.3 and abs(py-predicted)<h*.4 for px,py,_,_ in candidates):
+                continue
+            def patch(cy):
+                sw,sh=max(3,int(w*factor[0]*.42)),max(3,int(h*factor[1]*.42))
+                ix,iy=round(x*factor[0]),round(cy*factor[1])
+                return lum[max(0,iy-sh):iy+sh+1,max(0,ix-sw):ix+sw+1]
+            a,b=patch(y),patch(predicted)
+            if a.shape==b.shape and a.size and min(a.std(),b.std())>8 and np.corrcoef(a.ravel(),b.ravel())[0,1]>.82:
+                candidates.add((x,predicted,w,h))
+    for x,y,w,h in sorted(candidates):
+        x,y=np.array([x,y])*factor
+        w,h=np.array([w,h])*factor
+        x0,x1=int(x-w*.69),int(x+w*.69+1)
+        y0,y1=int(y-h*.71),int(y+h*.71+1)
+        if x0<0 or y0<0 or x1>view.width or y1>view.height:
+            continue
+        a=lum[y0:y1,x0:x1]
+        cx,cy=x-x0,y-y0
+        def sides(line,c,extent):
+            grad=np.gradient(line)
+            def locate(lo,hi,sign):
+                idx=np.arange(max(1,round(lo)),min(len(line)-1,round(hi)+1))
+                if not idx.size:
+                    return None
+                # On the lit wall the useful signal can be just a few grey levels.
+                j=idx[np.argmax(grad[idx]*sign)]
+                return j if sign*grad[j]>.65 else None
+            return locate(c-extent*.61,c-extent*.38,-1),locate(c+extent*.38,c+extent*.61,1)
+        cross=np.median(a[int(cy-h*.26):int(cy+h*.26)+1],axis=0)
+        left,right=sides(cross,cx,w)
+        top,bottom=sides(np.median(a[:,int(cx-w*.28):int(cx+w*.28)+1],axis=1),cy,h)
+        if None in (left,right,top,bottom):
+            continue
+        nearby=np.arange(max(1,left-round(w*.065)),min(len(cross)-1,left+2))
+        crest=nearby[np.argmax(cross[nearby])]
+        if cross[crest]-cross[left]>1.4:
+            left=crest
+        if np.median(np.ptp(rgb[y0:y1,x0:x1],axis=2))>28:
+            continue
+        yy,xx=np.indices(a.shape,dtype='float32')
+        sx,sy=(left+right)/2,(top+bottom)/2
+        rad=max(1.4,min(right-left,bottom-top)*.10)
+        qx=np.abs(xx-sx)-(right-left)/2+rad
+        qy=np.abs(yy-sy)-(bottom-top)/2+rad
+        dist=np.hypot(np.maximum(qx,0),np.maximum(qy,0))+np.minimum(np.maximum(qx,qy),0)-rad
+        ny,nx=np.gradient(dist)
+        # Left wall catches a strip of light, opposite walls retain their falloff.
+        sigma=max(.64,min(w,h)*.014)
+        rim=np.exp(-.5*((dist-.65*sigma)/sigma)**2)
+        inner=np.exp(-.5*((dist+1.3*sigma)/sigma)**2)
+        # Keep the floor's photographed gradient. Small wells shot with a large
+        # softbox often contain a noisy dark band on the inward side of the rim.
+        local=(2+19*np.maximum(-nx,0)+3*np.maximum(ny,0))*rim-(2+2*np.maximum(nx,0))*inner
+        # The ledge between the recessed floor and the top wall forms a
+        # second, inward contour. Locate it from the actual wall profile.
+        profile=np.median(a[:,int(cx-w*.21):int(cx+w*.21)+1],axis=1)
+        band=np.arange(top+max(2,round(h*.045)),min(bottom,top+round(h*.18)+1))
+        if len(band)>=3:
+            gradient=np.gradient(profile)
+            shoulder=band[np.argmax(gradient[band])]
+            if gradient[shoulder]>1.1:
+                inset=shoulder-top
+                crease=np.exp(-.5*((dist+inset-1.05*sigma)/(.82*sigma))**2)
+                foot=np.exp(-.5*((dist+inset+1.15*sigma)/sigma)**2)
+                floor=np.clip((-dist-inset)/(3*sigma),0,1)
+                bright=np.clip((a-np.percentile(a,20))/32,0,1)
+                local+=(-11*crease+3*foot)*np.maximum(-ny,0)+4*floor*bright
+        variation[y0:y1,x0:x1]+=local
+    if not np.any(variation):
+        return None
+    return Image.fromarray(np.uint8(np.clip(np.rint(128+variation*6),0,255)))
 
 
 def photo_noise(image):
@@ -304,12 +463,19 @@ def camera_super_resolution(image, result, model_dir, folder):
                 rgb.save(inp)
                 args=[str(executable.resolve()),'-i',str(inp.resolve()),'-o',str(out.resolve()),'-m',str((root/'models').resolve()),
                       '-n','realesrgan-x4plus','-s','4','-t','192','-j','1:1:1']
-                try:
-                    proc=subprocess.run(args,cwd=workspace,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
-                                        creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),timeout=240)
-                except (OSError,subprocess.TimeoutExpired) as exc:
-                    raise ValueError('本机显卡未完成细节增强，请选择保真放大或稍后重试。') from exc
-                if proc.returncode or not out.is_file():
+                for tile_size in ('192','64'):
+                    # A smaller Vulkan workspace also serves hosts with little
+                    # free commit. The model and source pixels are identical.
+                    out.unlink(missing_ok=True)
+                    args[args.index('-t')+1]=tile_size
+                    try:
+                        proc=subprocess.run(args,cwd=workspace,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+                                            creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),timeout=240)
+                    except (OSError,subprocess.TimeoutExpired) as exc:
+                        raise ValueError('本机显卡未完成细节增强，请选择保真放大或稍后重试。') from exc
+                    if not proc.returncode and out.is_file():
+                        break
+                else:
                     raise ValueError('本机显卡未完成细节增强，请选择保真放大或稍后重试。')
                 box=(round(x*sx),round(y*sy),round(end_x*sx),round(end_y*sy))
                 region=result.crop(box)
@@ -334,7 +500,19 @@ def camera_super_resolution(image, result, model_dir, folder):
                 strength=.025+.955*gate
                 # Recover some source edge contrast without inventing strokes in a blank field.
                 delta+=np.clip(original-cv2.GaussianBlur(original,(0,0),max(1.,sx*.72)),-24,24)*.22*gate
-                delta=np.rint(np.clip(delta*strength,-38,38)).astype(np.int16)
+                # Reproject the prediction into the camera sampling grid.
+                # A manufactured highlight or a shifted letter must not change
+                # the recorded low-resolution pixel that produced it.
+                enhanced=original+.30*np.clip(delta*strength,-38,38)
+                if sx==sy and sx in (2,4):
+                    recorded=np.float32(rgb.crop((x-left,y-top,end_x-left,end_y-top)).convert('L'))
+                    for _ in range(2):
+                        down=np.asarray(Image.fromarray(enhanced).resize((end_x-x,end_y-y),Image.Resampling.LANCZOS))
+                        error=cv2.resize(recorded-down,region.size,interpolation=cv2.INTER_CUBIC)
+                        enhanced+=.9*error
+                grain=enhanced-cv2.GaussianBlur(enhanced,(0,0),max(1.,sx*.7))
+                enhanced+=.30*(1-gate)*np.clip(grain,-8,8)
+                delta=np.rint(enhanced-original).astype(np.int16)
                 delta[pixels[:,:,3]!=255]=0
                 delta=np.clip(delta,-bands.min(2).astype(np.int16),255-bands.max(2))
                 pixels[:,:,:3]=bands+delta[:,:,None]
@@ -404,11 +582,12 @@ def finish_material(tile, polished, category, long_edge, well_area=None):
     if category=='palette':
         wells = np.asarray(well_area,dtype=np.float32)/255 if well_area is not None else 0.
         wells = wells * np.clip((33-spread)/12,0,1) * solid
-        sculpt = np.clip(1.15*broad + .9*fine - 3.2,-15,10)
+        floor=np.clip((7-np.abs(broad))/5,0,1)
+        sculpt = np.clip((1-floor)*(.35*broad+.3*fine)-floor*(.70*broad+.08*fine)-2.2,-9,8)
         # Reduce uneven coating at medium scales; retain native fine grain and protect lettering.
         dark = np.clip((108-lum)/32,0,1)*np.clip((spread-15)/15,0,1)*solid
         clean = np.clip((9-np.abs(broad))/5,0,1)
-        change = wells*sculpt - dark*clean*(.52*(broad-fine)+.12*fine)
+        change = wells*sculpt - dark*clean*(.91*(broad-fine)+.52*fine)
     elif category=='brush':
         # A bundle of hairs has coherent directional detail; a smooth wooden handle does not.
         gx=cv2.Sobel(lum,cv2.CV_32F,1,0)/8
@@ -454,6 +633,8 @@ def retouch_or_enlarge(source, output, tool, option, balance=None, model_dir=Non
                 image=framed
         result = Image.new('RGB' if background=='white' else 'RGBA',image.size,'white')
         lighting=panel_lighting(image) if option=='palette' else None
+        rim=moulded_rim_light(image) if option=='palette' else None
+        metal=ferrule_lighting(image) if option=='brush' else None
         well_map=None
         if option=='palette':
             thumb=image.copy()
@@ -483,10 +664,12 @@ def retouch_or_enlarge(source, output, tool, option, balance=None, model_dir=Non
                     polished=finish_material(tile,polished,option,max(image.size),area)
                 inner=(x-left,y-top,right-left,bottom-top)
                 pixels=polished.crop(inner)
-                if lighting is not None:
+                for field,gain in ((lighting,6),(rim,6),(metal,2.8)):
+                    if field is None:
+                        continue
                     import numpy as np
-                    region=tuple(pos*small/full for pos,small,full in zip((x,y,right,bottom),lighting.size*2,image.size*2))
-                    adjust=(np.asarray(lighting.resize(pixels.size,Image.Resampling.BILINEAR,box=region),dtype=np.int16)-128)/6
+                    region=tuple(pos*small/full for pos,small,full in zip((x,y,right,bottom),field.size*2,image.size*2))
+                    adjust=(np.asarray(field.resize(pixels.size,Image.Resampling.BILINEAR,box=region),dtype=np.int16)-128)/gain
                     values=np.asarray(pixels,dtype=np.int16)
                     pixels=Image.fromarray(np.uint8(np.clip(values+np.rint(adjust[:,:,None]),0,255)))
                 alpha=tile.getchannel('A').crop(inner)
@@ -572,7 +755,8 @@ def correct_mask(source, base, output, strokes):
 
 async def product_retouch(model_path, source, output, option):
     category, background, _, _ = retouch_settings(option)
-    if category=='auto':
+    automatic=category=='auto'
+    if automatic:
         category = await asyncio.to_thread(recognize,source,model_path.parent/'product-recognition')
         option = option.replace('auto',category,1)
     if background=='white':
@@ -583,6 +767,9 @@ async def product_retouch(model_path, source, output, option):
             with tempfile.TemporaryDirectory(dir=output.parent) as folder:
                 transparent = Path(folder)/'subject.png'
                 await cutout(model_path,source,transparent,category=category)
+                if automatic and category=='general':
+                    category=await asyncio.to_thread(recognize,transparent,model_path.parent/'product-recognition')
+                    option=option.replace('general',category,1)
                 balance = await asyncio.to_thread(studio_white_balance,source,category)
                 await asyncio.to_thread(retouch_or_enlarge,transparent,output,'retouch',option,balance)
             return category
@@ -604,6 +791,13 @@ def subject_session(model_path):
     settings.enable_cpu_mem_arena = False
     settings.enable_mem_pattern = False
     settings.intra_op_num_threads = min(8, os.cpu_count() or 1)
+    if model_path.name=='birefnet-general-lite.onnx' and os.environ.get('NANDOU_MATTING_PROVIDER')=='cuda':
+        half=model_path.with_name('birefnet-general-lite-fp16.onnx')
+        if half.is_file() and 'CUDAExecutionProvider' in ort.get_available_providers():
+            settings.log_severity_level=3
+            cuda={'arena_extend_strategy':'kSameAsRequested','cudnn_conv_algo_search':'HEURISTIC',
+                  'cudnn_conv_use_max_workspace':'0'}
+            return ort.InferenceSession(str(half),settings,providers=[('CUDAExecutionProvider',cuda),'CPUExecutionProvider'])
     return ort.InferenceSession(str(model_path), settings, providers=['CPUExecutionProvider'])
 
 
@@ -1240,6 +1434,52 @@ def recover_pale_inserts(rgb, mask):
     return Image.fromarray(alpha)
 
 
+def remove_bristle_spill(source, foreground, matte):
+    """Resolve reflected studio colour along warm hairs using local native camera samples."""
+    import cv2
+    import numpy as np
+    with Image.open(source) as image:
+        camera=ImageOps.exif_transpose(image).convert('RGB')
+    radius=max(2,min(11,round(max(matte.size)/750)))
+    kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(radius*2+1,)*2)
+    result=matte.copy()
+    for y in range(0,matte.height,384):
+        for x in range(0,matte.width,384):
+            right,bottom=min(x+384,matte.width),min(y+384,matte.height)
+            halo=radius*13
+            box=(max(0,x-halo),max(0,y-halo),min(right+halo,matte.width),min(bottom+halo,matte.height))
+            tile=matte.crop(box)
+            if tile.getextrema()!=(0,255):
+                continue
+            a=np.asarray(tile,dtype=np.float32)/255
+            rgb=np.asarray(camera.crop(box),dtype=np.float32)
+            warm=(rgb[:,:,0]-rgb[:,:,2]>20)&(rgb[:,:,0]>rgb[:,:,1]+6)
+            def field(seeds,sigma):
+                core=cv2.erode(np.float32(seeds),kernel)
+                mass=cv2.GaussianBlur(core,(0,0),sigma)
+                colour=cv2.GaussianBlur(rgb*core[:,:,None],(0,0),sigma)/np.maximum(.00001,mass[:,:,None])
+                return colour,mass
+            fg,fm=field((a>.91)&warm,radius*3.8)
+            if fm.max()<.002:
+                continue
+            bg,bm=field(a<.035,radius*2.4)
+            vector=fg-bg
+            valid=(bm>.04)&(np.ptp(bg,axis=2)<29)&(bg.min(2)>130)&(fg[:,:,0]-fg[:,:,2]>24)&(np.linalg.norm(vector,axis=2)>38)
+            weight=np.clip((fm-.002)/.019,0,1)*np.clip((bm-.04)/.12,0,1)*valid
+            if not weight.any():
+                continue
+            coverage=np.clip(((rgb-bg)*vector).sum(2)/np.maximum(1,(vector*vector).sum(2)),0,1)
+            revised=a+weight*(np.minimum(a,coverage)-a)
+            recovered=np.clip(bg+(rgb-bg)/np.maximum(.08,coverage[:,:,None]),0,255)
+            rgb_out=np.float32(foreground.crop(box))
+            opacity=weight*np.clip((1-coverage)/.14,0,1)
+            rgb_out[:,:,:3]+=(recovered-rgb_out[:,:,:3])*opacity[:,:,None]
+            crop=(x-box[0],y-box[1],right-box[0],bottom-box[1])
+            result.paste(Image.fromarray(np.uint8(np.rint(revised*255))).crop(crop),(x,y))
+            foreground.paste(Image.fromarray(np.uint8(np.rint(rgb_out))).crop(crop),(x,y))
+    return result
+
+
 def refine_tapered_tips(source, output, matte):
     """Remove captured backdrop colour where a long dark tip narrows below optical resolution."""
     import cv2
@@ -1424,13 +1664,189 @@ def restore_page_notches(original, matte):
     fraction=(tint(rgb-bg)*delta).sum(2)/np.maximum(leverage,1)
     supported=(foreground>.13)&(background>.018)&(rgb.min(2)>155)&(np.ptp(rgb,axis=2)<34)&(leverage>12)
     blend=np.clip((fraction-.26)/.54,0,1)*supported
-    gain=Image.fromarray(np.uint8(np.rint(diff*blend)))
-    if gain.getbbox() is None:
+    # Feather the permission to repair, not the existing coverage. At camera
+    # resolution a pinhole may be transparent even if its reduced pixel is 80% opaque.
+    repair=cv2.dilate((diff>10).astype('float32'),np.ones((3,3),'uint8'))
+    coverage=Image.fromarray(np.uint8(np.rint(closed*blend*repair)))
+    if coverage.getbbox() is None:
         return matte
-    return ImageChops.add(matte,gain.resize(matte.size,Image.Resampling.BILINEAR))
+    return ImageChops.lighter(matte,coverage.resize(matte.size,Image.Resampling.BILINEAR))
 
 
-def align_pale_straight_edges(original, matte):
+def refit_page_edges(source, matte, foreground=None):
+    """Refit ambiguous pale paper silhouettes using local samples of paper and backdrop."""
+    import cv2
+    import numpy as np
+    result=matte.copy()
+    camera=upright(source).convert('RGB')
+    radius=max(7,min(36,round(max(matte.size)*.0057)))
+    halo=radius*3
+    disk=cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(2*radius+1,)*2)
+    step=max(96,round(radius*4.45))
+    for top in range(0,matte.height,step):
+        for left in range(0,matte.width,step):
+            right,bottom=min(left+step,matte.width),min(top+step,matte.height)
+            box=(max(0,left-halo),max(0,top-halo),min(right+halo,matte.width),min(bottom+halo,matte.height))
+            if matte.crop(box).getextrema()!=(0,255):
+                continue
+            alpha=np.asarray(matte.crop(box))
+            rgb=np.asarray(camera.crop(box))
+            binary=(cv2.GaussianBlur(alpha,(0,0),max(.9,radius*.075))>127).astype('uint8')
+            inner=cv2.erode(binary,disk)!=0
+            outer=cv2.dilate(binary,disk)==0
+            if min(inner.sum(),outer.sum())<60:
+                continue
+            pale=(rgb.min(2)>142)&(np.ptp(rgb,axis=2)<38)
+            # Operate on soft or broken edges near an opaque pale body. Isolated
+            # accessories and intentional holes retain the model's soft mask.
+            paper=cv2.GaussianBlur((inner&pale).astype('float32'),(0,0),radius)
+            silver=cv2.GaussianBlur((outer&pale).astype('float32'),(0,0),radius)
+            near=(~inner)&(~outer)
+            rough=np.abs(alpha.astype('float32')-cv2.GaussianBlur(alpha,(0,0),radius*.3))
+            noisy=(rough>18)&near&(paper>.016)&(silver>.016)
+            local=cv2.boxFilter(alpha.astype('float32'),-1,(7,7))
+            specks=(np.abs(alpha-local)>68)&pale&near
+            # Refit broken sections only; keep a continuous straight edge at camera sharpness.
+            noisy&=cv2.dilate(specks.astype('uint8'),disk,iterations=2)!=0
+            if np.count_nonzero(noisy)<max(10,radius*1.4):
+                continue
+            labels=np.where(binary,cv2.GC_PR_FGD,cv2.GC_PR_BGD).astype('uint8')
+            labels[inner]=cv2.GC_FGD
+            labels[outer]=cv2.GC_BGD
+            lab=cv2.cvtColor(cv2.GaussianBlur(rgb,(0,0),max(.7,radius*.045)),cv2.COLOR_RGB2LAB).astype('float32')
+            lab[:,:,0]*=.7
+            lab[:,:,1:]=np.clip((lab[:,:,1:]-128)*6+128,0,255)
+            cv2.setRNGSeed(123)
+            cv2.grabCut(lab.astype('uint8'),labels,None,np.zeros((1,65)),np.zeros((1,65)),3,cv2.GC_INIT_WITH_MASK)
+            shape=(labels%2).astype('float32')
+            smoothed=cv2.GaussianBlur(shape,(0,0),max(1.,radius*.13))
+            refined=cv2.GaussianBlur((smoothed>.5).astype('float32'),(0,0),max(.6,radius*.026))*255
+            support=cv2.dilate(noisy.astype('uint8'),disk,iterations=2).astype('float32')
+            support=cv2.GaussianBlur(support,(0,0),max(1,radius*.23))
+            # Preserve narrow isolated strokes lacking a broad interior.
+            weight=support*np.clip(paper/.012,0,1)*np.clip(silver/.012,0,1)
+            # A clean edge already present in the silhouette needs no re-tracing.
+            unchanged=cv2.GaussianBlur(np.abs(alpha.astype('float32')-refined),(0,0),max(2,radius*.45))
+            weight*=np.clip((unchanged-2.5)/8,0,1)
+            merged=np.uint8(np.clip(np.rint(alpha+(refined-alpha)*weight),0,255))
+            crop=(left-box[0],top-box[1],right-box[0],bottom-box[1])
+            result.paste(Image.fromarray(merged).crop(crop),(left,top))
+    if foreground is not None:
+        # Hair-edge decontamination can amplify small colour differences into
+        # yellow speckles at the ends of opaque white sheets. Use the actual
+        # camera colour inside those sheets; keep soft, translucent fringes.
+        for y in range(0,result.height,640):
+            for x in range(0,result.width,640):
+                box=(x,y,min(x+640,result.width),min(y+640,result.height))
+                alpha=np.asarray(result.crop(box))
+                if alpha.max()<160 or alpha.min()>248:
+                    continue
+                raw=camera.crop(box)
+                rgb=np.int16(raw)
+                pale=np.clip((rgb.min(2)-100)/36,0,1)*np.clip((50-np.ptp(rgb,axis=2))/18,0,1)
+                opacity=np.clip((alpha.astype('float32')-145)/75,0,1)
+                restore=np.uint8(np.rint(255*pale*opacity))
+                foreground.paste(raw,(x,y),Image.fromarray(restore))
+    return result
+
+
+def preserve_metal_accessories(source, foreground, matte, model_matte):
+    """Keep high-confidence silver shafts within a stationery set after paper edge refinement."""
+    import cv2
+    import numpy as np
+    prior=np.asarray(model_matte)
+    count,labels,stats,_=cv2.connectedComponentsWithStats(np.uint8(prior>150))
+    camera=upright(source).convert('RGB')
+    rd=np.asarray(camera.resize(model_matte.size,Image.Resampling.LANCZOS))
+    for i in range(1,count):
+        x,y,w,h,area=stats[i]
+        if not prior.size*.00045<area<prior.size*.028:
+            continue
+        select=labels[y:y+h,x:x+w]==i
+        yy,xx=np.where(select)
+        (_, _),(rw,rh),_=cv2.minAreaRect(np.float32(np.column_stack((xx,yy))))
+        if min(rw,rh)<4 or max(rw,rh)/min(rw,rh)<3 or area/(rw*rh)<.55:
+            continue
+        pixels=rd[y:y+h,x:x+w][select];levels=pixels.mean(1)
+        if np.mean(np.ptp(pixels,axis=1)<32)<.64 or np.percentile(levels,85)-np.percentile(levels,18)<66:
+            continue
+        lo,top,hi,end=max(0,x-3),max(0,y-3),min(prior.shape[1],x+w+3),min(prior.shape[0],y+h+3)
+        component=(labels[top:end,lo:hi]==i).astype('uint8')
+        support=cv2.dilate(component,np.ones((5,5),'uint8'))
+        model=Image.fromarray(prior[top:end,lo:hi]*support)
+        box=tuple(round(v*n/m) for v,n,m in zip((lo,top,hi,end),matte.size*2,model_matte.size*2))
+        current=matte.crop(box)
+        learned=model.resize(current.size,Image.Resampling.BILINEAR)
+        # Only keep the model's confident interior. The narrow optical edge
+        # retains its full-resolution estimate, including antialiasing.
+        minimum=learned.point(lambda v:max(0,min(255,round((v-92)*255/143))))
+        restored=ImageChops.lighter(current,minimum)
+        if ImageChops.difference(current,restored).getbbox():
+            matte.paste(restored,box[:2])
+            foreground.paste(camera.crop(box),box[:2],minimum)
+    return matte
+
+
+def open_paper_punches(source, matte):
+    """Recover a row of binding holes which expose the same coloured studio backdrop."""
+    import cv2
+    import numpy as np
+    with Image.open(source) as file:
+        photo=ImageOps.exif_transpose(file).convert('RGB')
+    size=tuple(max(1,round(v*min(1,1200/max(photo.size)))) for v in photo.size)
+    rgb=np.asarray(photo.resize(size,Image.Resampling.LANCZOS))
+    chroma=cv2.cvtColor(rgb,cv2.COLOR_RGB2LAB)[:,:,1:].astype('float32')
+    alpha=np.asarray(matte.resize(size,Image.Resampling.BILINEAR))
+    exterior=chroma[alpha<5]
+    if len(exterior)<alpha.size*.08:
+        return matte
+    bg=np.median(exterior,axis=0)
+    if np.linalg.norm(bg-128)<4 or np.percentile(np.linalg.norm(exterior-bg,axis=1),75)>6:
+        return matte
+    matching=np.uint8((np.linalg.norm(chroma-bg,axis=2)<4)&(alpha>160))
+    count,labels,stats,_=cv2.connectedComponentsWithStats(matching)
+    candidates=[]
+    for i in range(1,count):
+        x,y,w,h,area=stats[i]
+        if not 4<min(w,h)<=max(w,h)<min(size)*.045 or not .70<w/h<1.48 or area<.53*w*h:
+            continue
+        yy,xx=np.where(labels[y:y+h,x:x+w]==i)
+        hull=cv2.convexHull(np.int32(np.column_stack((xx,yy))))
+        if len(hull)<6 or area/(cv2.contourArea(hull)+1)<.79:
+            continue
+        (cx,cy),(ew,eh),angle=cv2.fitEllipse(hull)
+        if not .74<ew/eh<1.35:
+            continue
+        rad=round(max(w,h)*.81)
+        cx,cy=cx+x,cy+y
+        left,top=round(cx)-rad,round(cy)-rad
+        if left<0 or top<0 or left+2*rad>=size[0] or top+2*rad>=size[1]:
+            continue
+        ys,xs=np.mgrid[top:top+2*rad+1,left:left+2*rad+1]
+        radius=np.hypot((xs-cx)/(w/2),(ys-cy)/(h/2))
+        ring=(radius>1.13)&(radius<1.55)
+        yy,xx=ys[ring],xs[ring]
+        shell=rgb[yy,xx]
+        if np.mean(alpha[yy,xx]>240)>.95 and np.median(shell.min(1))>150 and np.median(np.ptp(shell,axis=1))<24 and np.linalg.norm(np.median(chroma[yy,xx],axis=0)-bg)>7:
+            candidates.append((cx,cy,ew,eh,angle))
+    sx,sy=matte.width/size[0],matte.height/size[1]
+    for cx,cy,w,h,angle in candidates:
+        # At least two other similar apertures must align with this one.
+        peers=[(x-cx,y-cy) for x,y,ww,hh,_ in candidates if .72<w/ww<1.38 and .72<h/hh<1.38 and 1.9*w<np.hypot(x-cx,y-cy)<28*w]
+        aligned=any(sum(abs(dx*v-dy*u)/np.hypot(dx,dy)<min(w,h)*.32 for u,v in peers)>=2 for dx,dy in peers)
+        if not aligned:
+            continue
+        pad=max(w,h)*.65
+        box=(int((cx-pad)*sx),int((cy-pad)*sy),int((cx+pad)*sx)+1,int((cy+pad)*sy)+1)
+        aw,ah=box[2]-box[0],box[3]-box[1]
+        sample=np.full((ah*3,aw*3),255,'uint8')
+        cv2.ellipse(sample,((3*(cx*sx-box[0]),3*(cy*sy-box[1])),(w*sx*3,h*sy*3),angle),0,-1,cv2.LINE_AA)
+        hole=Image.fromarray(sample).resize((aw,ah),Image.Resampling.LANCZOS)
+        matte.paste(ImageChops.darker(matte.crop(box),hole),box[:2])
+    return matte
+
+
+def align_pale_straight_edges(original, matte, paper=False):
     """Refit only long pale silhouette spans supported by a real edge in the camera image."""
     import cv2
     import numpy as np
@@ -1447,7 +1863,21 @@ def align_pale_straight_edges(original, matte):
     if np.count_nonzero(pale & (alpha>192))<150:
         return matte
     near=cv2.morphologyEx((alpha>127).astype('uint8'),cv2.MORPH_GRADIENT,np.ones((11,11),np.uint8))
-    lines=cv2.createLineSegmentDetector().detect(gray)[0]
+    detector=cv2.createLineSegmentDetector()
+    lines=detector.detect(gray)[0]
+    if paper:
+        lab=cv2.cvtColor(rgb,cv2.COLOR_RGB2LAB)
+        exterior=lab[alpha<5,1:]
+        if len(exterior)<160:
+            return matte
+        surface=np.median(exterior,axis=0)
+        if np.linalg.norm(surface-128)<4 or np.percentile(np.linalg.norm(exterior-surface,axis=1),75)>6:
+            return matte
+        # A white sheet on a tan table may have nearly equal luminance. The
+        # blue-yellow channel still shows its cut edge and not the soft shadow.
+        colour=detector.detect(cv2.normalize(lab[:,:,2],None,0,255,cv2.NORM_MINMAX))[0]
+        if colour is not None:
+            lines=np.concatenate((lines,colour)) if lines is not None else colour
     if lines is None:
         return matte
     ratio=np.array(original.size)/size
@@ -1473,12 +1903,20 @@ def align_pale_straight_edges(original, matte):
         if np.mean((inner>230)&(outer<25))<.90:
             continue
         inside=points-normal*3;outside=points+normal*4
-        if min(sample(pale,inside).mean(),sample(pale,outside).mean())<.84:
+        colour_edge=False
+        if paper and sample(pale,inside).mean()>.9:
+            fg=sample(lab[:,:,1:],inside).astype(float)
+            bg=sample(lab[:,:,1:],outside).astype(float)
+            tint=bg-fg
+            colour_edge=np.mean(np.linalg.norm(tint,axis=1)>5)>.85 and np.max(np.std(tint,axis=0))<3
+        if paper and not colour_edge:
+            continue
+        if not colour_edge and min(sample(pale,inside).mean(),sample(pale,outside).mean())<.84:
             continue
         # The physical lip commonly darkens towards a cast shadow; the second,
         # reverse-polarity line is the far side of that shadow. Reject it.
         trace=np.stack([sample(gray,points+normal*k) for k in (-2,-1,0,1,2)]).astype(float)
-        if np.mean((trace[0]-trace[-1])>3)<.76 or np.median(trace[1]-trace[3])<3:
+        if not colour_edge and (np.mean((trace[0]-trace[-1])>3)<.76 or np.median(trace[1]-trace[3])<3):
             continue
         spans.append((a.copy(),b.copy(),normal.copy()))
     # At a re-entrant corner the end of a vertical mould line may continue up
@@ -1666,8 +2104,14 @@ def segment_subject(model_path, source, output, points=None, only_picked=False, 
         alpha=align_pale_straight_edges(original,alpha)
         alpha=refine_paper_and_bristles(source,original,alpha)
         alpha=refine_tapered_tips(source,original,alpha)
+        if category in ('brush','general'):
+            alpha=remove_bristle_spill(source,original,alpha)
         if (category or recognize(source,model_path.parent/'product-recognition'))=='paper':
             alpha=restore_page_notches(visible,alpha)
+            alpha=refit_page_edges(source,alpha,original)
+            alpha=preserve_metal_accessories(source,original,alpha,mask)
+            alpha=open_paper_punches(source,alpha)
+            alpha=align_pale_straight_edges(original,alpha,paper=True)
     if alpha.getextrema()[1] < 128:
         raise ValueError('没有剩余的可见主体，请撤销移除点或补选要保留的物体。' if marks else '未识别到可见商品。')
     original.putalpha(alpha)

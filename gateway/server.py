@@ -11,7 +11,7 @@ import sqlite3
 import sys
 import time
 import uuid
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
@@ -27,6 +27,8 @@ from .agent import CreativeAgent
 from .workbench import Workbench, private_history
 from .image_uploads import ImageUploadError, check_upload_batch, generation_references
 from .task_references import reference_directory, save_task_references, task_references
+from . import ai_retouch
+from .prompt_polish import PromptPolisher
 from .model_management import LOCAL_MODELS, ModelManagement, ModelPolicyError, units
 
 
@@ -35,7 +37,9 @@ READ_APIS = {"ListT2IParams", "GetCurrentStatus", "GetStudioCloudCapabilities", 
              "GetStudioCloudQuote", "GetStudioPolishCapabilities", "PolishStudioPrompt"}
 TASK_APIS = {"GetNewSession", "ListImages", "InterruptAll", "SubmitStudioCloudImage", "GetStudioCloudTask", "ListStudioCloudTasks"}
 SENSITIVE_KEYS = {"impersonateuser", "user_id", "userid", "owner_id", "role", "swarm_id"}
-IDENTITY_HEADERS = {"x-swarm-user_id", "x-session-id", "x-forwarded-for", "x-forwarded-host", "x-real-ip", "forwarded"}
+IDENTITY_HEADERS = {"x-swarm-user_id", "x-session-id"}
+PUBLIC_HOST = "nandouai.cn"
+PUBLIC_ACCOUNT_DISABLED = {"/studio-auth/register", "/studio-auth/reset"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 LOCAL_PARAMS = {"prompt", "model", "images", "width", "height", "aspectratio", "steps", "cfgscale", "seed",
                 "batchsize", "promptimages", "extra_metadata", "qwenmodel", "vae", "automaticvae", "sampler", "scheduler", "textencodedimage"}
@@ -70,12 +74,20 @@ def inline_references(values, limit):
     return True
 
 
+def socket_peer(request):
+    try:
+        peer = ipaddress.ip_address(request.transport.get_extra_info("peername")[0])
+        return peer.ipv4_mapped if isinstance(peer, ipaddress.IPv6Address) and peer.ipv4_mapped else peer
+    except (ValueError, TypeError, IndexError, AttributeError):
+        return None
+
+
 def local_entry(request):
     try:
-        peer = request.transport.get_extra_info("peername")[0]
+        peer = socket_peer(request)
         host = urlsplit("//" + request.host).hostname
-        return ipaddress.ip_address(peer).is_loopback and host in {"localhost", "127.0.0.1", "::1"}
-    except (ValueError, TypeError, IndexError, AttributeError):
+        return bool(peer and peer.is_loopback and host in {"localhost", "127.0.0.1", "::1"})
+    except ValueError:
         return False
 
 
@@ -92,8 +104,10 @@ def public_user(user):
 
 
 class Gateway:
-    def __init__(self, root, database, upstream="http://127.0.0.1:7802", reconcile_interval=15):
+    def __init__(self, root, database, upstream="http://127.0.0.1:7802", reconcile_interval=15, trusted_proxy=None):
         self.root = Path(root).resolve()
+        self.trusted_proxy = trusted_proxy
+        self.public_login_attempts = deque()
         self.store = Store(database)
         catalog = self.root / 'server/SwarmUI/Data/StudioCloudModels.json'
         if not catalog.is_file():
@@ -110,7 +124,14 @@ class Gateway:
         self.rate = defaultdict(list)
         self.local_queue = LocalQueue(self)
         self.agent = CreativeAgent(self)
+        self.polisher = PromptPolisher(self)
         self.workbench = Workbench(self)
+        self.retouch_workers={}
+        self.retouch_limit=asyncio.Semaphore(1)
+        self.store.db.execute("""CREATE TABLE IF NOT EXISTS ai_retouch_jobs(
+            task_id TEXT PRIMARY KEY REFERENCES tasks(id), category TEXT NOT NULL, white_bg INTEGER NOT NULL,
+            align_geometry INTEGER NOT NULL, engine_url TEXT, output_json TEXT, failure TEXT)""")
+        ai_retouch.reconstruction_schema(self.store)
         self.reconcile_interval = reconcile_interval
         self.import_cloud_ledger()
         self.app = web.Application(client_max_size=384 * 1024 ** 2, middlewares=[self.boundary])
@@ -121,11 +142,36 @@ class Gateway:
 
     @web.middleware
     async def boundary(self, request, handler):
-        if any(name.lower() in IDENTITY_HEADERS for name in request.headers):
+        names = {name.lower() for name in request.headers}
+        if names & IDENTITY_HEADERS:
             return error("不接受客户端身份或转发请求头。", 400)
+        public = self.trusted_proxy is not None and socket_peer(request) == self.trusted_proxy
+        if public:
+            # Only the TCP peer can establish proxy trust. Traefik appends its
+            # immediate client to XFF when forwarding, so do not use earlier entries.
+            forwarded_for = request.headers.getall("X-Forwarded-For", [])
+            if (request.headers.getall("Host", []) != [PUBLIC_HOST]
+                    or request.headers.getall("X-Forwarded-Host", []) != [PUBLIC_HOST]
+                    or request.headers.getall("X-Forwarded-Proto", []) != ["https"]
+                    or len(forwarded_for) != 1):
+                return error("公网入口转发信息无效。", 400)
+            try:
+                remote = str(ipaddress.ip_address(forwarded_for[0].rsplit(",", 1)[-1].strip()))
+            except ValueError:
+                return error("公网入口转发信息无效。", 400)
+            request = request.clone(scheme="https", remote=remote)
+            if request.path in PUBLIC_ACCOUNT_DISABLED:
+                return error("公网入口仅支持已有账号登录。", 403)
+        elif (names & {"forwarded", "x-real-ip"} or any(name.startswith("x-forwarded-") for name in names)
+              or request.host.lower().split(":", 1)[0].rstrip(".") == PUBLIC_HOST):
+            return error("不接受客户端身份或转发请求头。", 400)
+        request["public_entry"] = public
         origin = request.headers.get("Origin")
         if origin:
-            parsed = urlsplit(origin)
+            try:
+                parsed = urlsplit(origin)
+            except ValueError:
+                return error("请求来源不匹配。", 403)
             if parsed.netloc.lower() != request.host.lower() or parsed.scheme != request.scheme:
                 return error("请求来源不匹配。", 403)
         user = self.store.session(request.cookies.get(COOKIE))
@@ -161,6 +207,8 @@ class Gateway:
         self.poller = asyncio.create_task(self.reconcile_loop())
 
     async def cleanup(self, app):
+        if self.retouch_workers:
+            await asyncio.gather(*list(self.retouch_workers.values()),return_exceptions=True)
         if self.workbench.running:
             await asyncio.gather(*self.workbench.running, return_exceptions=True)
         await self.agent.close()
@@ -321,11 +369,20 @@ class Gateway:
         if action not in {"register", "login", "reset"}:
             raise web.HTTPNotFound()
         now = time.monotonic()
-        bucket = self.rate[request.remote or "unknown"]
-        bucket[:] = [stamp for stamp in bucket if now - stamp < 60]
-        if len(bucket) >= 30:
-            return error("请求过于频繁，请稍后再试。", 429)
-        bucket.append(now)
+        remote = request.remote or "unknown"
+        if request["public_entry"]:
+            attempts = self.public_login_attempts
+            while attempts and now - attempts[0][0] >= 60:
+                attempts.popleft()
+            if len(attempts) >= 120 or sum(ip == remote for _, ip in attempts) >= 12:
+                return error("请求过于频繁，请稍后再试。", 429)
+            attempts.append((now, remote))
+        else:
+            bucket = self.rate[remote]
+            bucket[:] = [stamp for stamp in bucket if now - stamp < 60]
+            if len(bucket) >= 30:
+                return error("请求过于频繁，请稍后再试。", 429)
+            bucket.append(now)
         email = str(data.get("email", "")).strip().lower()
         password = data.get("password")
         if not isinstance(password, str) or not 6 <= len(password) <= 256:
@@ -392,8 +449,12 @@ class Gateway:
         internal_dispatch = endpoint == 'SubmitStudioCloudImage' and data is not None and 'studio_official_only' not in data
         if internal_dispatch:
             tid = str(uuid.UUID(data['request_id']))
+            # Only a durable, server-created reconstruction belonging to this owner
+            # may use the model hidden from ordinary generation. Never trust a payload flag.
+            child = self.store.one('''SELECT j.task_id FROM ai_retouch_jobs j JOIN tasks t ON t.id=j.task_id
+                WHERE j.rebuild_id=? AND j.rebuild=1 AND j.engine_url IS NOT NULL AND t.owner_id=?''', (tid,user['id']))
             try:
-                data = await self.managed_dispatch(user,tid,tid,data)
+                data = await self.managed_dispatch(user,tid,child['task_id'] if child else tid,data,retouch_rebuild=bool(child))
             except ModelPolicyError as exc:
                 return {'error': str(exc), 'error_id': exc.code}
         session = self.sessions.get(user["id"]) or await self.new_session(user)
@@ -440,6 +501,10 @@ class Gateway:
             return await self.submit_cloud(user, data)
         if endpoint == 'GetStudioCloudAccount' and user['role'] != 'admin':
             return web.json_response({'studio_quota': self.models.snapshot(user['id'])})
+        if endpoint == 'GetStudioCloudQuote':
+            data = {'operation':'generate', **data}
+            self.models.validate(user, data)
+            return web.json_response(await self.cloud_quote(user, data))
         if endpoint == "GetStudioCloudTask":
             task = self.store.task(str(data.get("request_id", "")))
             if not self.store.task_visible(task, user) or task["kind"] != "cloud":
@@ -453,8 +518,13 @@ class Gateway:
         if endpoint == "ListStudioCloudTasks":
             await self.synchronize(user)
             return web.json_response({"tasks": self.cloud_history(user)})
-        if endpoint == 'GetStudioCloudQuote':
-            self.models.validate(user, {'operation':'generate', **data})
+        if endpoint == 'GetStudioPolishCapabilities':
+            return web.json_response(self.polisher.capabilities())
+        if endpoint == 'PolishStudioPrompt':
+            try:
+                return web.json_response(await self.polisher.polish(user, data))
+            except ValueError as exc:
+                return error(str(exc), 400, 'polish_invalid_input')
         result = await self.upstream_api(user, endpoint, data, endpoint != "PolishStudioPrompt")
         if endpoint == 'GetStudioCloudCapabilities':
             result = self.models.public_models(result,user)
@@ -485,8 +555,8 @@ class Gateway:
         return web.json_response({'models': [{'supported': m, 'policy': self.models.model(m['id'])} for m in self.models.catalog.values()],
             'users': [{**row, 'quota': self.models.snapshot(row['id'])} for row in self.store.all("SELECT id,email,name FROM users WHERE role!='admin' ORDER BY name,email")]})
 
-    async def managed_dispatch(self, user, tid, parent, data):
-        self.models.validate(user,data)
+    async def managed_dispatch(self, user, tid, parent, data, *, retouch_rebuild=False):
+        self.models.validate(user,data,retouch_rebuild=retouch_rebuild)
         estimate = None
         if user['role'] != 'admin' and self.models.has_limit(user['id'], data['model']):
             params = {k:v for k,v in data.items() if k in {'model','size','resolution','quality','n','output_format','frame_count','frame_duration_ms'}}
@@ -499,7 +569,7 @@ class Gateway:
                         estimate = None if high is None else high * params['n']
             except (ClientError, asyncio.TimeoutError, ConnectionError):
                 pass
-        official_only = self.models.reserve(user,tid,parent,data,estimate)
+        official_only = self.models.reserve(user,tid,parent,data,estimate,retouch_rebuild=retouch_rebuild)
         if official_only:
             try:
                 capabilities = await self.upstream_api(user,'GetStudioCloudCapabilities')
@@ -517,6 +587,10 @@ class Gateway:
         transparent = data.get('background') == 'transparent' or bool(re.search(r'透明(?:底|背景|PNG)|transparent', data.get('prompt', ''), re.I))
         if not workflow or transparent or data.get('n') != 1 or data.get('output_format', 'png') != 'png':
             return first
+        try:
+            ai_retouch.validate_rebuild(self.models, user, data.get('size', '1:1') if data.get('size') != 'auto' else '1:1')
+        except ModelPolicyError as exc:
+            return {'error': str(exc), 'error_id': exc.code}
         second = await self.upstream_api(user, 'GetStudioCloudQuote', ai_retouch.rebuild_options(data.get('size', '1:1')))
         if first.get('error') or second.get('error'):
             return {'error': '精修与去纹报价暂不可用，请稍后重试。'}
@@ -544,9 +618,27 @@ class Gateway:
         fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
         references = await asyncio.to_thread(generation_references, data.get('reference_images', []))
         upstream_data = {**data, 'reference_images': references}
-        original_prompt = upstream_data.pop('original_prompt', data.get('prompt', ''))
-        if not isinstance(original_prompt, str) or len(original_prompt) > 12000:
+        explicit=upstream_data.pop('retouch_category',None)
+        prompt=data.get('prompt','')
+        original_prompt=upstream_data.pop('original_prompt', prompt)
+        if not isinstance(original_prompt, str) or len(original_prompt)>12000:
             return error('原始提示词无效。')
+        workflow=(explicit is not None or ai_retouch.wants_retouch(original_prompt)) and data.get('operation')=='edit'
+        if workflow and (len(references)!=1 or data.get('n')!=1 or data.get('output_format','png')!='png'
+                         or data.get('model') not in ('gemini-nano-banana-2.1','gpt-image-2.6-flare','gpt-image-2.6-sunburst')):
+            return error('AI 商品精修需要一张原片、单张 PNG，以及 Gemini 或 GPT Image 2.6。')
+        if explicit is not None and (not workflow or explicit not in ('auto',*ai_retouch.MATERIALS)):
+            return error('AI 精修参数无效。')
+        transparent = data.get('background') == 'transparent' or bool(re.search(r'透明(?:底|背景|PNG)|transparent', original_prompt, re.I))
+        if workflow and not transparent and not self.store.task(tid):
+            from PIL import Image, ImageOps
+            import base64, io
+            with Image.open(io.BytesIO(base64.b64decode(references[0].split(',', 1)[-1]))) as im:
+                rebuild_size = ai_retouch.source_ratio(ImageOps.exif_transpose(im).size)
+            try:
+                ai_retouch.validate_rebuild(self.models, user, rebuild_size)
+            except ModelPolicyError as exc:
+                return error(str(exc), exc.status, exc.code)
         if not self.store.claim(tid, user["id"], "cloud", data.get("model"), data.get("n"), fingerprint):
             old = self.store.task(tid)
             if old["owner_id"] != user["id"] or old["fingerprint"] != fingerprint or old.get("hidden_at"):
@@ -562,9 +654,24 @@ class Gateway:
         }, ensure_ascii=False))
         try:
             await asyncio.to_thread(save_task_references, self.root, tid, data.get('reference_images', []))
-        except (OSError, ValueError):
-            self.store.update_task(tid, status='failed', ended_at=time.time(), credits=0)
-            return error('参考图保存失败，未提交生成。', 503, 'reference_save_failed')
+            if workflow:
+                src=reference_directory(self.root,tid)/Path(task_references(self.root,tid)[0]['url']).name
+                from PIL import Image,ImageOps
+                with Image.open(src) as source_image:
+                    upstream_data['size']=ai_retouch.source_ratio(ImageOps.exif_transpose(source_image).size)
+                category=await asyncio.to_thread(ai_retouch.category_for,src,explicit if explicit and explicit!='auto' else ai_retouch.category_hint(prompt),self.workbench.cutout_model.parent/'product-recognition')
+                transparent = data.get('background') == 'transparent' or bool(re.search(r'透明(?:底|背景|PNG)|transparent', original_prompt, re.I))
+                if transparent and data['model'].startswith('gpt-image-2.6-'):
+                    upstream_data['background'] = 'transparent'
+                with self.store.db:
+                    self.store.db.execute('INSERT INTO ai_retouch_jobs(task_id,category,white_bg,align_geometry,rebuild) VALUES(?,?,?,?,?)',
+                        (tid,category,2 if transparent else int(ai_retouch.needs_white(original_prompt)),0,int(not transparent)))
+                upstream_data['prompt']=ai_retouch.instruction(category,prompt)
+        except Exception as exc:
+            print('reference preparation failed:',tid,type(exc).__name__,file=sys.stderr)
+            msg='原片保存或识别失败，未提交生成，未扣费。'
+            self.store.update_task(tid, status='failed', ended_at=time.time(), credits=0,record_json=json.dumps(dict(request_id=tid,status='failed',images=[],error=msg,credits_cost=0)))
+            return error(msg, 503, 'reference_save_failed')
         try:
             upstream_data = await self.managed_dispatch(user,tid,tid,upstream_data)
         except ModelPolicyError as exc:
@@ -576,7 +683,8 @@ class Gateway:
             result = await self.upstream_api(user, "SubmitStudioCloudImage", upstream_data, False)
             if result.get("request_id"):
                 self.save_cloud(user, result)
-                return web.json_response(self.store.public_task(json.loads(self.store.task(tid)["record_json"]), self.store.task(tid)))
+                latest=self.store.task(tid)
+                return web.json_response(self.store.public_task(json.loads(latest['record_json']),latest))
             self.models.settle({'request_id':tid,'status':'failed','credits_cost':0})
             self.store.update_task(tid, status="failed", ended_at=time.time(), record_json=json.dumps({"request_id": tid, "status": "failed", "model": data.get("model"), "prompt": data.get("prompt", ""), "images": [], "error": result.get("error", "提交被拒绝")}, ensure_ascii=False))
             return web.json_response(result)
@@ -588,6 +696,13 @@ class Gateway:
         record = dict(record)
         record.pop("original_prompt", None)  # Only the authenticated submission can supply this field.
         tid = str(uuid.UUID(record["request_id"]))
+        child = self.store.one('SELECT j.task_id,t.owner_id FROM ai_retouch_jobs j JOIN tasks t ON t.id=j.task_id WHERE j.rebuild_id=?', (tid,))
+        if child:
+            if child['owner_id'] != owner['id']:
+                raise ValueError('reconstruction owner mismatch')
+            ai_retouch.save_rebuild_record(self.store, child['task_id'], record)
+            self.models.settle(record)
+            return
         old = self.store.task(tid)
         if old and old["owner_id"] != owner["id"]:
             raise ValueError("global task collision")
@@ -602,6 +717,29 @@ class Gateway:
                 self.store.update_task(tid, started_at=when)
             except (KeyError, ValueError, TypeError):
                 pass
+        job=self.store.one('SELECT * FROM ai_retouch_jobs WHERE task_id=?',(tid,))
+        if job:
+            record=dict(record)
+            if old:
+                record['prompt']=json.loads(old['record_json']).get('prompt',record.get('prompt',''))
+            if job['output_json']:
+                record.update(status='completed',images=[json.loads(job['output_json'])],delivery_status='complete')
+            elif job['failure']:
+                record.update(status='failed',images=[{'url':job['engine_url'],'index':0}],error=job['failure'])
+            elif record.get('status')=='completed':
+                items=record.get('images',[])
+                url=items[0].get('url','') if items else ''
+                if re.fullmatch(r'/studio-results/'+re.escape(tid)+r'-[\w-]+\.(?:png|jpg|jpeg|webp)',url) and (self.results/Path(url).name).is_file():
+                    with self.store.db:
+                        self.store.db.execute('UPDATE ai_retouch_jobs SET engine_url=? WHERE task_id=?',(url,tid))
+                    try:
+                        loop=asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop=None
+                    if loop and tid not in self.retouch_workers:
+                        self.retouch_workers[tid]=loop.create_task(self.finish_retouch(owner,record.copy(),tid))
+                record.update(status='processing',images=[],delivery_status='cache_pending')
+            record = ai_retouch.combined_record(record, job)
         delivered = 0
         for image in record.get("images", []):
             url = image.get("url", "")
@@ -618,6 +756,26 @@ class Gateway:
         credits = record.get("credits_cost") if isinstance(record.get("credits_cost"), (float, int)) and record["credits_cost"] >= 0 else None
         self.store.update_task(tid, model=record.get("model"), status=status, requested=record.get("parameters", {}).get("n"), completed=delivered,
                                credits=credits, seconds=seconds, ended_at=time.time() if status in TERMINAL else None, record_json=json.dumps(record, ensure_ascii=False))
+
+    async def finish_retouch(self,owner,record,tid):
+        try:
+            async with self.retouch_limit:
+                job=self.store.one('SELECT * FROM ai_retouch_jobs WHERE task_id=?',(tid,))
+                request = json.loads(self.store.task(tid)['record_json']).get('prompt', '')
+                if not await ai_retouch.reconstruct(self, owner, job, request):
+                    return
+                job=self.store.one('SELECT * FROM ai_retouch_jobs WHERE task_id=?',(tid,))
+                result=await asyncio.to_thread(ai_retouch.render_delivery,self.root,self.results,job)
+            with self.store.db:
+                self.store.db.execute('UPDATE ai_retouch_jobs SET output_json=? WHERE task_id=?',(json.dumps(result),tid))
+        except Exception as exc:
+            print('retouch delivery failed:',tid,type(exc).__name__,file=sys.stderr)
+            failure = str(exc) if isinstance(exc, (ai_retouch.TextPreservationError, ai_retouch.RetouchStageError)) else '精修已生成，去纹或原尺寸处理未完成。已保留初次精修原稿，可从创作记录下载。'
+            with self.store.db:
+                self.store.db.execute('UPDATE ai_retouch_jobs SET failure=? WHERE task_id=?',(failure,tid))
+        finally:
+            self.retouch_workers.pop(tid,None)
+        self.save_cloud(owner,record)
 
     def import_cloud_ledger(self):
         """Reserve historical IDs before accepting any new paid request."""
@@ -920,6 +1078,8 @@ def main():
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=7801)
     parser.add_argument("--upstream", default="http://127.0.0.1:7802")
+    parser.add_argument("--trusted-proxy", type=ipaddress.IPv4Address, default=None,
+                        help="Exact non-loopback IPv4 address of the public HTTPS proxy")
     parser.add_argument("--bootstrap-admin", action="store_true", help="Read initial password from stdin; never overwrite an existing admin")
     args = parser.parse_args()
     database = args.database or str(Path(args.root) / "runtime/studio-accounts.sqlite3")
@@ -935,7 +1095,9 @@ def main():
             print("Administrator initialized; only a salted password hash was stored.")
         store.close()
         return
-    gateway = Gateway(args.root, database, args.upstream)
+    if args.trusted_proxy and (args.trusted_proxy.is_loopback or args.trusted_proxy.is_unspecified):
+        parser.error("--trusted-proxy must be a specific non-loopback peer")
+    gateway = Gateway(args.root, database, args.upstream, trusted_proxy=args.trusted_proxy)
     if not gateway.store.user("admin"):
         raise SystemExit("Administrator is not initialized. Run --bootstrap-admin with password on stdin first.")
     web.run_app(gateway.app, host=args.host, port=args.port, access_log=None, print=None)

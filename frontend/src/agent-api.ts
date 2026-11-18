@@ -20,7 +20,7 @@ export async function agentRequest<T>(path: string, data?: object, signal?: Abor
     headers: data ? { 'Content-Type': 'application/json' } : undefined, body: data ? JSON.stringify(data) : undefined });
   if (response.status === 401) window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
   const value = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(value.error ?? `创作助手请求失败（HTTP ${response.status}）`);
+  if (!response.ok) throw Object.assign(new Error(value.error ?? `创作助手请求失败（HTTP ${response.status}）`),{status:response.status});
   return value as T;
 }
 

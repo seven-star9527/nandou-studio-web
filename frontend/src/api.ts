@@ -68,7 +68,7 @@ export class SwarmClient {
     try { return await this.post<T>(endpoint, { ...data, session_id: this.session }, signal); }
     catch (error) {
       // Retry only the read request after an explicit invalid-session rejection.
-      if (error instanceof SwarmError && error.code === 'invalid_session_id' && !['InterruptAll', 'SubmitStudioCloudImage'].includes(endpoint)) {
+      if (error instanceof SwarmError && error.code === 'invalid_session_id' && !['InterruptAll', 'SubmitStudioCloudImage', 'PolishStudioPrompt'].includes(endpoint)) {
         await this.connect();
         return this.post<T>(endpoint, { ...data, session_id: this.session }, signal);
       }

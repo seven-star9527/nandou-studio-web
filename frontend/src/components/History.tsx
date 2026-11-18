@@ -48,11 +48,14 @@ function DownloadLink({ artwork, compact = false }: { artwork: Artwork; compact?
   </a>;
 }
 
-export function GenerationStatus({ job, stop }: { job: Job; stop: () => void }) {
+export function GenerationStatus({ job: currentJob, preparation, stop }: { job?: Job; preparation?: string; stop: () => void }) {
   const [now, setNow] = useState(Date.now());
+  const started = useRef(Date.now());
+  // Preparation shares the status presentation without creating a generation task.
+  const job: Job = currentJob ?? {id:'preparation',started:started.current,requested:0,completed:0,phase:'connecting'};
   const busy = isBusy(job);
   const queueWaiting = job.queue?.state === 'queued' && ['queued', 'stopping'].includes(job.phase);
-  const phaseLabel = queueWaiting ? job.phase === 'stopping' ? '正在取消排队' : '等待本地生成'
+  const phaseLabel = preparation ? '正在润色' : queueWaiting ? job.phase === 'stopping' ? '正在取消排队' : '等待本地生成'
     : job.phase === 'queued' && job.source === 'cloud' ? '云端等待生成'
     : job.phase === 'generating' && job.source !== 'cloud'
       ? job.restored ? '后台正在生成' : job.progressStage === 'finalizing' ? '正在解码与保存' : `正在生成第 ${Math.min(job.requested, (job.progressBatch ?? job.completed) + 1)} 张`
@@ -64,15 +67,15 @@ export function GenerationStatus({ job, stop }: { job: Job; stop: () => void }) 
   }, [busy]);
   return <div className={`generation-status ${job.phase === 'error' ? 'job-error' : ''}`} role="status" aria-live="polite">
     {job.preview && busy ? <img className="job-preview" src={job.preview} alt="当前生成预览" /> : <div className={`status-symbol ${busy ? 'status-running' : ''}`}><Icon name={busy ? 'spark' : job.phase === 'complete' ? 'check' : 'stop'} size={21} /></div>}
-    <div className="status-text"><strong>{phaseLabel}<span>{job.completed} / {job.requested} 张</span></strong>
-      <p>{job.error ?? (queueWaiting && job.queue ? `前方 ${job.queue.ahead} 个任务 · 队列第 ${job.queue.position} 位 · 已等待 ${Math.floor(job.queue.waited_seconds)} 秒`
+    <div className="status-text"><strong>{phaseLabel}{!preparation && <span>{job.completed} / {job.requested} 张</span>}</strong>
+      <p>{preparation ?? job.error ?? (queueWaiting && job.queue ? `前方 ${job.queue.ahead} 个任务 · 队列第 ${job.queue.position} 位 · 已等待 ${Math.floor(job.queue.waited_seconds)} 秒`
         : busy ? `已用时 ${Math.max(0, Math.floor((now - job.started) / 1000))} 秒${job.percent != null ? ` · 整任务 ${Math.floor(job.percent * 100)}%` : ''}` : job.phase === 'background' ? '后台任务继续，可刷新创作记录确认结果。' : job.phase === 'complete' ? '图像已保存到创作记录。' : '已返回的图像保留在创作记录中。')}</p>
       {queueWaiting && job.queue ? <p className="queue-estimate">{queueEstimateLabel(job.queue)}</p> : null}
       {job.restored && busy ? <p className="queue-estimate">已恢复后台任务，完成后自动同步作品。</p> : null}
       {job.source === 'cloud' && isCreditAmount(job.taskCreditsCost) ? <p className="actual-task-cost">{taskCostLabel(job.taskCreditsCost, job.taskCostSettled, job.referenceBilling, job.estimatedCredits)}</p> : null}
       {busy && <div className={'job-progress'+(job.percent == null ? ' is-indeterminate' : '')} aria-hidden="true"><span style={job.percent == null ? undefined : {width: String(job.percent * 100)+'%'}} /></div>}
     </div>
-    {busy && job.phase !== 'stopping' ? <button className="quiet-button stop-button" onClick={stop}><Icon name="stop" size={15} />{job.source === 'cloud' ? '停止等待' : queueWaiting ? '取消排队' : '停止'}</button> : null}
+    {busy && job.phase !== 'stopping' ? <button className="quiet-button stop-button" onClick={stop}><Icon name="stop" size={15} />{preparation ? '取消' : job.source === 'cloud' ? '停止等待' : queueWaiting ? '取消排队' : '停止'}</button> : null}
   </div>;
 }
 

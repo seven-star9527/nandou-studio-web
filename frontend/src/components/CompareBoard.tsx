@@ -146,9 +146,11 @@ export default function CompareBoard({project, initial, close, studio, onEditCom
         else {
           // Place the comparison together without moving existing work.
           const board=current.current;
-          if(board.cards.length+initial.length>maxCards)throw new Error('剩余图层不足以放下整组图片，请选择其他画布或新建画布。');
+          const fresh=initial.filter((image,i)=>!board.cards.some(card=>card.url===image.url) && initial.findIndex(other=>other.url===image.url)===i);
+          if(!fresh.length)return;
+          if(board.cards.length+fresh.length>maxCards)throw new Error('剩余图层不足以放下整组图片，请选择其他画布或新建画布。');
           const y=board.cards.length ? Math.max(...board.cards.map(c=>c.y+(c.h??height)))+gap : 0;
-          const cards=initial.map((image,i)=>({...place(image,[]),x:i*(width+gap),y}));
+          const cards=fresh.map((image,i)=>({...place(image,[]),x:i*(width+gap),y}));
           choose(cards[cards.length-1].id);
           change({...board,cards:[...board.cards,...cards],view:fit(cards,plane.current!)});
           void save();
@@ -457,12 +459,13 @@ export default function CompareBoard({project, initial, close, studio, onEditCom
       <footer className="work-controls"><button className="quiet-button" aria-label="缩小画布" onClick={()=>scale(.8)}>−</button><span>{Math.round(board.view.zoom*100)}%</span><button className="quiet-button" aria-label="放大画布" onClick={()=>scale(1.25)}>＋</button><button className="quiet-button" disabled={!board.cards.length} onClick={()=>{const b=current.current;change({...b,view:fit(b.cards,plane.current!)});void save();}}>适应全部</button></footer>
       {removed && <div className="undo-layer">已移出「{removed.card.name.slice(0,30)}」 <button onClick={undoRemove} disabled={board.cards.length>=maxCards}>撤销</button></div>}
       {quick && <QuickEdit tool={quick.tool} initial={quick.source} switchTool={(tool,source)=>setQuick({...quick,tool,source:source??quick.source})}
-        close={()=>{setQuick(null);onEditComplete();}} compareLabel="添加到当前画布" compare={image=>{
-          if(current.current.cards.length>=maxCards){setQuick(null);setError('画布已满，请先移出一个图层。');return;}
+        close={()=>{setQuick(null);onEditComplete();}} compareLabel="添加到当前画布" compare={(...images)=>{
           const cards=current.current.cards,parent=cards.find(c=>c.id===quick.parent);
-          if(parent){let y=parent.y;const x=parent.x+width+gap;while(cards.some(c=>Math.abs(c.x-x)<width && Math.abs(c.y-y)<height))y+=height+gap;append([image],{x,y});
+          const fresh=images.filter((image,i)=>!cards.some(c=>c.url===image.url) && images.findIndex(other=>other.url===image.url)===i);
+          if(cards.length+fresh.length>maxCards){setQuick(null);setError('剩余图层不足以放下整组图片，请先移出图层。');return;}
+          if(parent && fresh.length===1){let y=parent.y;const x=parent.x+width+gap;while(cards.some(c=>Math.abs(c.x-x)<width && Math.abs(c.y-y)<height))y+=height+gap;append(fresh,{x,y});
             const b=current.current;change({...b,view:fit(b.cards,plane.current!)});void save();
-          }else append([image]);
+          }else if(fresh.length)append(fresh);
           setQuick(null);onEditComplete();
         }}/>}
       {error&&<div className="history-error" role="alert">{error} <button className="quiet-button" onClick={()=>setError('')}>关闭提示</button></div>}

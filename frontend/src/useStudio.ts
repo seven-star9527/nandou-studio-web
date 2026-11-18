@@ -15,6 +15,7 @@ import { useCloudQuote } from './useCloudQuote';
 import { localProgress, mergeJobProgress } from './job-progress';
 import { isActiveJob, reconcileHistory } from './history-view-contract';
 import { queueJobPatch, restoreQueuedJob, restoredTaskPatch } from './queue-contract';
+import { needsAutoPolish, validPolishResult, type PolishResult } from './commerce-contract';
 import type { Artwork, BackendStatus, DeploymentConfig, GenerationSettings, Job, Model, ParamSchema, RatioId, ReferenceImage, ResolutionId } from './types';
 
 const INITIAL: GenerationSettings = { ratio: '1:1', resolution: '1K', width: 1024, height: 1024, count: 1, model: '', steps: 20, cfg: 7, seed: '-1', quality: 'medium' };
@@ -31,6 +32,10 @@ export function useStudio(account: string) {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(true);
   const [error, setError] = useState('');
+  const [polishing, setPolishing] = useState(false);
+  const submitLock = useRef(false);
+  const polishAbort = useRef<AbortController | null>(null);
+  const appliedPolish = useRef<{prompt:string; references:ReferenceImage[]} | null>(null);
   const [historyError, setHistoryError] = useState('');
   const [status, setStatus] = useState<BackendStatus>({});
   const [params, setParams] = useState<ParamSchema[]>([]);
@@ -39,7 +44,14 @@ export function useStudio(account: string) {
   const [settings, setSettings] = useState<GenerationSettings>(INITIAL);
   const [draft, setDraft, draftReady, draftError] = useDraft(accountStorageKey('draft:studio'), { prompt: '', references: [] as ReferenceImage[], minReferences: 0 });
   const {prompt, references, minReferences} = draft;
+  const generationContext = useRef({prompt, references, settings});
+  generationContext.current = {prompt, references, settings};
   const setPrompt = useCallback((prompt: string) => setDraft(d => ({...d, prompt, minReferences:prompt.trim()?d.minReferences:0})), [setDraft]);
+  const applyPolishedPrompt = (value: string) => {
+    const bound = bindMentions(value, references);
+    appliedPolish.current = {prompt:bound, references};
+    setPrompt(bound);
+  };
   const setReferences = useCallback((action: ReferenceImage[] | ((old: ReferenceImage[]) => ReferenceImage[])) => setDraft(d => {
     const references = typeof action === 'function' ? action(d.references) : action;
     const added = references.filter(ref => !d.references.some(old => old.id === ref.id));
@@ -69,7 +81,7 @@ export function useStudio(account: string) {
     setSettings(previous=>({...previous,ratio,resolution,...cloudDimensions(next,ratio,resolution),count:1,
       outputFormat:next.formats?.[0] ?? 'png',quality:next.qualities.includes('medium')?'medium':next.qualities[0] ?? ''}));
   }, [cloud.capabilities,cloudModelId,cloudModel]);
-  const creditQuote = useCloudQuote(client, connected, cloudModel, settings);
+  const creditQuote = useCloudQuote(client, connected, cloudModel, settings, resolveMentions(prompt,references), references.length>0);
   const displayJob = cloud.job && (!job || cloud.job.started > job.started) ? cloud.job : job;
   const backendReady = ['running', 'some_loading'].includes(status.backend_status?.status ?? '');
   const localReady = cloud.capabilities?.localReadiness?.[settings.model] === true;
@@ -225,7 +237,7 @@ export function useStudio(account: string) {
   useEffect(() => {
     mounted.current = true;
     void connect();
-    return () => { mounted.current = false; socket.current?.close(); };
+    return () => { mounted.current = false; polishAbort.current?.abort(); socket.current?.close(); };
   }, [connect]);
 
   useEffect(() => {
@@ -301,14 +313,16 @@ export function useStudio(account: string) {
     setJob(activeJob.current);
   };
 
-  const generate = (includeReferences: boolean, branch?: {id:string; prompt:string; references:ReferenceImage[]; settings:GenerationSettings}) => {
-    const input = branch ?? { prompt: resolveMentions(prompt, references), references, settings };
+  const generate = async (includeReferences: boolean, branch?: {id:string; prompt:string; references:ReferenceImage[]; settings:GenerationSettings}) => {
+    if (submitLock.current) { if (branch) throw new Error('上一条请求正在准备。'); return; }
+    const input = {...(branch ?? { prompt: resolveMentions(prompt, references), references, settings })};
     const originalPrompt = input.prompt;
+    const snapshot = generationContext.current;
     let accepted = false;
     const restoreDefault = () => {
       if (branch || accepted) return;
       accepted = true;
-      void setDraft(current => current.prompt === prompt && current.references === references
+      void setDraft(current => current.prompt === snapshot.prompt && current.references === snapshot.references
         ? {prompt: '', references: [], minReferences: 0}
         : current);
       const latest = current.current;
@@ -322,13 +336,41 @@ export function useStudio(account: string) {
       return;
     }
     try {
+      submitLock.current = true;
       if (!branch && references.length < minReferences) throw new Error(`请再添加 ${minReferences-references.length} 张参考图。`);
       if (!connected) throw new Error('请先连接图像服务。');
+      // Validate selected generation parameters BEFORE a billable polish request.
+      if (cloudModel) buildCloudRequest(cloudModel, input.settings, includeReferences ? 'edit' : 'generate', input.prompt, includeReferences ? input.references : [], Boolean(cloud.capabilities?.configured));
+      else {
+        if (!backendReady || !localReady) throw new Error('本地图像服务尚未就绪。');
+        if (configurationError) throw new Error(configurationError);
+        buildGenerationRequest(input.settings, input.prompt, includeReferences ? input.references : [], paramsRef.current, configRef.current);
+      }
+      if (needsAutoPolish(input.prompt) && (branch || appliedPolish.current?.prompt !== prompt || appliedPolish.current?.references !== references)) {
+        setPolishing(true);
+        const controller = new AbortController(); polishAbort.current = controller;
+        const refs = includeReferences ? input.references : [];
+        const value = await client.request<PolishResult>('PolishStudioPrompt', {
+          request_id: createId(), scope: 'general', prompt: input.prompt, facts: '',
+          width: input.settings.width, height: input.settings.height, aspect_ratio: input.settings.ratio,
+          reference_count: refs.length, reference_images: refs.map(ref => ref.dataUrl),
+        }, controller.signal);
+        if (!mounted.current || controller.signal.aborted) return;
+        const latest = generationContext.current;
+        if (current.current.cloudModelId !== cloudModelId || (!branch &&
+            (latest.prompt !== snapshot.prompt || latest.references !== snapshot.references || latest.settings !== snapshot.settings))) {
+          throw new Error('提示词、参考图或生成设置已变化，本次未提交生图。请按当前内容重新生成。');
+        }
+        if (!validPolishResult(value)) throw new Error('自动润色结果不完整，本次未提交生图。');
+        if (value.blocking_questions?.length) throw new Error(`请补充后再生成：${value.blocking_questions.join('；')}`);
+        input.prompt = value.prompt;
+        setPolishing(false); polishAbort.current = null;
+      }
       if (cloudModel) {
         const request = buildCloudRequest(cloudModel, input.settings, includeReferences ? 'edit' : 'generate', input.prompt, includeReferences ? input.references : [], Boolean(cloud.capabilities?.configured));
         request.original_prompt = originalPrompt;
         if (branch) request.request_id = branch.id;
-        void cloud.generate(request, restoreDefault);
+        await cloud.generate(request, restoreDefault);
         return;
       }
       if (!backendReady) throw new Error('图像服务尚未就绪，请稍后刷新连接。');
@@ -398,10 +440,12 @@ export function useStudio(account: string) {
         }
         socket.current = null;
       });
-    } catch (e) { if (branch) throw e; setError(errorText(e)); }
+    } catch (e) { if (branch) throw e; if (mounted.current) setError(e instanceof DOMException && e.name === 'AbortError' ? '已取消自动润色，未提交生图。' : errorText(e)); }
+    finally { submitLock.current = false; polishAbort.current = null; if (mounted.current) setPolishing(false); }
   };
 
   const stop = async () => {
+    if (polishAbort.current) { polishAbort.current.abort(); return; }
     if (displayJob?.source === 'cloud') { cloud.stopWaiting(); return; }
     updateJob({ phase: 'stopping' });
     try {
@@ -460,7 +504,7 @@ export function useStudio(account: string) {
   return { client, connected, connecting, error, setError, historyError, status, params, models, config, configurationError, backendReady, localReady,
     ready: connected && presetsInitialized && (cloudModelId !== null ? Boolean(cloudModel && cloud.capabilities?.configured) : Boolean(settings.model) && backendReady && localReady && !configurationError),
     presetControls: {presets, presetsLoaded: presetsRead, initialized: presetsInitialized, busy: presetBusy, error: presetError, read: readPresets, change: changePreset, apply: applyPreset, cloudModelId},
-    settings, setSettings, references, prompt, setPrompt, minReferences, setTemplate, draftReady, draftError, history, job: displayJob, loadingHistory,
+    settings, setSettings, references, prompt, setPrompt, applyPolishedPrompt, minReferences, setTemplate, draftReady, draftError, history, job: displayJob, loadingHistory, polishing,
     cloudModel, localPolicy, cloudModels: cloud.capabilities?.models ?? [], cloudConfigured: Boolean(cloud.capabilities?.configured), cloudCapabilityError: cloud.capabilityError, cloudTasks: cloud.tasks,
     cloudAccount: cloud.account, accountLoading: cloud.accountLoading, accountError: cloud.accountError, refreshAccount: cloud.loadAccount, creditQuote,
     connect, refreshHistory, hideTask, setGeometry, addReferences, appendReference, removeReference, reorderReferences, selectModel, selectCloudModel, selectLocal, generate, stop, reuse,

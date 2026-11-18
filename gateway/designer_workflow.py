@@ -34,13 +34,13 @@ def well_mask(matte, destination):
         return True
 
 
-async def render(editor, model, source, folder, category, begin, end):
+async def render(editor, model, source, folder, category, begin, end, center=False):
     """The project embeds its sources. Discard bulky intermediate rasters after export."""
     with TemporaryDirectory(dir=folder) as temp:
-        return await _render(editor,model,source,Path(temp),folder,category,begin,end)
+        return await _render(editor,model,source,Path(temp),folder,category,begin,end,center)
 
 
-async def _render(editor, model, source, folder, destination, category, begin, end):
+async def _render(editor, model, source, folder, destination, category, begin, end, center):
     matte, original, material = (folder / n for n in ('subject.png','original.png','material.png'))
     def inspect_source():
         im = upright(source)
@@ -53,11 +53,14 @@ async def _render(editor, model, source, folder, destination, category, begin, e
         im.convert('RGB').save(original,icc_profile=im.info.get('icc_profile'))
         return im.size, supplied
     event = begin(0)
-    if category == 'auto':
+    automatic=category=='auto'
+    if automatic:
         category = await asyncio.to_thread(recognize,source,model.parent/'product-recognition')
     size, supplied = await asyncio.to_thread(inspect_source)
     if not supplied:
         await cutout(model,source,matte,category=category)
+        if automatic and category=='general':
+            category=await asyncio.to_thread(recognize,matte,model.parent/'product-recognition')
     def valid_alpha():
         with Image.open(matte) as im:
             hist = im.getchannel('A').histogram()
@@ -78,10 +81,21 @@ async def _render(editor, model, source, folder, destination, category, begin, e
     wells = await asyncio.to_thread(prepare)
     end(event,1)
     event = begin(2)
+    scale=1.
+    placement=[v/2 for v in size]
+    if center:
+        with Image.open(matte) as segmented:
+            bounds=segmented.getchannel('A').getbbox()
+        # Only a completely photographed subject can be reframed without
+        # presenting a cropped-off part as a complete product.
+        if bounds and bounds[0]>0 and bounds[1]>0 and bounds[2]<size[0] and bounds[3]<size[1]:
+            x,y,r,b=bounds
+            scale=min(2.,size[0]*.92/(r-x),size[1]*.92/(b-y))
+            placement=[size[0]/2+scale*(size[0]-r-x)/2,size[1]/2+scale*(size[1]-b-y)/2]
     async def cmd(command, **params):
         return await editor.call('command_run',id=command,params=params)
     async def place(path,name):
-        await editor.call('doc_place',path=str(path),scale=100,center=[v/2 for v in size])
+        await editor.call('doc_place',path=str(path),scale=100*scale,center=placement)
         await cmd('layer.setProps',name=name)
     await editor.call('doc_new',width=size[0],height=size[1],background='white',name='设计师白底精修')
     await place(original,'实拍主体')

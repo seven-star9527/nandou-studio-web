@@ -132,6 +132,24 @@ def recognize(source, directory):
             gaps=[v[candidate]-max(n for k,n in v.items() if k!=candidate) for v in (rotated,detail)]
             if min(rotated[candidate],detail[candidate])>=.245 and sum(gaps)>.015:
                 return candidate
+        # Re-evaluate a white-paper kit or slender brush after excluding outer
+        # studio space. Mixed kits without supporting evidence remain general.
+        rgb=np.asarray(view,dtype=np.float32)
+        border=np.concatenate([rgb[0],rgb[-1],rgb[:,0],rgb[:,-1]])
+        backdrop=np.median(border,axis=0)
+        if np.percentile(np.linalg.norm(border-backdrop,axis=1),75)<32:
+            diff=np.linalg.norm(rgb-backdrop,axis=2)
+            contours,_=cv2.findContours((diff>38).astype('uint8'),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+            parts=[c for c in contours if cv2.contourArea(c)>w*h*.001]
+            if parts:
+                x,y,bw,bh=cv2.boundingRect(np.vstack(parts))
+                pad=max(4,round(.06*max(bw,bh)))
+                cut=view.crop((max(0,x-pad),max(0,y-pad),min(w,x+bw+pad),min(h,y+bh+pad)))
+                focused=scores_for(cut)
+                target=max(focused,key=focused.get)
+                margin=focused[target]-max(v for k,v in focused.items() if k!=target)
+                if target in ('paper','brush') and margin>.009 and values[target]>score-.015 and (target=='paper' or bh>bw*1.32 or bw>bh*1.32):
+                    return target
     return name if score>=.23 and score-runner_up>=.006 else 'general'
 
 

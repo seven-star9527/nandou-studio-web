@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import type { SubjectMark, WorkImage } from '../workbench-api';
+import GlassTabs from './GlassTabs';
 
 type Camera = { zoom:number; x:number; y:number };
 type Box = { width:number; height:number };
@@ -21,21 +22,28 @@ interface PaneProps {
   update:(v:Camera)=>void; marks?:SubjectMark[]; onPick?:(p:Point)=>void;
   onSize?:(width:number,height:number)=>void; onError?:()=>void;
   onFitScale?:(scale:number)=>void; maxZoom:number; fitLimit?:number; actualZoom:number;
+  original?:WorkImage;
 }
 
-function Pane({label,image,backdrop='',view,empty,update,marks,onPick,onSize,onError,onFitScale,maxZoom,fitLimit=1,actualZoom}:PaneProps){
+function Pane({label,image,original,backdrop='',view,empty,update,marks,onPick,onSize,onError,onFitScale,maxZoom,fitLimit=1,actualZoom}:PaneProps){
   const frame=useRef<HTMLDivElement>(null);
   const gesture=useRef<{id:number; start:Point; left:number; top:number; moved:boolean; select:boolean}|null>(null);
   const [space,setSpace]=useState(false),[dragging,setDragging]=useState(false);
   const [box,setBox]=useState<Box>({width:1,height:1});
+  const [split,setSplit]=useState(50);
+  const [natural,setNatural]=useState<{url:string;width:number;height:number}>();
+  const measured=image && natural?.url===image.url ? {...image,width:natural.width,height:natural.height} : image;
   useLayoutEffect(()=>{
     const node=frame.current!;
     const resize=()=>setBox({width:Math.max(1,node.clientWidth),height:Math.max(1,node.clientHeight)});
     resize();const observer=new ResizeObserver(resize);observer.observe(node);
     return ()=>observer.disconnect();
   },[]);
-  const g=geometry(box,image,view,fitLimit);
-  useLayoutEffect(()=>{if(image?.width && image.height)onFitScale?.(g.fit);},[g.fit,image?.width,image?.height,onFitScale]);
+  const g=geometry(box,measured,view,fitLimit);
+  const comparisonLeft=Math.max(0,g.left);
+  const comparisonWidth=Math.min(box.width,g.left+g.width)-comparisonLeft;
+  const divider=comparisonLeft+comparisonWidth*split/100;
+  useLayoutEffect(()=>{if(measured?.width && measured.height)onFitScale?.(g.fit);},[g.fit,measured?.width,measured?.height,onFitScale]);
   function local(x:number,y:number){const r=frame.current!.getBoundingClientRect();return {x:x-r.left,y:y-r.top};}
   function zoomAt(zoom:number,p:Point){
     if(!image || gesture.current)return;
@@ -70,6 +78,7 @@ function Pane({label,image,backdrop='',view,empty,update,marks,onPick,onSize,onE
     };
   },[image?.url]);
   function key(e:KeyboardEvent<HTMLDivElement>){
+    if(e.target!==e.currentTarget)return;
     if(!image)return;
     if(e.code==='Space'){e.preventDefault();setSpace(true);return;}
     const middle={x:box.width/2,y:box.height/2};
@@ -108,18 +117,33 @@ function Pane({label,image,backdrop='',view,empty,update,marks,onPick,onSize,onE
       onBlur={()=>setSpace(false)} onPointerDown={down} onPointerMove={move} onPointerUp={up}
       onLostPointerCapture={()=>{gesture.current=null;setDragging(false);}}
       onDoubleClick={e=>{if(!onPick && image)zoomAt(view.zoom>1?1:Math.max(2,actualZoom),local(e.clientX,e.clientY));}}>
-      {image?<div className="detail-image" style={{width:image.width||1,height:image.height||1,transform:`translate3d(${g.left}px,${g.top}px,0) scale(${g.fit*view.zoom})`}}>
-        <img src={image.url} alt={label} draggable={false} onError={onError} onLoad={e=>onSize?.(e.currentTarget.naturalWidth,e.currentTarget.naturalHeight)}/>
+      {image?<div className="detail-image" style={{width:measured?.width||1,height:measured?.height||1,transform:`translate3d(${g.left}px,${g.top}px,0) scale(${g.fit*view.zoom})`}}>
+        <img src={image.url} alt={label} draggable={false} onError={onError} onLoad={e=>{const {naturalWidth:width,naturalHeight:height}=e.currentTarget;setNatural({url:image.url,width,height});onSize?.(width,height);}}/>
         </div>:empty}
+      {image && original && <>
+        <div className="detail-original-clip" style={{clipPath:`inset(0 ${box.width-divider}px 0 0)`}}>
+          <div className="detail-image" style={{width:measured?.width||1,height:measured?.height||1,transform:`translate3d(${g.left}px,${g.top}px,0) scale(${g.fit*view.zoom})`}}>
+            <img src={original.url} alt="原图" draggable={false}/>
+          </div>
+        </div>
+        <input className="comparison-range" style={{left:comparisonLeft-22,width:comparisonWidth+44}} type="range" min={0} max={100} step={1} value={split}
+          aria-label="原图与精修图分界" aria-valuetext={`左侧原图 ${split}%，右侧精修图 ${100-split}%`}
+          onChange={e=>setSplit(Number(e.target.value))} onPointerDown={e=>e.stopPropagation()} onDoubleClick={e=>e.stopPropagation()}/>
+        <span className="comparison-divider" style={{left:divider}} aria-hidden="true"><span>↔</span></span>
+        <span className="comparison-label original">原图</span><span className="comparison-label result">精修图</span>
+      </>}
       {image && marks?.map(({mode,x,y},i)=><span className={'subject-mark '+mode} key={i} style={{left:0,top:0,transform:`translate3d(${g.left+g.width*x}px,${g.top+g.height*y}px,0) translate(-50%,-50%)`}}>{mode==='keep'?'＋':'−'}{i+1}</span>)}
     </div></figure>;
 }
 
-export default function QuickPreview({source,result,backdrop,marks,onPick,onSize,choose,busy,activity}:{
+export default function QuickPreview({source,result,backdrop,marks,onPick,onSize,choose,busy,activity,comparison=false,resultLabel='处理结果'}:{
   source?:WorkImage;result?:WorkImage;backdrop?:string;marks:SubjectMark[];onPick?:(p:Point)=>void;
   onSize:(width:number,height:number)=>void;choose:()=>void;busy:boolean;activity:string;
+  comparison?:boolean;
+  resultLabel?:string;
 }){
   const [view,setView]=useState(initialView);
+  const [mode,setMode]=useState('slider');
   const [sourceFit,setSourceFit]=useState(1),[resultFit,setResultFit]=useState(1);
   const fit=result?resultFit:sourceFit,maxZoom=Math.max(16,4/sourceFit,4/fit);
   const [percent,setPercent]=useState(100);
@@ -137,14 +161,17 @@ export default function QuickPreview({source,result,backdrop,marks,onPick,onSize
   // Match the framing when a small original is enlarged beyond its native dimensions.
   const sourceLimit=source?.width && result?.width ? Math.max(1,result.width/source.width) : 1;
   function scale(zoom:number){setView(v=>({...v,zoom:clamp(zoom,1,maxZoom)}));}
-  return <><div className="work-pair">
+  const canCompare=comparison && source && result && !onPick;
+  const slider=canCompare && mode==='slider';
+  return <><div className={'work-pair'+(slider?' slider-pair':'')}>
+    {slider ? <Pane {...shared} label="精修对照" image={result} original={source} backdrop={backdrop} onFitScale={setResultFit} empty={null}/> : <>
     <Pane {...shared} label="原图" image={source} marks={marks} onPick={onPick} onSize={onSize} onFitScale={setSourceFit} fitLimit={sourceLimit}
       empty={<button disabled={busy} onClick={choose}>拖入图片，或点击上传</button>}/>
-    <Pane {...shared} label="处理结果" image={result} backdrop={backdrop} onFitScale={setResultFit} empty={busy?<div className="quick-processing" role="status">
+    <Pane {...shared} label={resultLabel} image={result} backdrop={backdrop} onFitScale={setResultFit} empty={busy?<div className="quick-processing" role="status">
       {source && <img className="quick-processing-image" src={source.url} alt="" draggable={false}/>}
       <span className="quick-processing-sweep" aria-hidden="true"/>
       <span className="quick-processing-label"><i aria-hidden="true"/>{activity}</span>
-    </div>:<span>等待处理</span>}/>
+    </div>:<span>等待处理</span>}/></>}
   </div>{source && <div className="work-controls preview-tools" role="group" aria-label="对照预览缩放">
     <button className="quiet-button" aria-label="缩小预览" disabled={view.zoom<=1} onClick={()=>scale(view.zoom/1.5)}>−</button>
     <output title={result?'结果图显示比例':'原图显示比例'}>{percent}%</output>
@@ -152,6 +179,10 @@ export default function QuickPreview({source,result,backdrop,marks,onPick,onSize
     <button className="quiet-button" title="按实际像素查看（1）" onClick={()=>scale(1/fit)}>查看 100%</button>
     <button className="quiet-button" onClick={()=>setView(initialView)}>适应窗口</button>
     <small>滚轮缩放 · 拖动平移</small>
+    {canCompare && <GlassTabs className="segmented comparison-modes" role="group" aria-label="对照模式">
+      <button className={mode==='slider'?'selected':''} aria-pressed={mode==='slider'} onClick={()=>setMode('slider')}>滑动对照</button>
+      <button className={mode==='side'?'selected':''} aria-pressed={mode==='side'} onClick={()=>setMode('side')}>左右对照</button>
+    </GlassTabs>}
   </div>}</>;
 }
 

@@ -74,11 +74,15 @@ def direct_photo_action(text,mode):
         return 'remove_background',{}
     if direct_hand_cutout(text):
         return 'remove_background',{'selection':'hands'}
+    from .ai_retouch import wants_retouch
+    if wants_retouch(text) and not text.startswith('请使用「') and '设计师白底精修' not in text:
+        return 'ai_retouch',{}
     if mode=='retouch':
-        designer=re.fullmatch(r'(?:请使用「设计师白底精修」技能。[\s]*)?(画笔|颜料|调色盘|水彩本|水彩纸|微缩模型|玩具)?设计师白底精修[。！! ]*',text.strip())
-        if designer or re.fullmatch(r'请使用「设计师白底精修」技能。(?:\s*【参考图1】)?', text.strip()):
+        designer=re.fullmatch(r'(?:请使用「设计师白底精修」技能。\s*)?(?:【参考图1】\s*)?(画笔|颜料|调色盘|水彩本|水彩纸|微缩模型|玩具)?设计师白底精修(?:[，, ]*(主体居中|居中放大|主体居中放大))?[。！! ]*(?:【参考图1】)?',text.strip())
+        skill_center=re.fullmatch(r'请使用「设计师白底精修」技能。\s*(?:【参考图1】\s*)?(?:主体居中放大|主体居中|居中放大)[。！! ]*(?:【参考图1】)?',text.strip())
+        if designer or skill_center or re.fullmatch(r'请使用「设计师白底精修」技能。(?:\s*【参考图1】)?', text.strip()):
             category={'画笔':'brush','颜料':'paint','调色盘':'palette','水彩本':'paper','水彩纸':'paper','微缩模型':'miniature','玩具':'toy'}.get(designer[1] if designer else None,'auto')
-            return 'retouch_product',{'category':category,'background':'white','designer':True}
+            return 'retouch_product',{'category':category,'background':'white','designer':True,**({'center':True} if skill_center or (designer and designer[2]) else {})}
         product=re.fullmatch(r'(?:请)?(自动识别|商品|调色盘|画笔|颜料盒?|水彩本|水彩纸|微缩模型|玩具)?(白底|保留背景)?(?:主图)?精修[。！! ]*',text.strip())
         if product:
             category={'调色盘':'palette','画笔':'brush','颜料盒':'paint','颜料':'paint','水彩本':'paper','水彩纸':'paper','微缩模型':'miniature','玩具':'toy'}.get(product[1],'auto')
@@ -494,6 +498,19 @@ class CreativeAgent:
                         emit('question', {'text':'请上传或选中一张要处理的图片。', 'options':[]})
                         self.store.status(tid, 'waiting_user')
                         return
+                    if operation=='ai_retouch':
+                        asset=self.resolve_asset(cid,user,target[0])
+                        from .ai_retouch import source_ratio
+                        with Image.open(asset['path']) as pic:
+                            ratio=source_ratio(ImageOps.exif_transpose(pic).size)
+                        emit('status',{'text':'按商品材质精修，完成后恢复原图像素尺寸'})
+                        ctx.update(planned=True,skills={'product-retouch'})
+                        result=await self.execute('generate_image',{'ref_ids':target,'prompt':text,'ratio':ratio,'title':'AI 商品精修'},
+                                                  cid,tid,user,{**opts,'agent':'generate','ratio':ratio},ctx,[])
+                        if result.get('error'):raise AgentError(result['error'])
+                        if result.get('images'):emit('assistant',{'text':'AI 精修完成，可下载原图尺寸的 PNG。'})
+                        self.store.status(tid,ctx['status'])
+                        return
                     result = await self.execute(operation, {'ref_id':target[0], **params}, cid, tid, user, opts, ctx, [])
                     if result.get('error'):
                         raise AgentError(result['error'])
@@ -854,12 +871,14 @@ class CreativeAgent:
         if fingerprint in ctx["hashes"]:
             return {"error": "此方案本轮已提交，不会重复生成。"}
         title = bounded_text(args["title"], 100, "title")
-        images = [self.inline(self.resolve_asset(cid, user, aid), generation=True) for aid in ids]
+        from .ai_retouch import wants_retouch
+        ai_edit=wants_retouch(prompt) and len(ids)==1
+        images = [self.inline(self.resolve_asset(cid, user, aid), generation=not ai_edit) for aid in ids]
         request = {"request_id": str(uuid.uuid4()), **{k: opts[k] for k in ['model', 'quality', 'resolution']}, "operation": "edit" if images else "generate", "prompt": prompt,
                    "size": ratio, "n": 1, "reference_images": images, **options}
         if opts["model"] == "gemini-nano-banana-2.1":
             request.pop("quality")
-        quote = await self.g.upstream_api(user, "GetStudioCloudQuote", {k: v for k, v in request.items() if k in {"model", "size", "resolution", "quality", "n", "output_format", "frame_count", "frame_duration_ms"}})
+        quote = await self.g.cloud_quote(user, request)
         emit("quote", {"title": title, "credits": quote.get("credits_total_reference"), "label": quote.get("label"), "request_id": request["request_id"], "settings": opts})
         ctx["hashes"].add(fingerprint)
         ctx["generated"] += 1
@@ -899,6 +918,11 @@ class CreativeAgent:
             aid = asset["id"] if asset else self.store.asset(cid, name, artifact["disk_path"], task["id"])
             images.append({"ref_id": aid, "url": "/studio-agent/assets/" + aid, "name": name})
         result = {"request_id": task["id"], "status": "completed", "images": images, "credits": task["credits"]}
+        for item in json.loads(task['record_json'] or '{}').get('images', []):
+            original = item.get('model_original')
+            if original and original.startswith('/studio-agent/workbench/ai-retouch/' + task['id'] + '/original.'):
+                result['files'] = [{'name': '模型原稿' + Path(original).suffix, 'url': original}]
+                break
         if not any(e["kind"] == "result" and e["data"].get("request_id") == task["id"] for e in self.store.events(cid)):
             self.store.event(cid, tid, "result", result)
         return result

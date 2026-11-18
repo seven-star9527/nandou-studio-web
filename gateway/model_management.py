@@ -98,12 +98,13 @@ class ModelManagement:
         local = {m: p for m in LOCAL_MODELS if (p := self.model(m))['enabled']}
         return {**caps, 'models': models, 'localReadiness': readiness, 'localPolicies': local}
 
-    def validate(self, user, data, *, local=False):
+    def validate(self, user, data, *, local=False, retouch_rebuild=False):
         mid = data.get('model')
         model = self.model(mid)
         if user['role'] == 'admin':
             return
-        if not model or not model['enabled'] or (model['kind'] == 'local') != local:
+        workflow_allowed = retouch_rebuild and mid == 'gemini-nano-banana-2.1' and data.get('operation') == 'edit' and data.get('n') == 1
+        if not model or (not model['enabled'] and not workflow_allowed) or (model['kind'] == 'local') != local:
             raise ModelPolicyError('该模型未对普通账号开放。', 'model_disabled')
         if not self.store.one('SELECT 1 AS active FROM studio_model_policy WHERE model=?', (mid,)):
             return  # existing provider validation still applies when no policy has been saved
@@ -232,10 +233,10 @@ class ModelManagement:
         limits, _ = self.limits(uid)
         return any(v.get(k) is not None for v in (limits,limits.get('models',{}).get(model,{})) for k in ('total','daily'))
 
-    def reserve(self, user, tid, parent, data, estimate):
+    def reserve(self, user, tid, parent, data, estimate, *, retouch_rebuild=False):
         """Recheck inside the write transaction, after any asynchronous quote call."""
         uid, mid = user['id'], data['model']
-        self.validate(user,data)
+        self.validate(user,data,retouch_rebuild=retouch_rebuild)
         db = self.store.db
         with db:
             db.execute('BEGIN IMMEDIATE')

@@ -90,7 +90,7 @@ export interface CloudAccount {
   studio_quota?: StudioQuota;
 }
 export interface CloudAnimation { output_format?: 'gif' | 'svg'; frame_count?: number; frame_duration_ms?: number; }
-export interface CloudQuoteRequest extends CloudAnimation { model: string; size: string; resolution: string; quality?: string; n: number; }
+export interface CloudQuoteRequest extends CloudAnimation { model: string; size: string; resolution: string; quality?: string; n: number; prompt?: string; operation?: 'edit' | 'generate'; }
 export interface CloudQuote {
   model: string; kind: 'output_reference' | 'precharge_reference' | 'unknown';
   credits_per_image: number | null; min_credits_per_image: number | null; max_credits_per_image: number | null;

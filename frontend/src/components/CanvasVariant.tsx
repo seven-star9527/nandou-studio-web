@@ -26,7 +26,7 @@ export default function CanvasVariant({studio, source, reserve, discard, done}: 
   const [working,setWorking]=useState(false), [error,setError]=useState('');
   const lock=useRef(false);
   const settings={...studio.settings, ratio, count:1, ...(model?cloudDimensions(model,ratio,studio.settings.resolution):dimensions(ratio,studio.settings.resolution))};
-  const quote=useCloudQuote(studio.client,studio.connected,model,settings);
+  const quote=useCloudQuote(studio.client,studio.connected,model,settings,prompt,Boolean(source));
   const busy=studio.job && ['connecting','queued','loading','generating','stopping'].includes(studio.job.phase);
   const supported=!model || model.operations.includes(source ? 'edit' : 'generate');
   async function submit() {
@@ -38,7 +38,7 @@ export default function CanvasVariant({studio, source, reserve, discard, done}: 
       const references=source ? [await loadStudioImage(source.url,source.name)] : [];
       await reserve(id,prompt.trim().slice(0,60));
       reserved=true;
-      studio.generate(Boolean(source),{id,prompt,references,settings});
+      await studio.generate(Boolean(source),{id,prompt,references,settings});
       done();
     } catch(cause) {
       if (reserved) discard(id);

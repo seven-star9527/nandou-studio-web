@@ -23,7 +23,7 @@ export function quoteRequest(model: string, settings: GenerationSettings): Cloud
     resolution: settings.resolution, n: settings.count, ...(settings.outputFormat === 'gif' ? gifParameters(settings) : settings.outputFormat === 'svg' ? {size, output_format:'svg' as const} : {size}), ...(settings.quality ? { quality: settings.quality } : {}) };
 }
 export function quoteKey(request: CloudQuoteRequest) {
-  return JSON.stringify([request.model, request.size, request.resolution, request.quality ?? '', request.n, request.output_format, request.frame_count, request.frame_duration_ms]);
+  return JSON.stringify([request.model, request.size, request.resolution, request.quality ?? '', request.n, request.output_format, request.frame_count, request.frame_duration_ms, request.prompt, request.operation]);
 }
 export function quoteForSelection(record: { key: string; quote: CloudQuote } | null, key: string, model: string) {
   return record?.key === key && record.quote.model === model ? record.quote : null;

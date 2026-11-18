@@ -281,6 +281,43 @@ class Workbench:
             temp.unlink(missing_ok=True)
 
     async def route(self, request, user, route):
+        if route=='ai-retouch' and request.method=='POST':
+            data=await self.g.body(request)
+            try:
+                path=self.source(user,data.get('source'))
+            except web.HTTPNotFound:
+                return fail('上次使用的原图已不可用，请点击「更换图片」重新上传。',404)
+            from .ai_retouch import MATERIALS, source_ratio
+            category=data.get('category','auto')
+            note=data.get('instruction','')
+            if category not in ('auto',*MATERIALS) or not isinstance(note,str) or len(note)>2000:
+                raise ValueError('invalid retouch options')
+            cloud={'model':'gpt-image-2.6-sunburst','size':source_ratio(dimensions(path)),
+                   'resolution':'4K','quality':'high','output_format':'png','n':1}
+            if data.get('quote_only'):
+                quote = await self.g.cloud_quote(user,{**cloud,'operation':'edit','retouch_category':category,'prompt':note})
+                return web.json_response(quote, status=403 if quote.get('error_id') in ('model_disabled', 'model_parameters_restricted') else 503 if quote.get('error') else 200)
+            original=await asyncio.to_thread(self.g.agent.inline,{'path':path})
+            return await self.g.submit_cloud(user,{**cloud,'operation':'edit','prompt':'帮我把这张图精修一下。'+note,
+                'retouch_category':category,'reference_images':[original],'request_id':data.get('id')})
+        if route.startswith('ai-retouch/') and request.method=='GET':
+            parts = route.split('/')
+            if len(parts) not in (2, 3):
+                raise web.HTTPNotFound()
+            tid = str(uuid.UUID(parts[1]))
+            task=self.store.task(tid)
+            if not self.store.task_visible(task,user) or task['owner_id']!=user['id']:
+                raise web.HTTPNotFound()
+            if len(parts) == 3:
+                job = self.store.one('SELECT engine_url,rebuild_url,output_json FROM ai_retouch_jobs WHERE task_id=?', (tid,))
+                if not job or not job['output_json'] or not job['engine_url']:
+                    raise web.HTTPNotFound()
+                raw = self.g.results / Path(job['rebuild_url'] or job['engine_url']).name
+                url = '/studio-agent/workbench/' + route
+                if json.loads(job['output_json']).get('model_original') != url or not raw.is_file():
+                    raise web.HTTPNotFound()
+                return web.FileResponse(raw)
+            return web.json_response(self.store.public_task(json.loads(task['record_json']),task))
         if route == 'history' and request.method == 'GET':
             rows = self.store.all("""SELECT m.*,q.created_at,q.source original,u.email,u.name owner_name,v.hidden_at FROM studio_quick_jobs q
                 JOIN studio_media m ON q.id=m.id JOIN users u ON m.owner_id=u.id

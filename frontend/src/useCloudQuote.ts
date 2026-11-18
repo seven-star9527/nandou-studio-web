@@ -3,8 +3,8 @@ import type { SwarmClient } from './api';
 import { quoteForSelection, quoteKey, quoteRequest } from './credit-contract';
 import type { CloudModelCapability, CloudQuote, GenerationSettings } from './types';
 
-export function useCloudQuote(client: SwarmClient, connected: boolean, model: CloudModelCapability | undefined, settings: GenerationSettings) {
-  const request = model ? quoteRequest(model.id, settings) : null;
+export function useCloudQuote(client: SwarmClient, connected: boolean, model: CloudModelCapability | undefined, settings: GenerationSettings, prompt = '', editing = false) {
+  const request = model ? {...quoteRequest(model.id, settings), prompt, operation: editing ? 'edit' as const : 'generate' as const} : null;
   const key = request ? quoteKey(request) : '';
   const [record, setRecord] = useState<{ key: string; quote: CloudQuote } | null>(null);
   const [loading, setLoading] = useState(false);
