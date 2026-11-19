@@ -12,7 +12,8 @@ export const AUTH_CHANGE_KEY = 'nandou-studio:auth-change:v1';
 
 export class AuthError extends Error {
   readonly status: number;
-  constructor(message: string, status: number) { super(message); this.name = 'AuthError'; this.status = status; }
+  readonly code?: string;
+  constructor(message: string, status: number, code?: string) { super(message); this.name = 'AuthError'; this.status = status; this.code = code; }
 }
 
 export async function authRequest<T>(path: string, data?: object, signal?: AbortSignal): Promise<T> {
@@ -27,7 +28,8 @@ export async function authRequest<T>(path: string, data?: object, signal?: Abort
   catch { throw new AuthError('账号服务暂时无法响应，请稍后重试。', response.status); }
   if (!response.ok) {
     const error = value && typeof value === 'object' && 'error' in value ? value.error : undefined;
-    throw new AuthError(typeof error === 'string' ? error : `账号请求失败（HTTP ${response.status}）`, response.status);
+    const code = value && typeof value === 'object' && 'error_id' in value ? value.error_id : undefined;
+    throw new AuthError(typeof error === 'string' ? error : `账号请求失败（HTTP ${response.status}）`, response.status, typeof code === 'string' ? code : undefined);
   }
   return value as T;
 }

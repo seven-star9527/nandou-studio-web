@@ -18,7 +18,7 @@ from urllib.parse import quote, unquote, urlsplit
 
 from aiohttp import ClientError, ClientSession, ClientTimeout, WSMsgType, web
 
-from .store import Store, TERMINAL, password_hash, password_valid
+from .store import Store, TERMINAL, password_hash, password_valid, token_hash
 from .local_queue import LocalQueue
 from .generation_presets import generation_presets
 from .official_usage import official_usage
@@ -122,7 +122,7 @@ class Gateway:
         self.client = None
         self.sessions = {}
         self.session_locks = defaultdict(asyncio.Lock)
-        self.sockets = defaultdict(set)
+        self.sockets = defaultdict(dict)
         self.rate = defaultdict(list)
         self.local_queue = LocalQueue(self)
         self.agent = CreativeAgent(self)
@@ -251,7 +251,7 @@ class Gateway:
         user = request["user"]
         if user and user["role"] != "admin" and not user["name"] and path not in {
             "/studio-auth/me", "/studio-auth/bind-name", "/studio-auth/logout", "/studio-auth/login",
-            "/studio-auth/register", "/studio-auth/recover", "/studio-auth/reset",
+            "/studio-auth/register", "/studio-auth/recover", "/studio-auth/reset", "/studio-auth/change-password",
         }:
             return error("请刷新页面并绑定姓名后继续。", 403, "name_required")
         if path.startswith("/studio-auth/"):
@@ -383,8 +383,10 @@ class Gateway:
             return response
         if action == "reset":
             return error("请联系管理员领取一次性重置码。", 403, "reset_code_required")
-        if action not in {"register", "login", "recover"}:
+        if action not in {"register", "login", "recover", "change-password"}:
             raise web.HTTPNotFound()
+        if action == "change-password" and not user:
+            return error("请先登录。", 401, "authentication_required")
         now = time.monotonic()
         remote = request.remote or "unknown"
         if request["public_entry"]:
@@ -400,6 +402,8 @@ class Gateway:
             if len(bucket) >= 30:
                 return error("请求过于频繁，请稍后再试。", 429)
             bucket.append(now)
+        if action == "change-password":
+            return await self.change_password(request, user, data, remote)
         email = str(data.get("email", "")).strip().lower()
         password = data.get("password")
         if not isinstance(password, str) or not 6 <= len(password) <= 256:
@@ -451,10 +455,35 @@ class Gateway:
         response.set_cookie(COOKIE, token, httponly=True, samesite="Strict", secure=request.secure, max_age=86400 * 7, path="/")
         return response
 
-    async def close_sessions(self, uid):
-        self.sessions.pop(uid, None)
-        for socket in list(self.sockets.get(uid, [])):
-            await socket.close(code=1008, message="登录已失效，请重新登录。".encode())
+    async def change_password(self, request, user, data, remote):
+        if set(data) != {"account", "current_password", "password"}:
+            raise ValueError("invalid password change parameters")
+        if data["account"] != user["id"]:
+            return error("当前账号已切换，请刷新页面。", 409)
+        current, password = data["current_password"], data["password"]
+        if not isinstance(current, str) or not 1 <= len(current) <= 256:
+            return error("请输入有效的当前密码。", 400, "incorrect_current_password")
+        if not isinstance(password, str) or not 6 <= len(password) <= 256:
+            return error("新密码需为 6 至 256 个字符。")
+        if not await asyncio.to_thread(password_valid, current, user["password_hash"]):
+            return error("当前密码不正确。", 403, "incorrect_current_password")
+        if password == current or password == RESET_INITIAL_PASSWORD:
+            return error("请设置与当前密码和初始密码不同的新密码。", 400, "invalid_new_password")
+        encoded = await asyncio.to_thread(password_hash, password)
+        token = request.cookies[COOKIE]
+        if not self.store.change_password(user["id"], user["password_hash"], encoded, token, remote):
+            if not self.store.session(token):
+                return error("登录已失效，请重新登录。", 401, "authentication_required")
+            return error("密码已变更，请核对当前密码后重试。", 409)
+        await self.close_sessions(user["id"], keep=token_hash(token))
+        return web.json_response({"ok": True})
+
+    async def close_sessions(self, uid, *, keep=None):
+        if keep is None:
+            self.sessions.pop(uid, None)
+        for socket, login in list(self.sockets.get(uid, {}).items()):
+            if login != keep:
+                await socket.close(code=1008, message="登录已失效，请重新登录。".encode())
 
     async def new_session(self, user):
         async with self.session_locks[user["id"]]:
@@ -945,7 +974,8 @@ class Gateway:
     async def generate(self, request, user):
         socket = web.WebSocketResponse(max_msg_size=384 * 1024 ** 2, heartbeat=30, timeout=1)
         await socket.prepare(request)
-        self.sockets[user["id"]].add(socket)
+        login = request.cookies[COOKIE]
+        self.sockets[user["id"]][socket] = token_hash(login)
         try:
             message = await asyncio.wait_for(socket.receive(), timeout=30)
             if message.type != WSMsgType.TEXT:
@@ -957,7 +987,7 @@ class Gateway:
             if not self.store.session_owned(sid, user["id"]):
                 raise ValueError("会话不属于当前账号")
             # Revalidate cookie immediately before generation, including password-reset revocation.
-            current = self.store.session(request.cookies.get(COOKIE))
+            current = self.store.session(login)
             if not current or current["id"] != user["id"]:
                 raise ValueError("登录已失效")
             tid = str(uuid.UUID(str(data.pop("studio_task_id", uuid.uuid4()))))
@@ -1026,7 +1056,7 @@ class Gateway:
             if not socket.closed:
                 await socket.send_json({"error": "接收生成请求超时，尚未提交生成，请重新连接后重试。", "error_id": "request_timeout", "socket_intention": "close"})
         finally:
-            self.sockets[user["id"]].discard(socket)
+            self.sockets[user["id"]].pop(socket, None)
             await socket.close()
         return socket
 

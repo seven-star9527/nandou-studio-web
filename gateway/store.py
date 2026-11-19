@@ -116,6 +116,20 @@ class Store:
             self.db.execute("DELETE FROM login_sessions WHERE user_id=?", (uid,))
             self.db.execute("DELETE FROM backend_sessions WHERE user_id=?", (uid,))
 
+    def change_password(self, uid, previous, encoded, token, ip):
+        keep = token_hash(token)
+        now = time.time()
+        with self.db:
+            updated = self.db.execute("""UPDATE users SET password_hash=? WHERE id=? AND password_hash=?
+                AND EXISTS (SELECT 1 FROM login_sessions WHERE user_id=? AND token_hash=? AND expires_at>?)""",
+                                      (encoded, uid, previous, uid, keep, now))
+            if updated.rowcount != 1:
+                return False
+            self.db.execute("DELETE FROM login_sessions WHERE user_id=? AND token_hash!=?", (uid, keep))
+            self.db.execute("INSERT INTO access_events(user_id,at,ip,event) VALUES(?,?,?,?)",
+                            (uid, now, ip, "password_changed"))
+        return True
+
     def issue_password_reset(self, uid, actor, ip):
         code = secrets.token_urlsafe(24)
         now = time.time()
