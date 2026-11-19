@@ -7,3 +7,5 @@
 .model-management-field{display:grid;gap:6px;max-width:100%}
 .model-management-field :is(input,select){border:1px solid var(--glass-line);border-radius:10px;padding:7px 10px;background:var(--glass-control);color:var(--glass-ink);min-width:0}
 .model-management-field input{width:135px}
+.usage-password-reset{min-width:0;margin:0 0 15px;border:1px solid var(--glass-line);border-radius:12px;padding:12px;overflow-wrap:anywhere;font-size:12px}
+.usage-password-reset .model-management-field input{width:36ch;max-width:100%;font-family:monospace}

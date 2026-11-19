@@ -82,25 +82,55 @@ public static partial class StudioCloudAPI
         if (gif) quote["label"] = "GIF 按整张帧拼图及输入用量计费，当前尺寸报价待定";
         if (!Succeeded(response) || response["data"] is not JObject data) return quote;
         if ((string)data["model_name"] is string priceModel && priceModel != model) return quote;
+        string[] sides = size.Split('x');
+        long exactPixels = sides.Length == 2 && int.TryParse(sides[0], out int exactW) && int.TryParse(sides[1], out int exactH)
+            && exactW > 0 && exactH > 0 ? (long)exactW * exactH : 0;
+        JObject PriceReference(decimal dollars, string kind, string label)
+        {
+            quote["kind"] = kind;
+            quote["credits_per_image"] = dollars * ReferenceCreditsPerUsd;
+            quote["credits_total_reference"] = dollars * ReferenceCreditsPerUsd * count;
+            quote["label"] = label;
+            return quote;
+        }
+        if (model == "seedream-5-5")
+        {
+            string tier = exactPixels > 0 ? (exactPixels <= 2610000 ? "1K" : "2K") : resolution;
+            return NonnegativeNumber(data["resolution_paid_prices"]?[tier]) is decimal price
+                ? PriceReference(price, "output_reference", "按输出像素分档，参考图输入另计") : quote;
+        }
         JObject pricing = data["pricing"] as JObject;
         if ((string)pricing?["unit"] != "usd_per_million_tokens") return quote;
-        if (model == "gemini-nano-banana-2.1")
+        if (model is "gemini-nano-banana-2.1" or "minimax-h3-image")
         {
             if ((string)data["precharge_billing_type"] != "resolution_fixed") return quote;
-            decimal? dollars = NonnegativeNumber(data["resolution_paid_prices"]?[resolution]);
+            // For custom H3 dimensions, use the highest published hold for the reference.
+            string tier = model == "minimax-h3-image" && exactPixels > 0 ? "4K" : resolution;
+            decimal? dollars = NonnegativeNumber(data["resolution_paid_prices"]?[tier]);
             if (!dollars.HasValue) return quote;
-            decimal credits = dollars.Value * ReferenceCreditsPerUsd;
-            quote["kind"] = "precharge_reference"; quote["credits_per_image"] = credits;
-            quote["credits_total_reference"] = credits * count;
-            quote["label"] = "预计预留积分参考；最终按实际 token 结算，公开默认分组价可能与账户不同";
-            return quote;
+            return PriceReference(dollars.Value, "precharge_reference",
+                model == "minimax-h3-image" && exactPixels > 0 ? "自定义尺寸按 4K 档预留参考，最终按实际用量结算" : "预计预留积分参考，最终按实际 token 结算");
+        }
+        if (model is "mai-image-2.7" or "mai-image-2.7-flash")
+        {
+            bool editing = (string)input["operation"] == "edit";
+            long pixels = editing ? 4194304 : exactPixels;
+            if (pixels == 0)
+            {
+                var cap = Capabilities["models"].OfType<JObject>().FirstOrDefault(item => (string)item["id"] == model);
+                if (cap?["sizeMap"]?[resolution]?[size] is JArray pair)
+                    pixels = (long)pair[0] * (long)pair[1];
+            }
+            return pixels > 0 && NonnegativeNumber(pricing?["effective_rates"]?["image_output"]) is decimal ratePerMillion
+                ? PriceReference(pixels / 1024m * ratePerMillion / 1_000_000m, "output_reference",
+                    editing ? "参考图编辑按最大输出像素估算，实际尺寸由模型决定" : "按输出像素估算，输入用量另计") : quote;
         }
         if (model is not ("gpt-image-2.6-flare" or "gpt-image-2.6-sunburst")) return quote;
         string sizeKey;
         if (gif)
         {
-            string[] sides = (size == "auto" ? "512x512" : size).Split('x');
-            if (sides.Length != 2 || !int.TryParse(sides[0], out int w) || !int.TryParse(sides[1], out int h)) return quote;
+            string[] frameSides = (size == "auto" ? "512x512" : size).Split('x');
+            if (frameSides.Length != 2 || !int.TryParse(frameSides[0], out int w) || !int.TryParse(frameSides[1], out int h)) return quote;
             var sheet = GifSheet(w, h, input.Value<int?>("frame_count") ?? 9);
             sizeKey = $"{sheet.Width}x{sheet.Height}";
         }
@@ -131,6 +161,11 @@ public static partial class StudioCloudAPI
     {
         JObject input = (JObject)rawInput.DeepClone();
         input["prompt"] = "报价"; input["operation"] = "generate"; input["reference_images"] = new JArray();
+        if ((string)rawInput["operation"] == "edit" && (string)input["model"] is ("mai-image-2.7" or "mai-image-2.7-flash"))
+        {
+            input["size"] = "1:1";
+            input["resolution"] = "1K";
+        }
         if (input["n"] is null) input["n"] = 1;
         try { ValidateRequest(input, Capabilities); }
         catch (Exception e) when (e is ArgumentException or FormatException) { return Error(e.Message); }
@@ -157,6 +192,7 @@ public static partial class StudioCloudAPI
                 }
                 catch { stale = cached; }
             }
+            if ((string)rawInput["operation"] == "edit") input["operation"] = "edit";
             return CalculateQuote(input, price.Data, cached || price.Data is not null ? price.Captured.ToString("o") : null, stale);
         }
         finally { gate.Release(); }

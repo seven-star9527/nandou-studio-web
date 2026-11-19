@@ -1,6 +1,7 @@
 import { AUTH_REQUIRED_EVENT } from './auth';
+import type { CloudFormat } from './types';
 
-export interface AgentSettings { outputFormat?: 'png' | 'gif' | 'svg'; width?: number; height?: number; gifWidth?: number; gifHeight?: number; frameCount?: number; frameDurationMs?: number; svgTransparent?: boolean; model: string; quality: string; resolution: string; ratio: string; count: string; platform: string; scene: string; style: string; }
+export interface AgentSettings { outputFormat?: CloudFormat; width?: number; height?: number; gifWidth?: number; gifHeight?: number; frameCount?: number; frameDurationMs?: number; svgTransparent?: boolean; transparentBackground?: boolean; model: string; quality: string; resolution: string; ratio: string; count: string; platform: string; scene: string; style: string; }
 export interface AgentChat { cover_id?: string | null; picture_count?: number; id: string; title: string; owner_id: string; owner_email: string; hidden_at?: number; status?: string; updated_at: number; }
 export interface AgentAsset { id: string; name: string; url: string; task_id?: string; width?: number; height?: number; kind?: 'image' | 'file'; }
 export interface AgentEvent { id: number; turn_id: string; kind: string; at: number; data: {

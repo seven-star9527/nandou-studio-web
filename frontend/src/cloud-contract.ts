@@ -1,10 +1,12 @@
 import { createId } from './id.ts';
-import type { CloudModelCapability, CloudOperation, CloudRequest, CloudTask, GenerationSettings, ReferenceImage, Artwork, Job } from './types.ts';
+import type { CloudFormat, CloudModelCapability, CloudOperation, CloudRequest, CloudTask, GenerationSettings, ReferenceImage, Artwork, Job } from './types.ts';
 import { gifParameters, isCreditAmount } from './credit-contract.ts';
 
 export function currentCloudModel(id: string) {
   return id.replace(/^gpt-image-2[.]5-(flare|sunburst)$/, 'gpt-image-2.6-$1');
 }
+
+export const cloudFormatLabels: Record<CloudFormat, string> = { png: 'PNG', jpeg: 'JPEG', webp: 'WebP', gif: 'GIF 动图', svg: 'SVG 矢量图' };
 
 export function cloudDimensions(model: CloudModelCapability, ratio: string, resolution: string) {
   const pair = model.sizeMap[resolution]?.[ratio];
@@ -17,16 +19,19 @@ export function buildCloudRequest(model: CloudModelCapability, settings: Generat
   if (!configured) throw new Error('APIMart 尚未配置密钥，请完成服务端配置后刷新连接。');
   if (!model.operations.includes(operation)) throw new Error('当前模型不支持所选创作方式。');
   if (!prompt.trim()) throw new Error('请填写提示词。');
+  if (model.maxPromptLength && prompt.trim().length > model.maxPromptLength) throw new Error(`提示词最多 ${model.maxPromptLength} 字符。`);
   if (operation === 'edit' && !references.length) throw new Error('参考图编辑需要至少一张参考图。');
   if (references.length > referenceLimit(model)) throw new Error(`当前模型最多可添加 ${referenceLimit(model)} 张参考图。`);
-  const parameters = cloudParameters(model, settings);
+  const parameters = cloudParameters(model, settings, operation);
   return { request_id: createId(), model: model.id, operation, prompt: prompt.trim(), ...parameters, reference_images: references.map(image => image.dataUrl) };
 }
 
-export function cloudParameters(model: CloudModelCapability, settings: GenerationSettings) {
+export function cloudParameters(model: CloudModelCapability, settings: GenerationSettings, operation: CloudOperation = 'generate') {
   if (!Number.isInteger(settings.count) || settings.count < 1 || settings.count > model.maxImages) throw new Error(`生成数量需为1至${model.maxImages}张。`);
   if (!model.resolutions.includes(settings.resolution)) throw new Error('当前模型不支持所选分辨率。');
-  let size = settings.ratio;
+  let size = operation === 'edit' && model.editUsesReferenceSize ? model.ratios[0] : settings.ratio;
+  const format = settings.outputFormat ?? 'png';
+  if (model.formats && !model.formats.includes(format)) throw new Error('当前模型不支持所选输出格式。');
   const gif = settings.outputFormat === 'gif';
   const svg = settings.outputFormat === 'svg';
   if (svg && (!model.id.startsWith('gpt-image-2.6-') || settings.count !== 1)) throw new Error('SVG 需要 GPT Image 2.6，每次一张。');
@@ -45,13 +50,14 @@ export function cloudParameters(model: CloudModelCapability, settings: Generatio
     const { width, height } = settings;
     const pixels = width * height;
     if (![width, height].every(value => Number.isInteger(value) && value > 0 && value % exact.multiple === 0)) throw new Error(`自定义尺寸需按${exact.multiple}像素对齐。`);
-    if (Math.max(width, height) > exact.maxSide || pixels < exact.minPixels || pixels > exact.maxPixels || Math.max(width / height, height / width) > exact.maxAspect) throw new Error('自定义尺寸超出当前模型的像素或宽高比限制。');
+    if (Math.min(width, height) < (exact.minSide ?? 1) || Math.max(width, height) > exact.maxSide || pixels < exact.minPixels || pixels > exact.maxPixels || Math.max(width / height, height / width) > exact.maxAspect) throw new Error('自定义尺寸超出当前模型的像素或宽高比限制。');
     size = `${width}x${height}`;
   } else if (!model.ratios.includes(size)) throw new Error('当前模型不支持所选比例。');
   if (/^gpt-image-2[.][56]-/.test(model.id) && settings.quality === 'max') throw new Error('GPT Image 2.6 已禁用 max 档位，请重新选择图像质量。');
   if (settings.quality && !model.qualities.includes(settings.quality)) throw new Error('当前模型不支持所选质量参数。');
   return { resolution: settings.resolution, n: settings.count, ...(settings.quality ? { quality: settings.quality } : {}),
-    ...(gif ? gifParameters(settings) : svg ? {size, output_format:'svg' as const, ...(settings.svgTransparent ? {background:'transparent' as const} : {})} : {size}) };
+    ...(gif ? gifParameters(settings) : {size, ...(format === 'png' ? {} : {output_format: format}),
+      ...(svg && settings.svgTransparent || format === 'png' && model.transparentPng && settings.transparentBackground ? {background:'transparent' as const} : {})}) };
 }
 
 export function cloudImageUrl(path: string): string | null {
@@ -103,15 +109,17 @@ export function cloudArtworkSettings(artwork: Artwork, model: CloudModelCapabili
   let info: { parameters?: Record<string, unknown>; operation?: CloudOperation } = {};
   try { info = JSON.parse(artwork.metadata ?? '{}').studio_cloud ?? {}; } catch { /* Old history may not include structured parameters. */ }
   const p = info.parameters ?? {};
-  const resolution = model.resolutions.find(value => value.toLowerCase() === String(p.resolution).toLowerCase()) ?? model.resolutions[0];
-  const size = String(p.size ?? '');
+  const presetResolution = model.resolutions.includes(String(p.size)) ? String(p.size) : undefined;
+  const resolution = model.resolutions.find(value => value.toLowerCase() === String(p.resolution).toLowerCase()) ?? presetResolution ?? model.resolutions[0];
+  const size = presetResolution && model.ratios.includes('auto') ? 'auto' : String(p.size ?? '');
   const exact = size.match(/^(\d+)x(\d+)$/);
   const ratio = exact && model.exactSize?.supported ? 'custom' : model.ratios.includes(size) ? size : model.ratios.includes('1:1') ? '1:1' : model.ratios[0];
   const pixels = ratio === 'custom' && exact ? { width: Number(exact[1]), height: Number(exact[2]) } : cloudDimensions(model, ratio, resolution);
   const quality = model.qualities.includes(String(p.quality)) && !['auto', 'max'].includes(String(p.quality)) ? String(p.quality) : model.qualities.includes('medium') ? 'medium' : model.qualities[0] ?? '';
   return { settings: { ...previous, ratio: p.output_format === 'gif' ? '1:1' : ratio, resolution, ...(p.output_format === 'gif' ? cloudDimensions(model, '1:1', resolution) : pixels),
       svgTransparent: p.output_format === 'svg' && p.background === 'transparent',
-      outputFormat: p.output_format === 'gif' ? 'gif' as const : p.output_format === 'svg' ? 'svg' as const : 'png' as const,
+      transparentBackground: model.transparentPng && p.background === 'transparent',
+      outputFormat: (model.formats ?? ['png', 'gif', 'svg']).find(format => format === p.output_format) ?? 'png',
       gifWidth: p.output_format === 'gif' && exact ? Number(exact[1]) : 512, gifHeight: p.output_format === 'gif' && exact ? Number(exact[2]) : 512,
       frameCount: Number(p.frame_count) || 9, frameDurationMs: Number(p.frame_duration_ms) || 200, count: Math.max(1, Math.min(model.maxImages, Number(p.n) || 1)), quality },
     operation: info.operation && model.operations.includes(info.operation) ? info.operation : model.preferredOperation };

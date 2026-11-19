@@ -45,6 +45,8 @@ class Store:
           created_at REAL NOT NULL, last_seen REAL, last_ip TEXT);
         CREATE TABLE IF NOT EXISTS login_sessions(
           token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires_at REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS password_resets(
+          user_id TEXT PRIMARY KEY REFERENCES users(id), code_hash TEXT NOT NULL, expires_at REAL NOT NULL);
         CREATE TABLE IF NOT EXISTS backend_sessions(
           session_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id));
         CREATE TABLE IF NOT EXISTS generation_presets(
@@ -109,12 +111,44 @@ class Store:
             self.db.execute("INSERT INTO login_sessions VALUES(?,?,?)", (token_hash(token), uid, time.time() + 86400 * 7))
         return token
 
-    def revoke(self, uid, password=None):
+    def revoke(self, uid):
         with self.db:
             self.db.execute("DELETE FROM login_sessions WHERE user_id=?", (uid,))
             self.db.execute("DELETE FROM backend_sessions WHERE user_id=?", (uid,))
-            if password:
-                self.db.execute("UPDATE users SET password_hash=? WHERE id=?", (password, uid))
+
+    def issue_password_reset(self, uid, actor, ip):
+        code = secrets.token_urlsafe(24)
+        now = time.time()
+        expires_at = now + 30 * 60
+        with self.db:
+            updated = self.db.execute("UPDATE users SET password_hash=? WHERE id=? AND role!='admin'",
+                                      (f"reset${uuid.uuid4().hex}", uid))
+            if updated.rowcount != 1:
+                return None
+            self.db.execute("DELETE FROM login_sessions WHERE user_id=?", (uid,))
+            self.db.execute("DELETE FROM backend_sessions WHERE user_id=?", (uid,))
+            self.db.execute("""INSERT INTO password_resets(user_id,code_hash,expires_at) VALUES(?,?,?)
+                ON CONFLICT(user_id) DO UPDATE SET code_hash=excluded.code_hash, expires_at=excluded.expires_at""",
+                            (uid, token_hash(code), expires_at))
+            self.db.execute("INSERT INTO access_events(user_id,at,ip,event) VALUES(?,?,?,?)",
+                            (actor, now, ip, f"password_reset_issued:{uid}"))
+        return {"code": code, "expires_at": expires_at}
+
+    def password_reset_valid(self, uid, code):
+        row = self.one("SELECT code_hash FROM password_resets WHERE user_id=? AND expires_at>?", (uid, time.time()))
+        return bool(row and hmac.compare_digest(row["code_hash"], token_hash(code)))
+
+    def complete_password_reset(self, uid, code, encoded, ip):
+        now = time.time()
+        with self.db:
+            deleted = self.db.execute("""DELETE FROM password_resets
+                WHERE user_id=? AND code_hash=? AND expires_at>?""", (uid, token_hash(code), now))
+            if deleted.rowcount != 1:
+                return False
+            self.db.execute("UPDATE users SET password_hash=? WHERE id=?", (encoded, uid))
+            self.db.execute("INSERT INTO access_events(user_id,at,ip,event) VALUES(?,?,?,?)",
+                            (uid, now, ip, "password_reset_completed"))
+        return True
 
     def touch(self, user, ip, event="visit"):
         now = time.time()

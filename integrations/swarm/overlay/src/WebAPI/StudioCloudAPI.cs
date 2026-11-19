@@ -108,16 +108,18 @@ public static partial class StudioCloudAPI
         JObject cap = caps["models"].OfType<JObject>().FirstOrDefault(c => (string)c["id"] == model) ?? throw new ArgumentException("未知云模型");
         if (operation is not ("generate" or "edit") || !cap["operations"].Values<string>().Contains(operation)) throw new ArgumentException("模型不支持此操作");
         string prompt = ((string)input["prompt"] ?? "").Trim();
-        if (prompt.Length is < 1 or > 30000) throw new ArgumentException("提示词长度应为 1～30000 字符");
+        int maxPrompt = cap.Value<int?>("maxPromptLength") ?? 30000;
+        if (prompt.Length < 1 || prompt.Length > maxPrompt) throw new ArgumentException($"提示词长度应为 1～{maxPrompt} 字符");
         if (input["n"]?.Type != JTokenType.Integer) throw new ArgumentException("生成数量必须是整数");
         int count = (int)input["n"];
         if (count < 1 || count > (int)cap["maxImages"]) throw new ArgumentException("生成数量超出模型范围");
         string resolution = ((string)input["resolution"] ?? "1K").ToUpperInvariant();
         if (!cap["resolutions"].Values<string>().Contains(resolution)) throw new ArgumentException("分辨率不受模型支持");
-        string size = (string)input["size"] ?? "auto";
+        string size = (string)input["size"] ?? (cap["ratios"].Values<string>().Contains("auto") ? "auto" : "1:1");
         string format = (string)input["output_format"] ?? "png";
         bool gif = format == "gif";
-        if (input["output_format"] != null && (!model.StartsWith("gpt-image-2.6-") || format is not ("png" or "gif" or "svg")))
+        var formats = cap["formats"]?.Values<string>() ?? (model.StartsWith("gpt-image-2.6-") ? new[] { "png", "gif", "svg" } : new[] { "png" });
+        if (!formats.Contains(format))
             throw new ArgumentException("模型不支持所选输出格式");
         if (input["svg"] != null) throw new ArgumentException("SVG 写作模型由 Studio 配置");
         if (format == "svg" && count != 1) throw new ArgumentException("SVG 每次只生成一张");
@@ -125,20 +127,36 @@ public static partial class StudioCloudAPI
             throw new ArgumentException("此格式不支持蒙版、标注或输出压缩");
         if (!gif && (input["frame_count"] != null || input["frame_duration_ms"] != null))
             throw new ArgumentException("帧数和帧时长仅用于 GIF");
-        if (!gif && !cap["ratios"].Values<string>().Contains(size))
+        bool exactSize = false;
+        bool referenceSize = operation == "edit" && cap.Value<bool>("editUsesReferenceSize");
+        if (!gif && !referenceSize && !cap["ratios"].Values<string>().Contains(size) && !SupportedRatio(size, cap))
         {
             JObject rules = cap["exactSize"] as JObject;
-            Match match = Regex.Match(size, @"^(\d{2,5})x(\d{2,5})$");
+            Match match = Regex.Match(size, @"\A([1-9][0-9]{0,4})x([1-9][0-9]{0,4})\z");
             if (rules is null || rules.Value<bool?>("supported") == false || !match.Success) throw new ArgumentException("比例或精确尺寸不受模型支持");
             int width = int.Parse(match.Groups[1].Value), height = int.Parse(match.Groups[2].Value);
             long pixels = (long)width * height;
-            if (width % (int)rules["multiple"] != 0 || height % (int)rules["multiple"] != 0 || Math.Max(width, height) > (int)rules["maxSide"] || pixels < (long)rules["minPixels"] || pixels > (long)rules["maxPixels"] || (double)Math.Max(width, height) / Math.Min(width, height) > (double)rules["maxAspect"]) throw new ArgumentException("精确尺寸超出模型规则");
+            if (width % (int)rules["multiple"] != 0 || height % (int)rules["multiple"] != 0 || Math.Min(width, height) < (rules.Value<int?>("minSide") ?? 1) || Math.Max(width, height) > (int)rules["maxSide"] || pixels < (long)rules["minPixels"] || pixels > (long)rules["maxPixels"] || (double)Math.Max(width, height) / Math.Min(width, height) > (double)rules["maxAspect"]) throw new ArgumentException("精确尺寸超出模型规则");
+            exactSize = true;
         }
         JArray refs = input["reference_images"] as JArray ?? [];
         int maxRefs = Math.Min(cap.Value<int?>("maxReferences") ?? int.MaxValue, cap.Value<int>("appMaxReferences"));
         if (refs.Count > maxRefs || operation == "edit" && refs.Count == 0) throw new ArgumentException("参考图数量不符合此操作要求");
-        foreach (JToken image in refs) DecodeReference(image.Value<string>());
+        if (cap.Value<bool>("editUsesReferenceSize") && operation == "generate" && refs.Count > 0)
+            throw new ArgumentException("带参考图时请选择编辑操作");
+        foreach (JToken image in refs) DecodeReference(image.Value<string>(), model);
         JObject body = new() { ["model"] = model, ["prompt"] = prompt, ["size"] = size, ["resolution"] = model.StartsWith("gpt-") ? resolution.ToLowerInvariant() : resolution, ["n"] = count };
+        if (exactSize && cap.Value<bool>("exactSizeWithoutResolution")) body.Remove("resolution");
+        if (model == "seedream-5-5" && size == "auto")
+        {
+            body["size"] = resolution;
+            body.Remove("resolution");
+        }
+        if (referenceSize)
+        {
+            body.Remove("size");
+            body.Remove("resolution");
+        }
         string quality = (string)input["quality"];
         if (model.StartsWith("gpt-image-2.6-") && (string.IsNullOrEmpty(quality) || quality == "auto")) quality = "medium";
         if (!string.IsNullOrEmpty(quality))
@@ -146,12 +164,13 @@ public static partial class StudioCloudAPI
             if (cap["qualities"] is not JArray qualityChoices || !qualityChoices.Values<string>().Contains(quality)) throw new ArgumentException("质量档位不受模型支持");
             body["quality"] = quality;
         }
-        if (model.StartsWith("gpt-")) body["output_format"] = format;
+        if (model.StartsWith("gpt-") || model is "seedream-5-5" or "minimax-h3-image") body["output_format"] = format;
         if (format == "svg") body["svg"] = new JObject { ["model"] = "gpt-5.4-mini" };
         if (input["background"] is JToken background)
         {
-            if (!model.StartsWith("gpt-image-2.6-") || (string)background is not ("transparent" or "opaque" or "auto") || gif && (string)background == "transparent")
-                throw new ArgumentException("透明背景需要 GPT Image 2.6 的 PNG 或 SVG 输出");
+            bool supportsBackground = model.StartsWith("gpt-image-2.6-") || cap.Value<bool>("transparentPng");
+            if (!supportsBackground || (string)background is not ("transparent" or "opaque" or "auto") || (string)background == "transparent" && format is not ("png" or "svg"))
+                throw new ArgumentException("此模型或格式不支持所选背景");
             body["background"] = background;
         }
         if (input["complexity"] is JToken complexity)
@@ -177,6 +196,15 @@ public static partial class StudioCloudAPI
         return body;
     }
 
+    private static bool SupportedRatio(string size, JObject cap)
+    {
+        if (cap.Value<int?>("ratioLimit") is not int limit) return false;
+        Match ratio = Regex.Match(size, @"\A([1-9][0-9]{0,4}):([1-9][0-9]{0,4})\z");
+        if (!ratio.Success) return false;
+        int w = int.Parse(ratio.Groups[1].Value), h = int.Parse(ratio.Groups[2].Value);
+        return Math.Max(w, h) <= limit * Math.Min(w, h);
+    }
+
     private static (int Width, int Height) GifSheet(int w, int h, int frames)
     {
         (int cols, int rows) = frames <= 8 ? (4, 2) : frames == 9 ? (3, 3) : frames <= 12 ? (4, 3) : (4, 4);
@@ -191,7 +219,7 @@ public static partial class StudioCloudAPI
         return number;
     }
 
-    private static (byte[] bytes, string mime, string extension) DecodeReference(string data)
+    private static (byte[] bytes, string mime, string extension) DecodeReference(string data, string model = null)
     {
         Match match = Regex.Match(data ?? "", @"^data:(image/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=\r\n]+)$");
         if (!match.Success || data.Length > 28 * 1024 * 1024) throw new ArgumentException("参考图需为 PNG/JPEG/WebP，单图最多20MiB");
@@ -203,6 +231,9 @@ public static partial class StudioCloudAPI
         {
             var info = Image.Identify(bytes);
             if (info is null || (long)info.Width * info.Height > 32_000_000) throw new ArgumentException("参考图超过本应用32MP上限");
+            if (model == "minimax-h3-image" && (Math.Min(info.Width, info.Height) < 128 || Math.Max(info.Width, info.Height) > 8192
+                || Math.Max(info.Width, info.Height) > 4 * Math.Min(info.Width, info.Height)))
+                throw new ArgumentException("MiniMax H3 参考图边长需在 128～8192 像素之间，长边不能超过短边的 4 倍");
         }
         catch (ArgumentException) { throw; }
         catch { throw new ArgumentException("参考图不是可读取的图片"); }

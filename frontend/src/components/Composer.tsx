@@ -51,6 +51,9 @@ export default function Composer({ openBoard, editorRef, settings, config, param
   const modes = availableModes(models, config);
   const mode = modes.find(item => item.model === settings.model);
   const ratioLabel = ['smart', 'auto'].includes(settings.ratio) ? '智能' : settings.ratio === 'custom' ? '自定义' : settings.ratio;
+  const referenceSize = editing && cloudModel?.editUsesReferenceSize;
+  const sizeLabel = referenceSize ? '参考图尺寸由模型决定' : settings.ratio === 'custom' && cloudModel?.exactSizeWithoutResolution
+    ? `${settings.width || '—'}×${settings.height || '—'}` : `${ratioLabel} · ${settings.resolution}`;
   const maxReferences = cloudModel ? referenceLimit(cloudModel) : Math.min(localPolicy?.maxReferences ?? Infinity, config.maxReferences ?? 3);
   const steps = params.find(param => param.id === 'steps');
   const cfg = params.find(param => param.id === 'cfgscale');
@@ -111,9 +114,9 @@ export default function Composer({ openBoard, editorRef, settings, config, param
           </div>
           <div className="control-anchor size-anchor">
             <button className={`toolbar-button size-button ${panel === 'size' ? 'active' : ''}`} aria-expanded={panel === 'size'} data-layer-trigger onClick={() => setPanel(panel === 'size' ? null : 'size')}>
-              <Icon name="expand" size={17} /><span>{settings.outputFormat === 'gif' ? `GIF · ${settings.gifWidth ?? 512}×${settings.gifHeight ?? 512}` : `${settings.outputFormat === 'svg' ? 'SVG · ' : ''}${ratioLabel} · ${settings.resolution}`}<span className="control-dot">·</span>{settings.count} 张</span><Icon name="chevron" size={13} />
+              <Icon name="expand" size={17} /><span>{settings.outputFormat === 'gif' ? `GIF · ${settings.gifWidth ?? 512}×${settings.gifHeight ?? 512}` : `${settings.outputFormat === 'svg' ? 'SVG · ' : ''}${sizeLabel}`}<span className="control-dot">·</span>{settings.count} 张</span><Icon name="chevron" size={13} />
             </button>
-            <AnimatePresence>{panel === 'size' ? <ParameterPanel key="size" settings={settings} config={config} cloudModel={cloudModel} localPolicy={localPolicy} update={update} setGeometry={setGeometry} close={closePanel} /> : null}</AnimatePresence>
+            <AnimatePresence>{panel === 'size' ? <ParameterPanel key="size" settings={settings} config={config} cloudModel={cloudModel} localPolicy={localPolicy} referenceSize={referenceSize} update={update} setGeometry={setGeometry} close={closePanel} /> : null}</AnimatePresence>
           </div>
           <GenerationPresets controls={presetControls} settings={settings} modelLabel={cloudModel?.label ?? `Qwen · ${mode?.label ?? '本地'}`}/>
         </div>

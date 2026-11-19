@@ -649,6 +649,105 @@
         "high",
         "xhigh"
       ]
+    },
+    {
+      "id": "minimax-h3-image",
+      "label": "MiniMax H3 Image",
+      "operations": ["generate", "edit"],
+      "preferredOperation": "generate",
+      "ratios": ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "2:1", "1:2", "21:9", "9:21", "3:1", "1:3", "5:4", "4:5"],
+      "resolutions": ["1K", "2K", "4K"],
+      "sizeMap": {
+        "1K": {"auto": null, "1:1": null, "3:2": null, "2:3": null, "4:3": null, "3:4": null, "16:9": null, "9:16": null, "2:1": null, "1:2": null, "21:9": null, "9:21": null, "3:1": null, "1:3": null, "5:4": null, "4:5": null},
+        "2K": {"auto": null, "1:1": null, "3:2": null, "2:3": null, "4:3": null, "3:4": null, "16:9": null, "9:16": null, "2:1": null, "1:2": null, "21:9": null, "9:21": null, "3:1": null, "1:3": null, "5:4": null, "4:5": null},
+        "4K": {"auto": null, "1:1": null, "3:2": null, "2:3": null, "4:3": null, "3:4": null, "16:9": null, "9:16": null, "2:1": null, "1:2": null, "21:9": null, "9:21": null, "3:1": null, "1:3": null, "5:4": null, "4:5": null}
+      },
+      "maxReferences": 16,
+      "appMaxReferences": 16,
+      "maxImages": 10,
+      "qualities": [],
+      "formats": ["png", "jpeg", "webp"],
+      "exactSize": {
+        "supported": true, "multiple": 1, "minSide": 1, "maxSide": 7745,
+        "minPixels": 655360, "maxPixels": 20000000, "maxAspect": 3
+      },
+      "exactSizeWithoutResolution": true,
+      "ratioLimit": 3,
+      "maxPromptLength": 32000
+    },
+    {
+      "id": "seedream-5-5",
+      "label": "Seedream 5.5",
+      "operations": ["generate", "edit"],
+      "preferredOperation": "generate",
+      "ratios": ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "2:1", "1:2", "21:9"],
+      "resolutions": ["1K", "1.5K", "2K"],
+      "sizeMap": {
+        "1K": {"auto": null, "1:1": null, "3:2": null, "2:3": null, "4:3": null, "3:4": null, "16:9": null, "9:16": null, "2:1": null, "1:2": null, "21:9": null},
+        "1.5K": {"auto": null, "1:1": null, "3:2": null, "2:3": null, "4:3": null, "3:4": null, "16:9": null, "9:16": null, "2:1": null, "1:2": null, "21:9": null},
+        "2K": {"auto": null, "1:1": null, "3:2": null, "2:3": null, "4:3": null, "3:4": null, "16:9": null, "9:16": null, "2:1": null, "1:2": null, "21:9": null}
+      },
+      "maxReferences": 10,
+      "appMaxReferences": 10,
+      "maxImages": 1,
+      "qualities": [],
+      "formats": ["png", "jpeg"],
+      "exactSize": {
+        "supported": true, "multiple": 1, "minSide": 1, "maxSide": 8601,
+        "minPixels": 921600, "maxPixels": 4624220, "maxAspect": 16
+      },
+      "exactSizeWithoutResolution": true,
+      "transparentPng": true
+    },
+    {
+      "id": "mai-image-2.7-flash",
+      "label": "MAI Image 2.7 Flash",
+      "operations": ["generate", "edit"],
+      "preferredOperation": "generate",
+      "ratios": ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "2:1", "1:2", "21:9", "9:21", "4:1", "1:4"],
+      "resolutions": ["1K", "2K"],
+      "sizeMap": {
+        "1K": {"1:1": [1024, 1024], "3:2": [1248, 832], "2:3": [832, 1248], "4:3": [1152, 864], "3:4": [864, 1152], "16:9": [1344, 768], "9:16": [768, 1344], "2:1": [1536, 768], "1:2": [768, 1536], "21:9": [1792, 768], "9:21": [768, 1792], "4:1": [3072, 768], "1:4": [768, 3072]},
+        "2K": {"1:1": [2048, 2048], "3:2": [2496, 1664], "2:3": [1664, 2496], "4:3": [2336, 1760], "3:4": [1760, 2336], "16:9": [2720, 1536], "9:16": [1536, 2720], "2:1": [2880, 1440], "1:2": [1440, 2880], "21:9": [3104, 1312], "9:21": [1312, 3104], "4:1": [4096, 1024], "1:4": [1024, 4096]}
+      },
+      "maxReferences": 5,
+      "appMaxReferences": 5,
+      "maxImages": 1,
+      "qualities": [],
+      "formats": ["png"],
+      "exactSize": {
+        "supported": true, "multiple": 32, "minSide": 768, "maxSide": 5461,
+        "minPixels": 589824, "maxPixels": 4194304, "maxAspect": 7.111111111111111
+      },
+      "exactSizeWithoutResolution": true,
+      "ratioLimit": 4,
+      "editUsesReferenceSize": true,
+      "maxPromptLength": 20000
+    },
+    {
+      "id": "mai-image-2.7",
+      "label": "MAI Image 2.7",
+      "operations": ["generate", "edit"],
+      "preferredOperation": "generate",
+      "ratios": ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "2:1", "1:2", "21:9", "9:21", "4:1", "1:4"],
+      "resolutions": ["1K", "2K"],
+      "sizeMap": {
+        "1K": {"1:1": [1024, 1024], "3:2": [1248, 832], "2:3": [832, 1248], "4:3": [1152, 864], "3:4": [864, 1152], "16:9": [1344, 768], "9:16": [768, 1344], "2:1": [1536, 768], "1:2": [768, 1536], "21:9": [1792, 768], "9:21": [768, 1792], "4:1": [3072, 768], "1:4": [768, 3072]},
+        "2K": {"1:1": [2048, 2048], "3:2": [2496, 1664], "2:3": [1664, 2496], "4:3": [2336, 1760], "3:4": [1760, 2336], "16:9": [2720, 1536], "9:16": [1536, 2720], "2:1": [2880, 1440], "1:2": [1440, 2880], "21:9": [3104, 1312], "9:21": [1312, 3104], "4:1": [4096, 1024], "1:4": [1024, 4096]}
+      },
+      "maxReferences": 5,
+      "appMaxReferences": 5,
+      "maxImages": 1,
+      "qualities": [],
+      "formats": ["png"],
+      "exactSize": {
+        "supported": true, "multiple": 32, "minSide": 768, "maxSide": 5461,
+        "minPixels": 589824, "maxPixels": 4194304, "maxAspect": 7.111111111111111
+      },
+      "exactSizeWithoutResolution": true,
+      "ratioLimit": 4,
+      "editUsesReferenceSize": true,
+      "maxPromptLength": 20000
     }
   ]
 }

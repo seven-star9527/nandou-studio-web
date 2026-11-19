@@ -11,6 +11,7 @@ type TimeValue = string | number | null;
 interface UsageUser { id: string; email: string; name: string; role: string; created_at: TimeValue; last_seen: TimeValue; last_ip: string | null; tasks: Metric; images: Metric; credits: Metric }
 interface UsageTask { id: string; owner_email: string; owner_name: string; owner_role: string; model: string | null; status: string; requested: Metric; completed: Metric; started_at: TimeValue; seconds: Metric; credits: Metric; hidden_at: TimeValue }
 interface UsageOverview { summary: { users: Metric; tasks: Metric; images: Metric; credits: Metric }; users: UsageUser[]; tasks: UsageTask[] }
+interface ResetCode { code: string; expires_at: number; initial_password: string }
 
 function metric(value: Metric | undefined, maximumFractionDigits = 0) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('zh-CN', { maximumFractionDigits }) : '—';
@@ -29,8 +30,18 @@ function UsageDialog({ close }: { close: () => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const [resetUser, setResetUser] = useState<UsageUser | null>(null);
+  const [resetCode, setResetCode] = useState<ResetCode | null>(null);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState('');
   const dialog = useRef<HTMLElement>(null);
+  const resetPanel = useRef<HTMLFieldSetElement>(null);
+  const resetInput = useRef<HTMLInputElement>(null);
   useModalDialog(true, dialog, close);
+  useEffect(() => {
+    if (resetCode) resetInput.current?.focus();
+    else if (resetUser) resetPanel.current?.focus();
+  }, [resetUser, resetCode]);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setError('');
@@ -43,13 +54,57 @@ function UsageDialog({ close }: { close: () => void }) {
   const query = search.trim().toLowerCase();
   const users = data?.users.filter(user => !query || `${user.name} ${user.email}`.toLowerCase().includes(query) || user.last_ip?.includes(query)) ?? [];
   const tasks = data?.tasks.filter(task => !query || `${task.owner_name} ${task.owner_email} ${task.model ?? ''} ${task.id}`.toLowerCase().includes(query)) ?? [];
+  const selectResetUser = (user: UsageUser | null) => {
+    setResetUser(user);
+    setResetCode(null);
+    setResetError('');
+  };
+  const issueReset = async () => {
+    if (!resetUser || resetBusy) return;
+    setResetBusy(true);
+    setResetError('');
+    try {
+      setResetCode(await authRequest<ResetCode>('admin/password-reset', {account: resetUser.id}));
+    } catch (cause) {
+      setResetError(cause instanceof Error ? cause.message : '无法确认重置结果，请重新生成重置码。');
+    } finally {
+      setResetBusy(false);
+    }
+  };
   return <ModalPortal><div className="modal-backdrop admin-usage-backdrop" onClick={close}><section className="admin-usage modal" ref={dialog} role="dialog" aria-modal="true" aria-labelledby="usage-title" tabIndex={-1} onClick={event => event.stopPropagation()}>
     <div className="admin-usage-heading"><div><h2 id="usage-title">访问与使用情况</h2><p>全账号统计，用户移除记录后仍保留。</p></div><div className="admin-heading-actions"><button className="icon-button" disabled={loading} aria-label="刷新使用情况" onClick={() => setRevision(previous => previous + 1)}><Icon name="refresh" size={18} /></button><button className="icon-button" aria-label="关闭使用情况" onClick={close}><Icon name="close" /></button></div></div>
     {error ? <p className="auth-message auth-error" role="alert">{error}</p> : null}
     <div className="usage-summary" aria-busy={loading}>{[['注册账号', data?.summary.users], ['任务总数', data?.summary.tasks], ['已交付图片', data?.summary.images], ['实际消耗积分', data?.summary.credits]].map(([label, value], index) => <div key={String(label)}><span>{label}</span><strong>{index === 3 ? formatCredits(value as Metric | undefined) : metric(value as Metric | undefined)}</strong></div>)}</div>
     <div className="usage-controls"><GlassTabs className="usage-tabs" aria-label="使用情况视图"><button className={tab === 'users' ? 'selected' : ''} aria-pressed={tab === 'users'} onClick={() => setTab('users')}>账号与访问</button><button className={tab === 'tasks' ? 'selected' : ''} aria-pressed={tab === 'tasks'} onClick={() => setTab('tasks')}>任务明细</button></GlassTabs><input aria-label={tab === 'users' ? '搜索姓名、邮箱或 IP' : '搜索姓名、邮箱、模型或任务'} type="search" value={search} placeholder={tab === 'users' ? '搜索姓名、邮箱或 IP' : '搜索姓名、邮箱、模型或任务'} onChange={event => setSearch(event.target.value)} /></div>
+    {resetUser && <fieldset ref={resetPanel} tabIndex={-1} className="model-management-form usage-password-reset"><legend>重置 {resetUser.email} 的密码</legend>
+      {resetCode ? <>
+        <p role="status">旧密码和登录会话已失效。请私下把初始密码 <code>{resetCode.initial_password}</code> 和重置码交给用户。重置码有效期至 {time(resetCode.expires_at)}。</p>
+        <label className="model-management-field">一次性重置码<input ref={resetInput} readOnly value={resetCode.code} onFocus={event => event.currentTarget.select()} /></label>
+        <button className="quiet-button" type="button" onClick={() => selectResetUser(null)}>完成</button>
+      </> : <>
+        <p>确认后，旧密码和登录会话立即失效。</p>
+        {resetError && <p role="alert">{resetError}</p>}
+        <div className="model-management-options">
+          <button className="primary-button" type="button" disabled={resetBusy} onClick={() => void issueReset()}>生成一次性重置码</button>
+          <button className="quiet-button" type="button" disabled={resetBusy} onClick={() => selectResetUser(null)}>取消</button>
+        </div>
+      </>}
+    </fieldset>}
     <div className="usage-table-wrap" aria-busy={loading}>
-      {tab === 'users' ? <table className="usage-table"><caption className="sr-only">账号访问和用量统计</caption><thead><tr><th>账号</th><th>最近访问</th><th>来源 IP</th><th className="numeric">任务</th><th className="numeric">交付图片</th><th className="numeric">实际积分</th></tr></thead><tbody>{users.map(user => <tr key={user.id}><td><strong>{user.name || (user.role === 'admin' ? '管理员' : '待绑定姓名')}</strong><span>{user.email}</span><small>注册于 {time(user.created_at)}</small></td><td>{time(user.last_seen)}</td><td>{user.last_ip ?? '—'}</td><td className="numeric">{metric(user.tasks)}</td><td className="numeric">{metric(user.images)}</td><td className="numeric">{formatCredits(user.credits)}</td></tr>)}</tbody></table> : <table className="usage-table usage-task-table"><caption className="sr-only">全账号任务使用明细</caption><thead><tr><th>账号 / 模型</th><th>任务状态</th><th className="numeric">交付 / 请求</th><th className="numeric">用时</th><th className="numeric">实际积分</th><th>开始时间</th></tr></thead><tbody>{tasks.map(task => <tr key={task.id}><td><strong>{task.owner_name || (task.owner_role === 'admin' ? '管理员' : '待绑定姓名')}</strong><span>{task.owner_email}</span><span>{task.model ?? '模型待记录'}</span><small title={task.id}>{task.id}</small></td><td><span className={`usage-state usage-state-${task.status}`}>{taskStates[task.status] ?? task.status}</span>{task.hidden_at ? <small className="usage-hidden">用户已移除<br />{time(task.hidden_at)}</small> : null}</td><td className="numeric">{metric(task.completed)} / {metric(task.requested)}</td><td className="numeric">{typeof task.seconds === 'number' ? `${metric(task.seconds, 1)} 秒` : '—'}</td><td className="numeric">{formatCredits(task.credits)}</td><td>{time(task.started_at)}</td></tr>)}</tbody></table>}
+      {tab === 'users' ? <table className="usage-table">
+        <caption className="sr-only">账号访问和用量统计</caption>
+        <thead><tr><th>账号</th><th>最近访问</th><th>来源 IP</th><th className="numeric">任务</th><th className="numeric">交付图片</th><th className="numeric">实际积分</th><th>操作</th></tr></thead>
+        <tbody>{users.map(user => <tr key={user.id}>
+          <td><strong>{user.name || (user.role === 'admin' ? '管理员' : '待绑定姓名')}</strong><span>{user.email}</span><small>注册于 {time(user.created_at)}</small></td>
+          <td>{time(user.last_seen)}</td>
+          <td>{user.last_ip ?? '—'}</td>
+          <td className="numeric">{metric(user.tasks)}</td>
+          <td className="numeric">{metric(user.images)}</td>
+          <td className="numeric">{formatCredits(user.credits)}</td>
+          <td>{user.role !== 'admin' && <button className="quiet-button" type="button" disabled={resetUser !== null}
+            aria-label={'重置密码 ' + user.email} onClick={() => selectResetUser(user)}>重置密码</button>}</td>
+        </tr>)}</tbody>
+      </table> : <table className="usage-table usage-task-table"><caption className="sr-only">全账号任务使用明细</caption><thead><tr><th>账号 / 模型</th><th>任务状态</th><th className="numeric">交付 / 请求</th><th className="numeric">用时</th><th className="numeric">实际积分</th><th>开始时间</th></tr></thead><tbody>{tasks.map(task => <tr key={task.id}><td><strong>{task.owner_name || (task.owner_role === 'admin' ? '管理员' : '待绑定姓名')}</strong><span>{task.owner_email}</span><span>{task.model ?? '模型待记录'}</span><small title={task.id}>{task.id}</small></td><td><span className={`usage-state usage-state-${task.status}`}>{taskStates[task.status] ?? task.status}</span>{task.hidden_at ? <small className="usage-hidden">用户已移除<br />{time(task.hidden_at)}</small> : null}</td><td className="numeric">{metric(task.completed)} / {metric(task.requested)}</td><td className="numeric">{typeof task.seconds === 'number' ? `${metric(task.seconds, 1)} 秒` : '—'}</td><td className="numeric">{formatCredits(task.credits)}</td><td>{time(task.started_at)}</td></tr>)}</tbody></table>}
       {!loading && (tab === 'users' ? !users.length : !tasks.length) ? <div className="usage-empty">{query ? '没有匹配的记录' : tab === 'users' ? '暂无账号记录' : '暂无任务记录'}</div> : null}
       {loading ? <div className="usage-loading" role="status">正在读取使用情况…</div> : null}
     </div><p className="usage-note">“—”表示尚无可核对的数据；实际积分按任务记录汇总，待回填费用不会记为零。</p>

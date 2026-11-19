@@ -40,9 +40,9 @@ function restorePreferences(_key: string, value: AgentSettings): AgentSettings {
 const EMPTY_DRAFT: AgentDraft = {text: '', uploads: [], refs: []};
 
 function fromPreset({cloudModel, settings:s}: GenerationPreset): Partial<AgentSettings> {
-  return {model:cloudModel!, quality:s.quality || 'medium', resolution:s.resolution, ratio:s.ratio, count:String(s.count),
+  return {model:cloudModel!, quality:s.quality || 'medium', resolution:s.resolution, ratio:s.ratio, count:String(Math.min(4, s.count)),
     outputFormat:s.outputFormat ?? 'png', width:s.width, height:s.height, gifWidth:s.gifWidth, gifHeight:s.gifHeight,
-    frameCount:s.frameCount, frameDurationMs:s.frameDurationMs, svgTransparent:s.svgTransparent};
+    frameCount:s.frameCount, frameDurationMs:s.frameDurationMs, svgTransparent:s.svgTransparent, transparentBackground:s.transparentBackground};
 }
 
 function referenceIds(draft: AgentDraft) {
@@ -105,7 +105,7 @@ export default function AgentWorkspace({ user, client, cloudConfigured, refreshA
     ...(opts.ratio === 'custom' ? {width:opts.width ?? 0, height:opts.height ?? 0} : {}),
     quality: model?.qualities.length ? opts.quality : '', outputFormat:opts.outputFormat ?? 'png',
     gifWidth:opts.gifWidth, gifHeight:opts.gifHeight, frameCount:opts.frameCount,
-    frameDurationMs:opts.frameDurationMs, svgTransparent:opts.svgTransparent, model:'', seed:'-1', cfg:7, steps:20,
+    frameDurationMs:opts.frameDurationMs, svgTransparent:opts.svgTransparent, transparentBackground:opts.transparentBackground, model:'', seed:'-1', cfg:7, steps:20,
   };
   function updateOptions(changes: Partial<AgentSettings>) {
     if (changes.platform || changes.scene || changes.style || (!defaultPreset?.cloudModel && !override)) {

@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { agentRequest, type AgentSettings } from '../agent-api';
 import Icon from './Icon';
 import {PresetManager, type PresetControls} from './GenerationPresets';
+import {cloudFormatLabels} from '../cloud-contract';
 import type {CloudModelCapability, GenerationSettings} from '../types';
 
 
@@ -31,17 +32,19 @@ export default function AgentPreferences({ value, update, disabled, close, contr
     </details>
     {controls.error && <p role="alert">{controls.error} <button type="button" onClick={() => void controls.read()}>重新读取</button></p>}
     <fieldset disabled={disabled}><legend>选择比例</legend><GlassTabs className="agent-ratio-choices" role="group" aria-label="生成比例">{ratios.map(r => { const [w,h] = r.split(':').map(Number); const aspect = w/h; return <button key={r} type="button" aria-pressed={value.ratio === r} className={value.ratio === r ? 'selected' : ''} onClick={() => update({ratio:r})}>{r === 'auto' ? <Icon name="expand" size={17}/> : <i style={{width:aspect>=1?18:18*aspect,height:aspect<=1?18:18/aspect}}/>}<span>{r === 'auto' ? '智能' : r}</span></button>;})}</GlassTabs><p className="agent-preference-note">智能仅按需求选择比例，画质与分辨率保持下方设置。</p></fieldset>
-    <fieldset disabled={disabled || !models.length}><legend>出图规格</legend><label className="agent-model-select">生图模型<select value={value.model} onChange={e=>{const m=models.find(item=>item.id===e.target.value); if(m) update({model:m.id,ratio:m.ratios[0],resolution:m.resolutions[0],quality:m.qualities.includes('medium')?'medium':m.qualities[0],count:'1',outputFormat:m.formats?.[0],svgTransparent:undefined});}}>{!model && <option value={value.model}>请选择可用模型</option>}{models.map(({id,label})=><option key={id} value={id}>{label}</option>)}</select></label><div className="agent-preference-grid">
+    <fieldset disabled={disabled || !models.length}><legend>出图规格</legend><label className="agent-model-select">生图模型<select value={value.model} onChange={e=>{const m=models.find(item=>item.id===e.target.value); if(m) update({model:m.id,ratio:m.ratios[0],resolution:m.resolutions[0],quality:m.qualities.includes('medium')?'medium':m.qualities[0] ?? '',count:'1',outputFormat:m.formats?.[0],svgTransparent:undefined,transparentBackground:false});}}>{!model && <option value={value.model}>请选择可用模型</option>}{models.map(({id,label})=><option key={id} value={id}>{label}</option>)}</select></label><div className="agent-preference-grid">
       {model?.qualities.length ? <label>图像质量<select value={value.quality} onChange={e=>update({quality:e.target.value})}>{[['low','低'],['medium','中 · 默认'],['high','高'],['xhigh','超高']].filter(([id])=>model.qualities.includes(id)).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label> : null}
       <label>分辨率<select value={value.resolution} onChange={e=>update({resolution:e.target.value})}>{model?.resolutions.map(r=><option key={r}>{r}</option>)}</select></label>
-      <label>生成数量<select disabled={value.outputFormat === 'svg'} value={value.count} onChange={e=>update({count:e.target.value})}><option value="auto">跟随需求 · 默认1张</option>{Array.from({length:model?.maxImages ?? 0},(_,i)=>i+1).map(n=><option key={n} value={n}>{n} 张</option>)}</select></label>
+      <label>生成数量<select disabled={value.outputFormat === 'svg'} value={value.count} onChange={e=>update({count:e.target.value})}><option value="auto">跟随需求 · 默认1张</option>{Array.from({length:Math.min(4, model?.maxImages ?? 0)},(_,i)=>i+1).map(n=><option key={n} value={n}>{n} 张</option>)}</select></label>
     </div>
       {value.ratio === 'custom' && <p className="panel-note">自定义尺寸 · {value.width} × {value.height} px</p>}
-      {value.model.startsWith('gpt-image') && <label className="agent-model-select">输出格式<select value={value.outputFormat ?? 'auto'} onChange={e=>update({outputFormat:e.target.value === 'auto' ? undefined : e.target.value as AgentSettings['outputFormat'], ...(e.target.value === 'svg' ? {count:'1'} : {})})}>
-        {formats.includes('png') && <option value="auto">跟随需求 · 默认 PNG</option>}{formats.map(format=><option key={format} value={format}>{format==='gif'?'GIF 动图':format==='svg'?'SVG 矢量图':'PNG 静态图'}</option>)}
+      {model?.editUsesReferenceSize && <p className="panel-note">参考图编辑的输出尺寸由模型决定。</p>}
+      {formats.length > 1 && <label className="agent-model-select">输出格式<select value={value.outputFormat ?? 'auto'} onChange={e=>update({outputFormat:e.target.value === 'auto' ? undefined : e.target.value as AgentSettings['outputFormat'], ...(e.target.value === 'svg' ? {count:'1'} : {}), ...(e.target.value === 'jpeg' ? {transparentBackground:false} : {})})}>
+        {formats.includes('png') && <option value="auto">跟随需求 · 默认 PNG</option>}{formats.map(format=><option key={format} value={format}>{cloudFormatLabels[format as keyof typeof cloudFormatLabels]}</option>)}
       </select></label>}
       {value.outputFormat === 'gif' && <p className="panel-note">{value.gifWidth ?? 512} × {value.gifHeight ?? 512} px · {value.frameCount ?? 9} 帧 · 每帧 {value.frameDurationMs ?? 200} ms</p>}
       {value.outputFormat === 'svg' && <label><input type="checkbox" checked={!!value.svgTransparent} onChange={e=>update({svgTransparent:e.target.checked})}/>指定透明背景</label>}
+      {model?.transparentPng && value.outputFormat !== 'jpeg' && <label><input type="checkbox" checked={!!value.transparentBackground} onChange={e=>update({transparentBackground:e.target.checked, outputFormat:'png'})}/>透明背景</label>}
     </fieldset>
     <fieldset disabled={disabled}><legend>创作方向</legend><div className="agent-preference-grid">
       <label>使用平台<select value={value.platform} onChange={e=>update({platform:e.target.value})}>{[['auto','按需求'],['amazon','Amazon'],['store','独立站']].map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>

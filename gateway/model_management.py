@@ -52,10 +52,11 @@ def official_possible(data):
 class ModelManagement:
     def __init__(self, store, cloud_catalog):
         self.store = store
+        self.cloud_specs = {m['id']: m for m in cloud_catalog}
         self.catalog = {m['id']: {
             'id': m['id'], 'name': m.get('label') or m.get('name') or m['id'], 'kind': 'cloud',
             **{key: list(m.get(key) or []) for key in ('resolutions', 'ratios', 'qualities', 'operations')},
-            'formats': ['png', 'gif', 'svg'] if m['id'].startswith('gpt-image-2.6-') else ['png'],
+            'formats': m.get('formats', ['png', 'gif', 'svg'] if m['id'].startswith('gpt-image-2.6-') else ['png']),
             'exactSize': bool((m.get('exactSize') or {}).get('supported', False)),
             'maxImages': m['maxImages'], 'maxReferences': min(m.get('maxReferences') or m['appMaxReferences'], m['appMaxReferences']),
         } for m in cloud_catalog}
@@ -124,7 +125,7 @@ class ModelManagement:
         if (resolution not in model['resolutions'] or data.get('operation') not in model['operations'] or fmt not in model['formats']
                 or (model['qualities'] and quality not in model['qualities'])):
             reject()
-        if fmt != 'gif' and size not in model['ratios'] and not (model['exactSize'] and isinstance(size, str) and re.fullmatch(r'\d{2,5}x\d{2,5}', size)):
+        if fmt != 'gif' and not (data.get('operation') == 'edit' and self.cloud_specs[mid].get('editUsesReferenceSize')) and size not in model['ratios'] and not (model['exactSize'] and isinstance(size, str) and re.fullmatch(r'[1-9][0-9]{0,4}x[1-9][0-9]{0,4}', size)):
             reject()
 
     def set_model(self, mid, value):

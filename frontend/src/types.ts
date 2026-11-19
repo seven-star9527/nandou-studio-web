@@ -8,10 +8,11 @@ export interface Model { name: string; architecture?: string; title?: string; }
 export interface ReferenceImage { id: string; name: string; dataUrl: string; width: number; height: number; }
 export type RatioId = string;
 export type ResolutionId = string;
+export type CloudFormat = 'png' | 'jpeg' | 'webp' | 'gif' | 'svg';
 export interface GenerationSettings {
   ratio: RatioId; resolution: ResolutionId; width: number; height: number;
   count: number; model: string; steps: number; cfg: number; seed: string; quality?: string;
-  svgTransparent?: boolean; outputFormat?: 'png' | 'gif' | 'svg'; frameCount?: number; frameDurationMs?: number; gifWidth?: number; gifHeight?: number;
+  svgTransparent?: boolean; transparentBackground?: boolean; outputFormat?: CloudFormat; frameCount?: number; frameDurationMs?: number; gifWidth?: number; gifHeight?: number;
 }
 export interface ModeConfig {
   id: string; label: string; model?: string; modelMatch?: string;
@@ -76,8 +77,12 @@ export interface CloudModelCapability {
   id: string; label: string; operations: CloudOperation[]; preferredOperation: CloudOperation;
   ratios: string[]; resolutions: string[]; sizeMap: Record<string, Record<string, [number, number] | null>>;
   maxReferences: number | null; appMaxReferences: number; maxImages: number; qualities: string[];
-  exactSize: { supported: boolean; multiple: number; maxSide: number; minPixels: number; maxPixels: number; maxAspect: number } | null;
-  formats?: ('png' | 'gif' | 'svg')[];
+  exactSize: { supported: boolean; multiple: number; minSide?: number; maxSide: number; minPixels: number; maxPixels: number; maxAspect: number } | null;
+  formats?: CloudFormat[];
+  exactSizeWithoutResolution?: boolean;
+  editUsesReferenceSize?: boolean;
+  transparentPng?: boolean;
+  maxPromptLength?: number;
 }
 export interface LocalModelPolicy {maxImages: number; maxReferences: number; maxSide: number; maxSteps: number}
 export interface CloudCapabilities { provider: 'apimart'; configured: boolean; models: CloudModelCapability[]; localReadiness?: Record<string, boolean>; localPolicies?: Record<string,LocalModelPolicy>; }
@@ -89,7 +94,7 @@ export interface CloudAccount {
   token_unlimited: boolean; checked_utc: string; error?: string;
   studio_quota?: StudioQuota;
 }
-export interface CloudAnimation { output_format?: 'gif' | 'svg'; frame_count?: number; frame_duration_ms?: number; }
+export interface CloudAnimation { output_format?: CloudFormat; frame_count?: number; frame_duration_ms?: number; }
 export interface CloudQuoteRequest extends CloudAnimation { model: string; size: string; resolution: string; quality?: string; n: number; prompt?: string; operation?: 'edit' | 'generate'; }
 export interface CloudQuote {
   model: string; kind: 'output_reference' | 'precharge_reference' | 'unknown';

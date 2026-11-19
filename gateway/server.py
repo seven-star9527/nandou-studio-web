@@ -33,6 +33,7 @@ from .model_management import LOCAL_MODELS, ModelManagement, ModelPolicyError, u
 
 
 COOKIE = "nandou_session"
+AI_RETOUCH_MODELS = ('gemini-nano-banana-2.1', 'gpt-image-2.6-flare', 'gpt-image-2.6-sunburst')
 READ_APIS = {"ListT2IParams", "GetCurrentStatus", "GetStudioCloudCapabilities", "GetStudioCloudAccount",
              "GetStudioCloudQuote", "GetStudioPolishCapabilities", "PolishStudioPrompt"}
 TASK_APIS = {"GetNewSession", "ListImages", "InterruptAll", "SubmitStudioCloudImage", "GetStudioCloudTask", "ListStudioCloudTasks"}
@@ -40,6 +41,7 @@ SENSITIVE_KEYS = {"impersonateuser", "user_id", "userid", "owner_id", "role", "s
 IDENTITY_HEADERS = {"x-swarm-user_id", "x-session-id"}
 PUBLIC_HOST = "nandouai.cn"
 PUBLIC_ACCOUNT_DISABLED = {"/studio-auth/register", "/studio-auth/reset"}
+RESET_INITIAL_PASSWORD = "abc123456"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 LOCAL_PARAMS = {"prompt", "model", "images", "width", "height", "aspectratio", "steps", "cfgscale", "seed",
                 "batchsize", "promptimages", "extra_metadata", "qwenmodel", "vae", "automaticvae", "sampler", "scheduler", "textencodedimage"}
@@ -166,6 +168,7 @@ class Gateway:
               or request.host.lower().split(":", 1)[0].rstrip(".") == PUBLIC_HOST):
             return error("不接受客户端身份或转发请求头。", 400)
         request["public_entry"] = public
+        request["admin_entry"] = public or local_entry(request)
         origin = request.headers.get("Origin")
         if origin:
             try:
@@ -175,7 +178,7 @@ class Gateway:
             if parsed.netloc.lower() != request.host.lower() or parsed.scheme != request.scheme:
                 return error("请求来源不匹配。", 403)
         user = self.store.session(request.cookies.get(COOKIE))
-        if user and user["role"] == "admin" and not local_entry(request):
+        if user and user["role"] == "admin" and not request["admin_entry"]:
             user = None
         request["user"] = user
         if user:
@@ -248,7 +251,7 @@ class Gateway:
         user = request["user"]
         if user and user["role"] != "admin" and not user["name"] and path not in {
             "/studio-auth/me", "/studio-auth/bind-name", "/studio-auth/logout", "/studio-auth/login",
-            "/studio-auth/register", "/studio-auth/reset",
+            "/studio-auth/register", "/studio-auth/recover", "/studio-auth/reset",
         }:
             return error("请刷新页面并绑定姓名后继续。", 403, "name_required")
         if path.startswith("/studio-auth/"):
@@ -288,9 +291,21 @@ class Gateway:
         action = request.path[len("/studio-auth/"):]
         user = request["user"]
         if action == "me" and request.method == "GET":
-            return web.json_response({"user": public_user(user), "admin_entry": local_entry(request)})
+            return web.json_response({"user": public_user(user), "admin_entry": request["admin_entry"]})
+        if action == "admin/password-reset" and request.method == "POST":
+            if not user or user["role"] != "admin" or not request["admin_entry"]:
+                return error("无法访问。", 403)
+            data = await self.body(request)
+            uid = data.get("account")
+            if set(data) != {"account"} or not isinstance(uid, str):
+                raise ValueError("invalid target account")
+            result = self.store.issue_password_reset(uid, user["id"], request.remote or "unknown")
+            if not result:
+                return error("普通账号不存在。", 404, "account_not_found")
+            await self.close_sessions(uid)
+            return web.json_response({**result, "initial_password": RESET_INITIAL_PASSWORD})
         if action == 'admin/model-management':
-            if not user or user['role'] != 'admin' or not local_entry(request):
+            if not user or user['role'] != 'admin' or not request["admin_entry"]:
                 return error('无法访问。', 403)
             return await self.model_management(request)
         if action == "history" and request.method == "GET":
@@ -314,14 +329,14 @@ class Gateway:
                 return error("配置不存在。", 404)
             return web.json_response({"account": user["id"], "presets": entries})
         if action == "admin/official-usage" and request.method == "GET":
-            if not user or user["role"] != "admin" or not local_entry(request):
+            if not user or user["role"] != "admin" or not request["admin_entry"]:
                 return error("无法访问。", 403)
             prior = self.store.all("""SELECT id,model,strftime('%Y-%m-%dT%H:%M:%SZ',started_at,'unixepoch') at
                 FROM tasks WHERE json_extract(record_json,'$.reference_billing') = 1""")
             report = await asyncio.to_thread(official_usage, self.root, prior)
             return web.json_response(report, headers={"Cache-Control": "private, no-store"})
         if action == "admin/overview" and request.method == "GET":
-            if not user or user["role"] != "admin" or not local_entry(request):
+            if not user or user["role"] != "admin" or not request["admin_entry"]:
                 return error("无法访问。", 403)
             await self.synchronize(user, include_local=True)
             return web.json_response(self.store.overview())
@@ -366,7 +381,9 @@ class Gateway:
             response = web.json_response({"ok": True})
             response.del_cookie(COOKIE, path="/")
             return response
-        if action not in {"register", "login", "reset"}:
+        if action == "reset":
+            return error("请联系管理员领取一次性重置码。", 403, "reset_code_required")
+        if action not in {"register", "login", "recover"}:
             raise web.HTTPNotFound()
         now = time.monotonic()
         remote = request.remote or "unknown"
@@ -401,21 +418,25 @@ class Gateway:
                 account = self.store.create_user(email, encoded, name=name)
             except sqlite3.IntegrityError:
                 return error("此邮箱已注册。", 409)
-        elif action == "reset":
-            if email == "admin" or account and account["role"] == "admin":
-                return error("管理员不支持此重置入口。", 403)
-            if account:
-                self.store.revoke(account["id"], await asyncio.to_thread(password_hash, password))
-                await self.close_sessions(account["id"])
-                self.store.touch(account, request.remote or "unknown", "password_reset")
+        elif action == "recover":
+            if password == RESET_INITIAL_PASSWORD:
+                return error("新密码不能与初始密码相同。")
+            code = data.get("code")
+            if (not account or account["role"] == "admin" or data.get("initial_password") != RESET_INITIAL_PASSWORD
+                    or not isinstance(code, str) or not re.fullmatch(r"[A-Za-z0-9_-]{32}", code)
+                    or not self.store.password_reset_valid(account["id"], code)):
+                return error("初始密码或重置码无效，或重置码已过期。", 400, "invalid_reset_code")
+            encoded = await asyncio.to_thread(password_hash, password)
+            if not self.store.complete_password_reset(account["id"], code, encoded, remote):
+                return error("重置码已失效，请联系管理员。", 400, "invalid_reset_code")
             return web.json_response({"ok": True})
         else:
             # Dummy hash for unknown accounts keeps the expensive work comparable.
-            if not account:
+            if not account or account["password_hash"].startswith("reset$"):
                 await asyncio.to_thread(password_hash, password)
                 return error("账号或密码不正确。", 401)
-            if account["role"] == "admin" and not local_entry(request):
-                return error("管理员仅支持本机入口登录。", 403)
+            if account["role"] == "admin" and not request["admin_entry"]:
+                return error("请从 Studio 正式 HTTPS 地址或本机入口登录管理员账号。", 403)
             if not await asyncio.to_thread(password_valid, password, account["password_hash"]):
                 return error("账号或密码不正确。", 401)
             # Password hashing runs off-loop: a reset can finish while it is running.
@@ -559,7 +580,7 @@ class Gateway:
         self.models.validate(user,data,retouch_rebuild=retouch_rebuild)
         estimate = None
         if user['role'] != 'admin' and self.models.has_limit(user['id'], data['model']):
-            params = {k:v for k,v in data.items() if k in {'model','size','resolution','quality','n','output_format','frame_count','frame_duration_ms'}}
+            params = {k:v for k,v in data.items() if k in {'model','size','resolution','quality','n','output_format','frame_count','frame_duration_ms','operation'}}
             try:
                 quote = await self.upstream_api(user,'GetStudioCloudQuote',params)
                 if not quote.get('stale') and not quote.get('error'):
@@ -581,9 +602,10 @@ class Gateway:
         return {**data, 'studio_official_only': official_only}
 
     async def cloud_quote(self, user, data):
-        params = {k: v for k, v in data.items() if k in {'model', 'size', 'resolution', 'quality', 'n', 'output_format', 'frame_count', 'frame_duration_ms'}}
+        params = {k: v for k, v in data.items() if k in {'model', 'size', 'resolution', 'quality', 'n', 'output_format', 'frame_count', 'frame_duration_ms', 'operation'}}
         first = await self.upstream_api(user, 'GetStudioCloudQuote', params)
-        workflow = (data.get('retouch_category') is not None or ai_retouch.wants_retouch(data.get('prompt', ''))) and data.get('operation') == 'edit'
+        workflow = (data.get('retouch_category') is not None or data.get('model') in AI_RETOUCH_MODELS and
+                    ai_retouch.wants_retouch(data.get('prompt', ''))) and data.get('operation') == 'edit'
         transparent = data.get('background') == 'transparent' or bool(re.search(r'透明(?:底|背景|PNG)|transparent', data.get('prompt', ''), re.I))
         if not workflow or transparent or data.get('n') != 1 or data.get('output_format', 'png') != 'png':
             return first
@@ -623,9 +645,9 @@ class Gateway:
         original_prompt=upstream_data.pop('original_prompt', prompt)
         if not isinstance(original_prompt, str) or len(original_prompt)>12000:
             return error('原始提示词无效。')
-        workflow=(explicit is not None or ai_retouch.wants_retouch(original_prompt)) and data.get('operation')=='edit'
+        workflow=(explicit is not None or data.get('model') in AI_RETOUCH_MODELS and ai_retouch.wants_retouch(original_prompt)) and data.get('operation')=='edit'
         if workflow and (len(references)!=1 or data.get('n')!=1 or data.get('output_format','png')!='png'
-                         or data.get('model') not in ('gemini-nano-banana-2.1','gpt-image-2.6-flare','gpt-image-2.6-sunburst')):
+                         or data.get('model') not in AI_RETOUCH_MODELS):
             return error('AI 商品精修需要一张原片、单张 PNG，以及 Gemini 或 GPT Image 2.6。')
         if explicit is not None and (not workflow or explicit not in ('auto',*ai_retouch.MATERIALS)):
             return error('AI 精修参数无效。')

@@ -194,20 +194,31 @@ async def read_completion_stream(lines, on_text=None):
     return message, usage
 
 
-def settings(raw):
-    output_fields = {"outputFormat", "gifWidth", "gifHeight", "frameCount", "frameDurationMs", "svgTransparent", "width", "height"}
+def settings(raw, cloud_specs=None):
+    output_fields = {"outputFormat", "gifWidth", "gifHeight", "frameCount", "frameDurationMs", "svgTransparent", "transparentBackground", "width", "height"}
     output = {key: raw[key] for key in output_fields if key in raw}
     value = {**DEFAULTS, **{k: v for k, v in raw.items() if k not in output_fields}}
     if isinstance(value['model'], str):
         value['model'] = re.sub(r'^gpt-image-2[.]5-(flare|sunburst)$', r'gpt-image-2.6-\1', value['model'])
     allowed = {'model': MODELS, 'quality': {'low', 'medium', 'high', 'xhigh'}, 'resolution': {'1K', '2K', '4K'}, 'ratio': RATIOS | {'auto'} | ({'1:4','4:1','1:8','8:1','4:5','5:4'} if value['model'] == 'gemini-nano-banana-2.1' else {'custom','5:4','4:5','2:1','1:2','9:21','3:1','1:3'}), 'count': {'auto', '1', '2', '3', '4'}, 'platform': {'auto', 'amazon', 'store'}, 'scene': {'auto', 'main', 'detail', 'lifestyle', 'aplus', 'hero'}, 'style': {'natural', 'studio', 'minimal', 'creative'}}
+    mid = value['model']
+    spec = (cloud_specs or {}).get(mid, {}) if isinstance(mid, str) else {}
+    if spec and mid not in MODELS:
+        allowed.update(model=MODELS | {mid}, resolution=set(spec['resolutions']),
+                       ratio=set(spec['ratios']) | ({'custom'} if spec.get('exactSize') else set()))
+        allowed['quality'].add('')  # Models with no quality selector retain an empty preference.
     if set(value) != set(DEFAULTS) or any(not isinstance(v, str) or v not in allowed[k] for k, v in value.items()):
         raise ValueError("unsupported settings")
     fmt = output.get("outputFormat")
-    if fmt is not None and (fmt not in ("png","gif","svg") or fmt in ("gif","svg") and not value["model"].startswith("gpt-image-2.6-")):
+    formats = spec.get('formats', ('png', 'gif', 'svg') if mid.startswith('gpt-image-2.6-') else ('png',))
+    if fmt is not None and fmt not in formats:
         raise ValueError("unsupported output format")
     if fmt:
         value["outputFormat"] = fmt
+    if output.get('transparentBackground') is True:
+        if not spec.get('transparentPng') or fmt not in (None, 'png'):
+            raise ValueError("unsupported transparent background")
+        value['transparentBackground'] = True
     if fmt == "svg":
         if value["count"] != "1" or type(output.get("svgTransparent", False)) is not bool:
             raise ValueError("invalid svg settings")
@@ -221,8 +232,10 @@ def settings(raw):
             value[key] = number
     if value["ratio"] == "custom":
         w, h = output.get("width"), output.get("height")
-        if (not all(type(n) is int and 0 < n <= 3840 and n % 16 == 0 for n in (w,h))
-                or not 655360 <= w*h <= 8294400 or max(w,h) > 3*min(w,h)):
+        rules = spec.get('exactSize') or {'minSide': 1, 'maxSide': 3840, 'multiple': 16,
+                                         'minPixels': 655360, 'maxPixels': 8294400, 'maxAspect': 3}
+        if (not all(type(n) is int and rules.get('minSide', 1) <= n <= rules['maxSide'] and n % rules['multiple'] == 0 for n in (w,h))
+                or not rules['minPixels'] <= w*h <= rules['maxPixels'] or max(w,h) > rules['maxAspect']*min(w,h)):
             raise ValueError("invalid custom dimensions")
         value.update(width=w, height=h)
     return value
@@ -363,7 +376,7 @@ class CreativeAgent:
             return web.json_response({"error": "创作助手尚未配置，请联系管理员。"}, status=503)
         if not isinstance(data.get("settings", {}), dict):
             raise ValueError("invalid settings")
-        opts = settings(data.get("settings", {}))
+        opts = settings(data.get("settings", {}), self.g.models.cloud_specs)
         mode = data.get('agent', 'generate')
         if mode not in {'generate','retouch'}: raise ValueError('invalid agent')
         opts['agent'] = mode
@@ -826,10 +839,16 @@ class CreativeAgent:
             ratio = opts['ratio']
         if not isinstance(prompt, str) or not 10 <= len(prompt) <= 12000 or (opts['ratio'] == 'auto' and ratio not in RATIOS) or not isinstance(ids, list) or len(ids) > 8:
             raise ValueError()
+        spec = self.g.models.cloud_specs.get(opts['model'], {})
+        if opts['ratio'] == 'auto' and spec.get('ratios') and ratio not in spec['ratios'] and opts['model'] not in MODELS:
+            return {'error': '当前模型不支持该比例，请使用模型支持的比例。'}
         output_format = opts.get('outputFormat', args.get('output_format', 'png'))
-        if output_format not in ('png', 'gif', 'svg'):
-            return {'error': '请选择静态 PNG、GIF 或 SVG。'}
+        formats = spec.get('formats', ('png', 'gif', 'svg') if opts['model'].startswith('gpt-image-2.6-') else ('png',))
+        if output_format not in formats:
+            return {'error': '当前模型不支持所选输出格式。'}
         options = {'size': f"{opts['width']}x{opts['height']}"} if ratio == 'custom' else {}
+        if output_format in ('jpeg', 'webp'):
+            options['output_format'] = output_format
         if output_format == 'svg':
             if not opts['model'].startswith('gpt-image-2.6-'):
                 return {'error':'所选模型不支持 SVG，请用户选择 GPT Image 2.6。'}
@@ -859,9 +878,11 @@ class CreativeAgent:
         background = args.get('background')
         if opts.get('outputFormat') == 'svg':
             background = 'transparent' if opts.get('svgTransparent') else None
+        if opts.get('transparentBackground'):
+            background = 'transparent'
         if background is not None:
-            if not opts['model'].startswith('gpt-image-2.6-') or background not in ('opaque', 'transparent') or (background == 'transparent' and output_format == 'gif'):
-                return {'error': '透明背景参数需要 GPT Image 2.6 和 PNG 或 SVG。'}
+            if not (opts['model'].startswith('gpt-image-2.6-') or spec.get('transparentPng')) or background not in ('opaque', 'transparent') or (background == 'transparent' and output_format not in ('png', 'svg')):
+                return {'error': '当前模型或输出格式不支持所选背景。'}
             options['background'] = background
         if 'complexity' in args and opts['model'].startswith('gpt-image-2.6-'):
             if args['complexity'] not in ('low', 'medium', 'high'):
@@ -872,11 +893,13 @@ class CreativeAgent:
             return {"error": "此方案本轮已提交，不会重复生成。"}
         title = bounded_text(args["title"], 100, "title")
         from .ai_retouch import wants_retouch
-        ai_edit=wants_retouch(prompt) and len(ids)==1
+        ai_edit=opts["model"] in MODELS and wants_retouch(prompt) and len(ids)==1
+        if spec.get('maxReferences') and len(ids) > min(spec['maxReferences'], spec['appMaxReferences']):
+            return {'error': f"当前模型最多支持 {spec['maxReferences']} 张参考图。"}
         images = [self.inline(self.resolve_asset(cid, user, aid), generation=not ai_edit) for aid in ids]
         request = {"request_id": str(uuid.uuid4()), **{k: opts[k] for k in ['model', 'quality', 'resolution']}, "operation": "edit" if images else "generate", "prompt": prompt,
                    "size": ratio, "n": 1, "reference_images": images, **options}
-        if opts["model"] == "gemini-nano-banana-2.1":
+        if not opts["model"].startswith("gpt-image-2.6-"):
             request.pop("quality")
         quote = await self.g.cloud_quote(user, request)
         emit("quote", {"title": title, "credits": quote.get("credits_total_reference"), "label": quote.get("label"), "request_id": request["request_id"], "settings": opts})

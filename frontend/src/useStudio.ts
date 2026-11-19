@@ -300,7 +300,7 @@ export function useStudio(account: string) {
     setCloudModelId(id);
     const ratio = model.ratios.includes('1:1') ? '1:1' : model.ratios[0];
     const resolution = model.resolutions[0];
-    setSettings(previous => ({ ...previous, outputFormat: model.formats?.[0] ?? 'png', ratio, resolution, ...cloudDimensions(model, ratio, resolution), count: Math.min(previous.count, model.maxImages), quality: model.qualities.includes('medium') ? 'medium' : model.qualities[0] ?? '' }));
+    setSettings(previous => ({ ...previous, outputFormat: model.formats?.[0] ?? 'png', transparentBackground: false, svgTransparent: false, ratio, resolution, ...cloudDimensions(model, ratio, resolution), count: Math.min(previous.count, model.maxImages), quality: model.qualities.includes('medium') ? 'medium' : model.qualities[0] ?? '' }));
   };
   const selectLocal = () => {
     setCloudModelId(null);

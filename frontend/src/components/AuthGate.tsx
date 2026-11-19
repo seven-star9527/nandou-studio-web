@@ -68,7 +68,8 @@ function AccountForm({ adminEntry, accept }: { adminEntry: boolean; accept: (use
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy) return;
-    const name = mode === 'register' ? String(new FormData(event.currentTarget).get('name') ?? '').trim() : undefined;
+    const fields = new FormData(event.currentTarget);
+    const name = mode === 'register' ? String(fields.get('name') ?? '').trim() : undefined;
     const address = email.trim().toLowerCase();
     if (mode === 'login' && address === 'admin' && !adminEntry) { setError('管理员仅可在部署电脑的本机入口登录，请打开 localhost:7801/studio/。'); return; }
     if (!isEmail(address) && !(mode === 'login' && adminEntry && address === 'admin')) { setError('请输入有效的邮箱地址。'); return; }
@@ -77,7 +78,10 @@ function AccountForm({ adminEntry, accept }: { adminEntry: boolean; accept: (use
     setBusy(true); setError(''); setNotice('');
     try {
       if (mode === 'reset') {
-        await authRequest<{ ok: boolean }>('reset', { email: address, password });
+        await authRequest<{ ok: boolean }>('recover', {
+          email: address, password, initial_password: fields.get('initial-password'),
+          code: String(fields.get('reset-code') ?? '').trim(),
+        });
         notifyAuthChanged();
         if (mounted.current) { setMode('login'); setPassword(''); setConfirm(''); setNotice('密码已更新，请使用新密码登录。'); }
       } else {
@@ -95,19 +99,22 @@ function AccountForm({ adminEntry, accept }: { adminEntry: boolean; accept: (use
     <main className="auth-main"><section className="auth-card" aria-labelledby="auth-title">
       <div className="auth-card-mark" aria-hidden="true"><Icon name="spark" size={28} /></div>
       <motion.h1 id="auth-title" key={mode} initial={{opacity: .5, transform: reduced ? 'none' : 'translateY(4px)'}} animate={{opacity: 1, transform: 'translateY(0px)'}} transition={{duration: .2}}>{title}</motion.h1>
-      <p className="auth-intro">{mode === 'reset' ? '填写已注册邮箱，设置新的登录密码。' : '登录后开始创作，任务与作品保存在你的账号中。'}</p>
+      <p className="auth-intro">{mode === 'reset' ? '请先联系管理员领取一次性重置码。' : '登录后开始创作，任务与作品保存在你的账号中。'}</p>
       {!loginOnly && mode !== 'reset' ? <GlassTabs className="auth-tabs" aria-label="账号操作"><button type="button" className={mode === 'login' ? 'selected' : ''} aria-pressed={mode === 'login'} disabled={busy} onClick={event => changeMode('login', event.detail === 0)}>登录</button><button type="button" className={mode === 'register' ? 'selected' : ''} aria-pressed={mode === 'register'} disabled={busy} onClick={event => changeMode('register', event.detail === 0)}>注册账号</button></GlassTabs> : null}
-      <form onSubmit={event => void submit(event)}>
+      <form method="post" onSubmit={event => void submit(event)}>
         <label className="auth-field">{adminEntry && mode === 'login' ? '邮箱 / 管理员账号' : '邮箱'}<input name="email" type={mode === 'login' ? 'text' : 'email'} inputMode={mode === 'login' ? 'text' : 'email'} autoComplete="username" autoCapitalize="none" spellCheck={false} required maxLength={254} placeholder={adminEntry && mode === 'login' ? '邮箱或 admin' : 'name@example.com'} value={email} disabled={busy} onChange={event => setEmail(event.target.value)} /></label>
         {mode === 'register' && <NameField busy={busy} />}
+        {mode === 'reset' && <>
+          <label className="auth-field">初始密码<input name="initial-password" type="password" autoComplete="current-password" required maxLength={256} disabled={busy} /></label>
+          <label className="auth-field">一次性重置码<input name="reset-code" autoComplete="one-time-code" autoCorrect="off" autoCapitalize="none" spellCheck={false} required maxLength={64} disabled={busy} /></label>
+        </>}
         <label className="auth-field">{mode === 'reset' ? '新密码' : '密码'}<input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={6} maxLength={256} placeholder="至少 6 个字符" value={password} disabled={busy} onChange={event => setPassword(event.target.value)} /></label>
         <ConfirmPassword value={confirm} change={setConfirm} busy={busy} expanded={mode !== 'login'} instant={Boolean(reduced) || instantSwitch}/>
-        {mode === 'reset' ? <p className="auth-reset-note">内部过渡方式：仅核对注册邮箱，无需邮件验证；管理员账号不支持此方式。</p> : null}
         {error ? <p className="auth-message auth-error" role="alert">{error}</p> : null}
         {error && mode === 'login' && email.trim().toLowerCase() === 'admin' && !adminEntry ? <a className="auth-local-link" href="http://localhost:7801/studio/">在部署电脑打开本机入口 →</a> : null}
         {notice ? <p className="auth-message auth-success" role="status">{notice}</p> : null}
         <button className="auth-submit" type="submit" disabled={busy}>{busy ? '正在处理…' : mode === 'register' ? '注册并进入创意工坊' : mode === 'reset' ? '保存新密码' : '进入创意工坊'}{!busy ? <Icon name="arrow" size={18} /> : null}</button>
-        {!loginOnly && <div className="auth-form-footer">{mode === 'login' ? <button type="button" disabled={busy} onClick={event => changeMode('reset', event.detail === 0)}>忘记密码？</button> : <button type="button" disabled={busy} onClick={event => changeMode('login', event.detail === 0)}>返回登录</button>}</div>}
+        <div className="auth-form-footer">{mode === 'login' ? <button type="button" disabled={busy} onClick={event => changeMode('reset', event.detail === 0)}>使用重置码</button> : <button type="button" disabled={busy} onClick={event => changeMode('login', event.detail === 0)}>返回登录</button>}</div>
       </form>
     </section><p className="auth-footnote">你好，今天想要创作什么？</p></main>
   </div>;

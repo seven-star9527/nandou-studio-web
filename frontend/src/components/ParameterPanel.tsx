@@ -2,6 +2,7 @@ import GlassTabs from './GlassTabs';
 import { motion, useReducedMotion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { dimensions, megapixels, RATIOS, RESOLUTIONS, snap32 } from '../resolution-policy';
+import { cloudFormatLabels } from '../cloud-contract';
 import type { CloudModelCapability, DeploymentConfig, GenerationSettings, LocalModelPolicy, RatioId, ResolutionId } from '../types';
 import Icon from './Icon';
 
@@ -16,10 +17,11 @@ function navigateChoices(event: ReactKeyboardEvent<HTMLDivElement>) {
   choices[index].click(); choices[index].focus();
 }
 
-export default function ParameterPanel({ settings, config, cloudModel, localPolicy, setGeometry, update, close }: {
+export default function ParameterPanel({ settings, config, cloudModel, localPolicy, referenceSize, setGeometry, update, close }: {
   settings: GenerationSettings; config: DeploymentConfig;
   cloudModel?: CloudModelCapability;
   localPolicy?: LocalModelPolicy;
+  referenceSize?: boolean;
   setGeometry: (ratio: RatioId, resolution: ResolutionId) => void;
   update: (changes: Partial<GenerationSettings>) => void; close: () => void;
 }) {
@@ -48,7 +50,7 @@ export default function ParameterPanel({ settings, config, cloudModel, localPoli
   const custom = (key: 'width' | 'height', value: string) => {
     const number = Number(value);
     const multiple = cloudModel?.exactSize?.multiple ?? 32;
-    if (Number.isFinite(number) && number > 0) update({ [key]: cloudModel ? Math.max(multiple, Math.round(number / multiple) * multiple) : Math.min(snap32(number), Math.floor((localPolicy?.maxSide ?? 4096)/32)*32), ratio: 'custom' });
+    if (Number.isFinite(number) && number > 0 && number !== settings[key]) update({ [key]: cloudModel ? Math.max(multiple, Math.round(number / multiple) * multiple) : Math.min(snap32(number), Math.floor((localPolicy?.maxSide ?? 4096)/32)*32), ratio: 'custom' });
   };
   const ratioOptions = cloudModel ? cloudModel.ratios.map(id => {
     const [w, h] = id.split(':').map(Number);
@@ -61,16 +63,20 @@ export default function ParameterPanel({ settings, config, cloudModel, localPoli
   });
   const allowsCustom = !cloudModel || cloudModel.exactSize?.supported;
   const knownSize = settings.width > 0 && settings.height > 0;
+  const formats = cloudModel?.formats ?? (cloudModel?.id.startsWith('gpt-image-2.6-') ? ['png','gif','svg'] as const : []);
+  const exact = cloudModel?.exactSize;
+  const exactOnly = settings.ratio === 'custom' && cloudModel?.exactSizeWithoutResolution;
   const capability = (id: ResolutionId) => config.resolutions?.[id] ?? (id === '1K'
     ? { status: 'available' as const }
     : { status: 'experimental' as const, detail: '此分辨率尚未完成本机速度与稳定性测试。' });
   return <motion.div data-motion-layer initial={{opacity:0,y:12,scale:.94}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:8,scale:.97}} transition={{duration:reduced?0:.32,ease:[.22,1,.36,1]}} className="parameter-panel popover" ref={panel} role="dialog" aria-label="图像尺寸与数量">
     <button className="icon-button panel-close" onClick={close} aria-label="关闭尺寸设置"><Icon name="close" size={16} /></button>
-    {cloudModel?.id.startsWith('gpt-image-2.6-') && <fieldset><legend>输出格式</legend>
+    {(formats.length > 1 || cloudModel?.transparentPng) && <fieldset><legend>输出格式</legend>
       <GlassTabs className="segmented" role="radiogroup" aria-label="输出格式" onKeyDown={navigateChoices}>
-        {(cloudModel.formats ?? ['png','gif','svg'] as const).map(format => <button key={format} role="radio" aria-checked={(settings.outputFormat ?? 'png') === format} className={(settings.outputFormat ?? 'png') === format ? 'selected' : ''} onClick={() => update({outputFormat: format, ...(format === 'svg' ? {count: 1} : {})})}>{format === 'gif' ? 'GIF 动图' : format === 'svg' ? 'SVG 矢量图' : '静态 PNG'}</button>)}
-      </GlassTabs>{settings.outputFormat === 'svg' && <><label><input type="checkbox" checked={!!settings.svgTransparent} onChange={e => update({svgTransparent:e.target.checked})}/>指定透明背景</label><p className="panel-note">每次一张，按图像与 gpt-5.4-mini 写作用量分别计费。</p></>}</fieldset>}
-    {settings.outputFormat === 'gif' && cloudModel?.id.startsWith('gpt-image-2.6-') ? <fieldset><legend>动图规格</legend>
+        {formats.map(format => <button key={format} role="radio" aria-checked={(settings.outputFormat ?? 'png') === format} className={(settings.outputFormat ?? 'png') === format ? 'selected' : ''} onClick={() => update({outputFormat: format, ...(format === 'svg' ? {count: 1} : {}), ...(format !== 'png' ? {transparentBackground: false} : {})})}>{cloudFormatLabels[format]}</button>)}
+      </GlassTabs>{settings.outputFormat === 'svg' && <><label><input type="checkbox" checked={!!settings.svgTransparent} onChange={e => update({svgTransparent:e.target.checked})}/>指定透明背景</label><p className="panel-note">每次一张，按图像与 gpt-5.4-mini 写作用量分别计费。</p></>}
+      {cloudModel?.transparentPng && (settings.outputFormat ?? 'png') === 'png' && <label><input type="checkbox" checked={!!settings.transparentBackground} onChange={e => update({transparentBackground:e.target.checked})}/>透明背景</label>}</fieldset>}
+    {referenceSize ? <p className="panel-note">参考图编辑的输出尺寸由模型决定。</p> : settings.outputFormat === 'gif' && cloudModel?.id.startsWith('gpt-image-2.6-') ? <fieldset><legend>动图规格</legend>
       <div className="advanced-fields">
         <label>单帧宽度（px）<input type="number" min={16} step={16} value={settings.gifWidth ?? 512} onChange={e => update({gifWidth: Number(e.target.value)})}/></label>
         <label>单帧高度（px）<input type="number" min={16} step={16} value={settings.gifHeight ?? 512} onChange={e => update({gifHeight: Number(e.target.value)})}/></label>
@@ -87,7 +93,7 @@ export default function ParameterPanel({ settings, config, cloudModel, localPoli
         </button>)}
       </GlassTabs>
     </fieldset>
-    <fieldset>
+    {!exactOnly && <fieldset>
       <legend>选择分辨率</legend>
       <GlassTabs className="segmented resolution-options" role="radiogroup" aria-label="选择分辨率" onKeyDown={navigateChoices}>
         {resolutionOptions.map(item => <button key={item.id} role="radio" tabIndex={settings.resolution === item.id ? 0 : -1} aria-checked={settings.resolution === item.id} className={settings.resolution === item.id ? 'selected' : ''}
@@ -95,16 +101,17 @@ export default function ParameterPanel({ settings, config, cloudModel, localPoli
           {item.id}{!cloudModel && capability(item.id).status === 'experimental' ? <small>待实测</small> : null}
         </button>)}
       </GlassTabs>
-    </fieldset>
+    </fieldset>}
     <fieldset>
       <legend>尺寸</legend>
       <div className="dimensions">
-        <label><span>W</span><input aria-label="图像宽度" type="number" min="1" step={cloudModel?.exactSize?.multiple ?? 32} readOnly={!allowsCustom} key={`w-${settings.width}-${cloudModel?.id}`} defaultValue={knownSize ? settings.width : ''} placeholder="服务决定" onBlur={event => { if (allowsCustom) custom('width', event.target.value); }} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>
+        <label><span>W</span><input aria-label="图像宽度" type="number" min={exact?.minSide ?? 1} max={exact?.maxSide} step={exact?.multiple ?? 32} readOnly={!allowsCustom} key={`w-${settings.width}-${cloudModel?.id}`} defaultValue={settings.width || ''} placeholder="服务决定" onBlur={event => { if (allowsCustom) custom('width', event.target.value); }} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>
         <Icon name="link" size={18} />
-        <label><span>H</span><input aria-label="图像高度" type="number" min="1" step={cloudModel?.exactSize?.multiple ?? 32} readOnly={!allowsCustom} key={`h-${settings.height}-${cloudModel?.id}`} defaultValue={knownSize ? settings.height : ''} placeholder="服务决定" onBlur={event => { if (allowsCustom) custom('height', event.target.value); }} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label><span>PX</span>
+        <label><span>H</span><input aria-label="图像高度" type="number" min={exact?.minSide ?? 1} max={exact?.maxSide} step={exact?.multiple ?? 32} readOnly={!allowsCustom} key={`h-${settings.height}-${cloudModel?.id}`} defaultValue={settings.height || ''} placeholder="服务决定" onBlur={event => { if (allowsCustom) custom('height', event.target.value); }} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label><span>PX</span>
       </div>
     </fieldset>
-    <p className="panel-note">{knownSize ? `${megapixels(settings.width, settings.height)} MP · ${cloudModel ? settings.ratio === 'custom' ? `尺寸按 ${cloudModel.exactSize?.multiple} 像素对齐` : '服务预设尺寸' : '尺寸按 32 像素对齐'}` : '尺寸由服务决定，生成后显示真实像素。'}</p>
+    <p className="panel-note">{knownSize ? `${megapixels(settings.width, settings.height)} MP · ${exactOnly ? '按输入像素生成' : cloudModel ? settings.ratio === 'custom' ? `尺寸按 ${exact?.multiple} 像素对齐` : '服务预设尺寸' : '尺寸按 32 像素对齐'}` : '尺寸由服务决定，生成后显示真实像素。'}</p>
+    {exact && exactOnly && <p className="panel-note">总像素 {(exact.minPixels / 1e6).toFixed(2)}–{(exact.maxPixels / 1e6).toFixed(2)} MP{(exact.minSide ?? 1) > 1 ? ` · 每边至少 ${exact.minSide} px` : ''}{exact.multiple > 1 ? ` · 按 ${exact.multiple} px 对齐` : ''}</p>}
     {!cloudModel && capability(settings.resolution).detail ? <p className="panel-note resolution-detail">{capability(settings.resolution).detail}</p> : null}
     </>}
     <fieldset>

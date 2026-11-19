@@ -20,7 +20,8 @@ export function gifParameters(settings: GenerationSettings) {
 export function quoteRequest(model: string, settings: GenerationSettings): CloudQuoteRequest {
   const size = settings.ratio === 'custom' ? `${settings.width}x${settings.height}` : settings.ratio;
   return { model,
-    resolution: settings.resolution, n: settings.count, ...(settings.outputFormat === 'gif' ? gifParameters(settings) : settings.outputFormat === 'svg' ? {size, output_format:'svg' as const} : {size}), ...(settings.quality ? { quality: settings.quality } : {}) };
+    resolution: settings.resolution, n: settings.count, ...(settings.outputFormat === 'gif' ? gifParameters(settings) : {size,
+      ...(settings.outputFormat && settings.outputFormat !== 'png' ? {output_format: settings.outputFormat} : {})}), ...(settings.quality ? { quality: settings.quality } : {}) };
 }
 export function quoteKey(request: CloudQuoteRequest) {
   return JSON.stringify([request.model, request.size, request.resolution, request.quality ?? '', request.n, request.output_format, request.frame_count, request.frame_duration_ms, request.prompt, request.operation]);
