@@ -23,10 +23,8 @@ import { useStudio } from './useStudio';
 import CloudCreditsAccount from './components/CloudCreditsAccount';
 import PromptPolisher from './components/PromptPolisher';
 import { loadStudioImage } from './task-references';
-import { checkImageBatch } from './image-upload-limits';
 import { RATIOS } from './resolution-policy';
 import type { ChooseTemplate } from './components/TemplateActions';
-import { referenceLimit } from './cloud-contract';
 import AuthGate, { type AuthWorkspace } from './components/AuthGate';
 import AccountMenu from './components/AccountMenu';
 import AdminUsage from './components/AdminUsage';
@@ -105,12 +103,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
   const chooseTemplate: ChooseTemplate = async (choice, onlyImage, signal) => {
     const reference = choice.image ? await loadStudioImage(choice.image, choice.title + ' · 样图') : undefined;
     if (signal.aborted) return;
-    if (reference) {
-      const limit = studio.cloudModel ? referenceLimit(studio.cloudModel) : studio.config.maxReferences ?? 3;
-      if (studio.references.length >= limit) throw new Error(`当前最多使用 ${limit} 张参考图，请先移除一张。`);
-      checkImageBatch([], [...studio.references.map(r=>r.dataUrl), reference.dataUrl]);
-      studio.appendReference(reference);
-    }
+    if (reference) void studio.appendReference(reference);
     let note = '已添加参考图';
     if (!onlyImage) {
       applyTemplate(choice.prompt,choice.minimum);
@@ -126,6 +119,12 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
       const field=document.querySelector<HTMLElement>('.composer [role=textbox]');
       field?.focus({preventScroll:true});field?.scrollIntoView({block:'center',behavior:'instant'});
     });
+  };
+  const addArtworkReference = async (artwork: Artwork, signal: AbortSignal) => {
+    const reference = await loadStudioImage(artwork.url, '生成图', signal);
+    if (signal.aborted) return;
+    await studio.appendReference(reference);
+    if (!signal.aborted) setSurface('image');
   };
   const busy = isBusy(studio.job) || studio.polishing;
   const connectedLabel = studio.connecting ? '连接中' : studio.connected ? '已连接' : '未连接';
@@ -145,8 +144,7 @@ function Studio({ user, adminEntry, logout }: AuthWorkspace) {
         await studio.reuse(artwork,signal);
         if(signal.aborted)return;
         setSurface('image');setTemplateNotice('');setPreviousPrompt(null);
-        requestAnimationFrame(()=>document.querySelector<HTMLElement>('.composer [role=textbox]')?.focus());
-      }} /></div></aside>
+      }} addReference={addArtworkReference} /></div></aside>
       <main className="studio-content"><section className="creation-section" aria-labelledby="creation-title">
         {studio.draftError ? <div className="service-notice" role="status">{studio.draftError}</div> : null}
         <div className="title-pattern" aria-hidden="true" />

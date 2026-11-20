@@ -128,8 +128,9 @@ export function useStudio(account: string) {
     setSettings(previous => ({...entry.settings, ...(entry.cloudModel ? {model: previous.model} : {}),
       ...(!entry.cloudModel && entry.settings.ratio === 'smart' ? dimensions('smart', entry.settings.resolution, references[0]) : {})}));
   };
-  const current = useRef({applyPreset, presets, settings, cloudModelId});
-  current.current = {applyPreset, presets, settings, cloudModelId};
+  const maxReferences = cloudModel ? referenceLimit(cloudModel) : Math.min(localPolicy?.maxReferences ?? Infinity, config.maxReferences ?? 3);
+  const current = useRef({applyPreset, presets, settings, cloudModelId, maxReferences, cloudModel});
+  current.current = {applyPreset, presets, settings, cloudModelId, maxReferences, cloudModel};
   useEffect(() => {
     if (!connected || !draftReady || !presetsRead || (presetsInitialized && lastDefault.current === presets[0]?.id)) return;
     lastDefault.current = presets[0]?.id;
@@ -278,8 +279,18 @@ export function useStudio(account: string) {
   }, [config.maxReferences, references, cloudModel, setReferences]);
 
   const appendReference = (reference: ReferenceImage) => {
-    setReferences(previous => [...previous, reference]);
-    if (!cloudModel && settings.ratio === 'smart' && !references.length) setSettings(previous => ({...previous, ...dimensions('smart', previous.resolution, reference)}));
+    const latest = current.current;
+    let isFirstReference = false;
+    const saved = setReferences(previous => {
+      if (previous.length >= latest.maxReferences) throw new Error(`当前最多使用 ${latest.maxReferences} 张参考图，请先移除一张。`);
+      checkImageBatch([], [...previous.map(item => item.dataUrl), reference.dataUrl]);
+      isFirstReference = previous.length === 0;
+      return [...previous, reference];
+    });
+    if (!latest.cloudModel && latest.settings.ratio === 'smart' && isFirstReference) {
+      setSettings(previous => ({...previous, ...dimensions('smart', previous.resolution, reference)}));
+    }
+    return saved;
   };
 
   const removeReference = (id: string) => reorderReferences(references.filter(image => image.id !== id));
@@ -319,12 +330,9 @@ export function useStudio(account: string) {
     const originalPrompt = input.prompt;
     const snapshot = generationContext.current;
     let accepted = false;
-    const restoreDefault = () => {
+    const applyDefaultAfterSubmission = () => {
       if (branch || accepted) return;
       accepted = true;
-      void setDraft(current => current.prompt === snapshot.prompt && current.references === snapshot.references
-        ? {prompt: '', references: [], minReferences: 0}
-        : current);
       const latest = current.current;
       if (!latest.presets[0] || latest.settings !== settings || latest.cloudModelId !== cloudModelId) return;
       try { latest.applyPreset(latest.presets[0]); }
@@ -370,7 +378,7 @@ export function useStudio(account: string) {
         const request = buildCloudRequest(cloudModel, input.settings, includeReferences ? 'edit' : 'generate', input.prompt, includeReferences ? input.references : [], Boolean(cloud.capabilities?.configured));
         request.original_prompt = originalPrompt;
         if (branch) request.request_id = branch.id;
-        await cloud.generate(request, restoreDefault);
+        await cloud.generate(request, applyDefaultAfterSubmission);
         return;
       }
       if (!backendReady) throw new Error('图像服务尚未就绪，请稍后刷新连接。');
@@ -394,7 +402,7 @@ export function useStudio(account: string) {
           return;
         }
         if (message.studio_queue && activeJob.current) updateJob(queueJobPatch(activeJob.current, message.studio_queue));
-        if (message.studio_queue || message.gen_progress || message.image) restoreDefault();
+        if (message.studio_queue || message.gen_progress || message.image) applyDefaultAfterSubmission();
         if (message.status || message.backend_status) {
           setStatus(message);
           if (activeJob.current?.queue?.state !== 'queued' && activeJob.current?.phase !== 'stopping' && !['complete', 'error', 'interrupted'].includes(activeJob.current?.phase ?? '')) {

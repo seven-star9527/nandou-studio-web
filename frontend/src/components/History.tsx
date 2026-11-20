@@ -79,12 +79,13 @@ export function GenerationStatus({ job: currentJob, preparation, stop }: { job?:
   </div>;
 }
 
-export default function History({ compare, onQuick, artworks, cloudTasks, job, loading, error, refresh, stop, reuse, hideTask, currentUserId, isAdmin = false }: {
+export default function History({ compare, onQuick, artworks, cloudTasks, job, loading, error, refresh, stop, reuse, addReference, hideTask, currentUserId, isAdmin = false }: {
   compare: (...images:WorkImage[]) => void;
   onQuick: (image:WorkImage) => void;
   artworks: Artwork[]; job: Job | null; loading: boolean; error: string;
   cloudTasks: CloudTask[];
   refresh: () => void; stop: () => void; reuse: (artwork: Artwork, signal: AbortSignal) => Promise<void>;
+  addReference: (artwork: Artwork, signal: AbortSignal) => Promise<void>;
   hideTask: (taskId: string) => Promise<void>; isAdmin?: boolean; currentUserId: string;
 }) {
   const [showRemoved, setShowRemoved] = useState(false);
@@ -93,20 +94,20 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
   const [visibleLimit, setVisibleLimit] = useState(40);
   useEffect(() => setVisibleLimit(40), [filter, filters, showRemoved]);
   const [selected, setSelected] = useState<Artwork | null>(null);
-  const retryRequest = useRef<AbortController | null>(null);
-  const [retrying, setRetrying] = useState(false);
-  const [retryError, setRetryError] = useState('');
-  useEffect(() => {
-    setRetrying(false); setRetryError('');
-    return () => { retryRequest.current?.abort(); retryRequest.current = null; };
+  const draftRequest = useRef<AbortController | null>(null);
+  const [draftAction, setDraftAction] = useState<'retry' | 'reference' | null>(null);
+  const [draftError, setDraftError] = useState('');
+  useLayoutEffect(() => {
+    setDraftAction(null); setDraftError('');
+    return () => { draftRequest.current?.abort(); draftRequest.current = null; };
   }, [selected?.id]);
-  const retrySelected = async () => {
-    if (!selected || retryRequest.current) return;
+  const editDraftFromSelected = async (action: 'retry' | 'reference') => {
+    if (!selected || draftRequest.current) return;
     const controller = new AbortController();
-    retryRequest.current = controller;
-    setRetrying(true); setRetryError('');
+    draftRequest.current = controller;
+    setDraftAction(action); setDraftError('');
     try {
-      await reuse(selected, controller.signal);
+      await (action === 'reference' ? addReference : reuse)(selected, controller.signal);
       if (!controller.signal.aborted) {
         setSelected(null);
         requestAnimationFrame(() => {
@@ -115,9 +116,9 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
         });
       }
     } catch (cause) {
-      if (!controller.signal.aborted) setRetryError(cause instanceof Error ? cause.message : '读取原任务失败，请重试。');
+      if (!controller.signal.aborted) setDraftError(cause instanceof Error ? cause.message : '读取失败，请重试。');
     } finally {
-      if (!controller.signal.aborted) { retryRequest.current = null; setRetrying(false); }
+      if (!controller.signal.aborted) { draftRequest.current = null; setDraftAction(null); }
     }
   };
   const [removing, setRemoving] = useState<{ id: string; count: number } | null>(null);
@@ -155,7 +156,7 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
     if (selectedIndex < 0) return;
     const next = visible[selectedIndex + offset];
     if (!next) return;
-    retryRequest.current?.abort(); retryRequest.current = null;
+    draftRequest.current?.abort(); draftRequest.current = null;
     setSelected(next);
     setVisibleLimit(limit => Math.max(limit, selectedIndex + offset + 1));
     dialog.current?.scrollTo({top: 0, behavior: 'instant'});
@@ -197,6 +198,8 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
     if (latest && latest !== selected) setSelected(latest);
   }, [artworks, selected]);
   const canAddToBoard = selected && ownImageUrl(selected.url) && !selected.hiddenAt;
+  const canAddReference = canAddToBoard && selected && !/^(?:image\/gif|image\/svg\+xml)$/.test(selected.mimeType ?? '')
+    && !/\.(?:gif|svg)(?:[?#]|$)/i.test(selected.url);
   function compareOriginals(images: WorkImage[]) {
     if (!selected) return;
     compare(...images, {url:selected.url, name:'生成图'});
@@ -269,8 +272,8 @@ export default function History({ compare, onQuick, artworks, cloudTasks, job, l
           {selected.source === 'cloud' ? <p className={selected.locallySaved ? 'delivery-saved' : 'delivery-warning'}>{selected.locallySaved ? '原图已保存到本地。' : selected.downloadError ?? '本地缓存未完成；远程结果可能到期。可刷新创作记录重试转存。'}</p> : null}
           {isAdmin ? <p className="artwork-owner">所属账号：{ownerLabel(selected.ownerName, selected.ownerEmail, selected.ownerId) || '历史管理员作品'}{selected.hiddenAt ? ' · 用户已移除' : ''}</p> : null}
           {selected.source !== 'quick' && selected.taskId ? <TaskReferences taskId={selected.taskId} compare={canAddToBoard ? compareOriginals : undefined} /> : null}
-          {retryError && <p className="history-error" role="alert">{retryError}</p>}
-          <div className="detail-actions"><DownloadLink artwork={selected} />{canAddToBoard && <>{selected.originalUrl && <button className="quiet-button" onClick={() => compareOriginals([{url:selected.originalUrl!,name:'参考原图 1'}])}>原图与生成图一起对比</button>}<button className="quiet-button" onClick={() => { setSelected(null); compare({url:selected.url,name:selected.prompt || '创作图片'}); }}>添加到画布</button>{selected.mimeType !== 'image/gif' && !/\.(?:gif|svg)$/i.test(selected.url) && <button className="quiet-button" onClick={() => { setSelected(null); onQuick({url:selected.url,name:selected.prompt || '创作图片',width:selected.width,height:selected.height}); }}>快捷修图</button>}</>}{selected.source !== 'quick' && <button className="quiet-button" disabled={retrying} onClick={() => void retrySelected()}>{retrying ? '正在读取…' : '再试一次'}</button>}{canHide(selected.taskId) ? <button className="quiet-button" onClick={() => askRemove(selected.taskId!)}><Icon name="trash" size={15} />移除任务</button> : null}</div>
+          {draftError && <p className="history-error" role="alert">{draftError}</p>}
+          <div className="detail-actions"><DownloadLink artwork={selected} />{canAddToBoard && <>{selected.originalUrl && <button className="quiet-button" onClick={() => compareOriginals([{url:selected.originalUrl!,name:'参考原图 1'}])}>原图与生成图一起对比</button>}<button className="quiet-button" onClick={() => { setSelected(null); compare({url:selected.url,name:selected.prompt || '创作图片'}); }}>添加到画布</button>{selected.mimeType !== 'image/gif' && !/\.(?:gif|svg)$/i.test(selected.url) && <button className="quiet-button" onClick={() => { setSelected(null); onQuick({url:selected.url,name:selected.prompt || '创作图片',width:selected.width,height:selected.height}); }}>快捷修图</button>}</>}{canAddReference && <button className="quiet-button" disabled={draftAction !== null} onClick={() => void editDraftFromSelected('reference')}>{draftAction === 'reference' ? '正在添加…' : '用作参考图'}</button>}{selected.source !== 'quick' && <button className="quiet-button" disabled={draftAction !== null} onClick={() => void editDraftFromSelected('retry')}>{draftAction === 'retry' ? '正在读取…' : '再试一次'}</button>}{canHide(selected.taskId) ? <button className="quiet-button" onClick={() => askRemove(selected.taskId!)}><Icon name="trash" size={15} />移除任务</button> : null}</div>
           {selected.metadata ? <details><summary>生成信息</summary><pre>{selected.metadata}</pre></details> : null}
         </div>
       </section>

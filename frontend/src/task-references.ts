@@ -34,8 +34,8 @@ export function readReferenceImage(file: File) {
   });
 }
 
-export async function loadStudioImage(url: string, name: string) {
-  const response = await fetch(url, { credentials: 'same-origin', mode: 'same-origin', redirect: 'error' });
+export async function loadStudioImage(url: string, name: string, signal?: AbortSignal) {
+  const response = await fetch(url, { credentials: 'same-origin', mode: 'same-origin', redirect: 'error', signal });
   if (!response.ok) throw new Error('图片读取失败，请重新打开后再试。');
   const blob = await response.blob();
   // Static WebP files can be served as octet-stream by Windows MIME mappings.
