@@ -42,8 +42,12 @@
 | Nano Banana 2.1 | APIMart | 生成、编辑与不同视觉风格尝试 |
 | GPT Image 2.6 Flare | APIMart | 默认云端生图，商品图与创意构图 |
 | GPT Image 2.6 Sunburst | APIMart | 以商品参考图为基础进行编辑 |
+| MiniMax H3 Image | APIMart | 1K / 2K / 4K，支持 PNG、JPEG、WebP |
+| Seedream 5.5 | APIMart | 1K / 1.5K / 2K，支持透明 PNG |
+| MAI Image 2.7 Flash | APIMart | 1K / 2K 静态图，支持参考图编辑 |
+| MAI Image 2.7 | APIMart | 1K / 2K 静态图，支持参考图编辑 |
 
-两个 GPT 模型的质量默认 `medium`，禁用 `max`；更高质量须手动选择。Agent 当前使用三款云端模型，本地 Qwen 在「图片创作」使用。模型名称、规格和费用以接入服务能力表为准，不将不同版本的公开评分互相套用。
+两个 GPT 模型的质量默认 `medium`，禁用 `max`；更高质量须手动选择。生图 Agent 可从当前账号开放的云端模型中选择，本地 Qwen 在「图片创作」使用。各模型支持的参考图数量、出图格式和尺寸请看[模型指南](frontend/public/model-guide.html)。模型名称、规格和费用以接入服务能力表为准，不将不同版本的公开评分互相套用。
 
 本地界面提供 1K / 1.5K / 2K；当前共享显卡部署未开放本地 4K 选项。云端规格随模型变化。分辨率、提示词、参考图、模型加载和其他 GPU 负载都会影响耗时，历史样例不是性能保证。
 
