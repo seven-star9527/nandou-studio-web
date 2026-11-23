@@ -6,6 +6,7 @@ import hashlib
 import ipaddress
 import json
 import math
+import os
 import re
 import sqlite3
 import sys
@@ -102,7 +103,11 @@ def account_name(value):
 
 
 def public_user(user):
-    return {"id": user["id"], "email": user["email"], "name": user["name"], "role": user["role"], "is_admin": user["role"] == "admin"} if user else None
+    if not user:
+        return None
+    hosted = user["password_hash"] == "hosted"
+    return {"id": user["id"], "email": "" if hosted else user["email"], "name": user["name"],
+            "role": user["role"], "is_admin": user["role"] == "admin", "hosted": hosted}
 
 
 class Gateway:
@@ -250,7 +255,7 @@ class Gateway:
             return web.FileResponse(target)
         user = request["user"]
         if user and user["role"] != "admin" and not user["name"] and path not in {
-            "/studio-auth/me", "/studio-auth/bind-name", "/studio-auth/logout", "/studio-auth/login",
+            "/studio-auth/me", "/studio-auth/nandou-sso", "/studio-auth/bind-name", "/studio-auth/logout", "/studio-auth/login",
             "/studio-auth/register", "/studio-auth/recover", "/studio-auth/reset", "/studio-auth/change-password",
         }:
             return error("请刷新页面并绑定姓名后继续。", 403, "name_required")
@@ -343,6 +348,8 @@ class Gateway:
         if request.method != "POST":
             raise web.HTTPNotFound()
         data = await self.body(request)
+        if action == "nandou-sso":
+            return await self.hosted_sign_in(request, data)
         if action == "bind-name":
             if not user:
                 return error("请先登录。", 401)
@@ -449,11 +456,53 @@ class Gateway:
             if not fresh or fresh["password_hash"] != account["password_hash"]:
                 return error("密码已变更，请使用新密码重新登录。", 401)
             account = fresh
+        return self.sign_in_response(request, account, action)
+
+    def sign_in_response(self, request, account, action):
         token = self.store.login(account["id"])
         self.store.touch(account, request.remote or "unknown", action)
         response = web.json_response({"user": public_user(account)})
         response.set_cookie(COOKIE, token, httponly=True, samesite="Strict", secure=request.secure, max_age=86400 * 7, path="/")
         return response
+
+    async def hosted_sign_in(self, request, data):
+        org = os.getenv("NANDOU_ORG_ID")
+        secret = os.getenv("NANDOU_HOSTED_APP_SECRET")
+        if not org or not secret:
+            return error("Studio 尚未配置南斗免登录。", 503, "sso_unavailable")
+        invalid = "南斗登录凭证无效或已过期，请从南斗重新打开 Studio。"
+        ticket = data.get("ticket")
+        if (set(data) != {"organization_id", "ticket"} or data["organization_id"] != org
+                or not isinstance(ticket, str) or not 10 <= len(ticket) <= 256):
+            return error(invalid, 401, "invalid_ticket")
+        try:
+            async with self.client.post(
+                "https://api.nandouai.cn/api/context/hosted-apps/verify-ticket",
+                headers={"X-Hosted-App-Id": "nandou-studio", "X-Hosted-App-Secret": secret},
+                json={"organization_id": org, "ticket": ticket},
+                timeout=ClientTimeout(total=8), allow_redirects=False,
+            ) as response:
+                if response.status >= 500:
+                    return error("南斗登录服务暂时不可用，请从南斗重新打开 Studio。", 503, "sso_unavailable")
+                if response.status != 200:
+                    return error(invalid, 401, "invalid_ticket")
+                body = await response.json()
+        except (asyncio.TimeoutError, ClientError, ValueError):
+            return error("南斗登录服务暂时不可用，请从南斗重新打开 Studio。", 503, "sso_unavailable")
+        identity = body.get("data") if isinstance(body, dict) and body.get("success") is True else None
+        if (not isinstance(identity, dict) or identity.get("valid") is not True
+                or identity.get("app_id") != "nandou-studio" or identity.get("organization_id") != org
+                or not isinstance(identity.get("organization"), dict) or identity["organization"].get("id") != org
+                or not isinstance(identity.get("user"), dict)):
+            return error(invalid, 401, "invalid_ticket")
+        member = identity["user"]
+        try:
+            subject = str(uuid.UUID(str(member.get("id"))))
+        except ValueError:
+            return error(invalid, 401, "invalid_ticket")
+        name = account_name(member.get("display_name")) or account_name(member.get("username")) or "南斗成员"
+        account = self.store.hosted_user(org, subject, name)
+        return self.sign_in_response(request, account, "nandou-sso")
 
     async def change_password(self, request, user, data, remote):
         if set(data) != {"account", "current_password", "password"}:

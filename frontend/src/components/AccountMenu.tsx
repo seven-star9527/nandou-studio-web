@@ -72,14 +72,15 @@ export default function AccountMenu({ user, logout }: { user: StudioUser; logout
   const boundary = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useId();
+  const label = user.hosted ? user.name : user.email;
   useDismissibleLayer(open, boundary, () => setOpen(false));
 
   return <div className="account-menu" ref={boundary} onKeyDown={event => { if (event.key === 'Escape' && open) trigger.current?.focus(); }}>
-    <button ref={trigger} type="button" className="studio-account-identity" title={user.email} aria-label={`账号菜单 ${user.email}`} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panel : undefined} data-layer-trigger onClick={() => setOpen(previous => !previous)}>
-      <span>{user.email}</span>{user.is_admin && <small>管理员</small>}<Icon name="chevron" size={13} />
+    <button ref={trigger} type="button" className="studio-account-identity" title={label} aria-label={`账号菜单 ${label}`} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panel : undefined} data-layer-trigger onClick={() => setOpen(previous => !previous)}>
+      <span>{label}</span>{user.is_admin && <small>管理员</small>}<Icon name="chevron" size={13} />
     </button>
     {open && <div id={panel} className="account-menu-panel popover" role="dialog" aria-label="账号操作">
-      <button type="button" onClick={() => { trigger.current?.focus(); setOpen(false); setChanging(true); }}>修改密码</button>
+      {!user.hosted && <button type="button" onClick={() => { trigger.current?.focus(); setOpen(false); setChanging(true); }}>修改密码</button>}
       <button type="button" onClick={() => { setOpen(false); void logout(); }}>退出</button>
     </div>}
     {changing && <ChangePassword user={user} close={() => setChanging(false)} />}

@@ -268,3 +268,13 @@ Disable-ScheduledTask -TaskName NandouStudio-PhotoCraft
 修图原始文件位于 `runtime/agent-uploads`，工作副本、逐步检查点、PNG/JPG/WebP 和 `.pcraft` 工程位于 `runtime/agent-edits/<user>/<chat>/<job>`，均不入库。内存任务取消会停止后续操作，重启不会重放写命令；结果不明时使用“核对任务”，先检查已有输出和后台任务状态。若客户端不可用，先恢复原专用实例或检查工作目录，不能重发未知操作。
 
 本地验收应分别报告：模拟模型编排、真实 MCP 命令处理、桌面处理、图片落盘与工程重开、浏览器下载和双账号隔离。模拟模型加真实 PhotoCraft 验收不代表真实对话供应商已完成端到端验收；不为测试擅自发起付费生图。
+
+
+## 南斗工作台免登录
+
+在目标组织的 Hosted Web App 清单注册应用 `nandou-studio`，入口为 `https://nandouai.cn/studio/`，允许来源为 `https://nandouai.cn`，登录方式为 `launch_ticket`。先停用登记项，在网页账号网关的服务环境中配置下列两项，再验收并启用入口。
+
+- `NANDOU_ORG_ID` 为登记应用的组织 UUID。
+- `NANDOU_HOSTED_APP_SECRET` 为登记时南斗服务端一次性返回的 `data.sso_client_secret`。仅配置在该组织使用的 Studio 网页网关中。不要写入前端配置。
+
+从工作台点“打开”后，网页向同源 `/studio-auth/nandou-sso` 提交短时票据，网关向南斗核销。每个组织成员以独立的普通 Studio 身份使用，成员改名后仍可访问自己的历史。同名或同邮箱的原网页登录账号保留独立作品。直接通过网址访问继续使用原网页登录流程。草稿在当前设备上按账号保存。
