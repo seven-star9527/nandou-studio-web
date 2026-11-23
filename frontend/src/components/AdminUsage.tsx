@@ -8,7 +8,7 @@ import Icon from './Icon';
 
 type Metric = number | null;
 type TimeValue = string | number | null;
-interface UsageUser { id: string; email: string; name: string; role: string; created_at: TimeValue; last_seen: TimeValue; last_ip: string | null; tasks: Metric; images: Metric; credits: Metric }
+interface UsageUser { hosted?: number; id: string; email: string; name: string; role: string; created_at: TimeValue; last_seen: TimeValue; last_ip: string | null; tasks: Metric; images: Metric; credits: Metric }
 interface UsageTask { id: string; owner_email: string; owner_name: string; owner_role: string; model: string | null; status: string; requested: Metric; completed: Metric; started_at: TimeValue; seconds: Metric; credits: Metric; hidden_at: TimeValue }
 interface UsageOverview { summary: { users: Metric; tasks: Metric; images: Metric; credits: Metric }; users: UsageUser[]; tasks: UsageTask[] }
 interface ResetCode { code: string; expires_at: number; initial_password: string }
@@ -101,7 +101,7 @@ function UsageDialog({ close }: { close: () => void }) {
           <td className="numeric">{metric(user.tasks)}</td>
           <td className="numeric">{metric(user.images)}</td>
           <td className="numeric">{formatCredits(user.credits)}</td>
-          <td>{user.role !== 'admin' && <button className="quiet-button" type="button" disabled={resetUser !== null}
+          <td>{user.role !== 'admin' && !user.hosted && <button className="quiet-button" type="button" disabled={resetUser !== null}
             aria-label={'重置密码 ' + user.email} onClick={() => selectResetUser(user)}>重置密码</button>}</td>
         </tr>)}</tbody>
       </table> : <table className="usage-table usage-task-table"><caption className="sr-only">全账号任务使用明细</caption><thead><tr><th>账号 / 模型</th><th>任务状态</th><th className="numeric">交付 / 请求</th><th className="numeric">用时</th><th className="numeric">实际积分</th><th>开始时间</th></tr></thead><tbody>{tasks.map(task => <tr key={task.id}><td><strong>{task.owner_name || (task.owner_role === 'admin' ? '管理员' : '待绑定姓名')}</strong><span>{task.owner_email}</span><span>{task.model ?? '模型待记录'}</span><small title={task.id}>{task.id}</small></td><td><span className={`usage-state usage-state-${task.status}`}>{taskStates[task.status] ?? task.status}</span>{task.hidden_at ? <small className="usage-hidden">用户已移除<br />{time(task.hidden_at)}</small> : null}</td><td className="numeric">{metric(task.completed)} / {metric(task.requested)}</td><td className="numeric">{typeof task.seconds === 'number' ? `${metric(task.seconds, 1)} 秒` : '—'}</td><td className="numeric">{formatCredits(task.credits)}</td><td>{time(task.started_at)}</td></tr>)}</tbody></table>}

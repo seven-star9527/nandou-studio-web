@@ -95,6 +95,21 @@ class Store:
                             (uid, email, encoded, role, swarm_id, time.time(), name))
         return self.user(email)
 
+    def hosted_user(self, organization_id, subject, name):
+        # Local registrations require an email. This identifier can only come from
+        # a verified platform identity and stays stable when a member is renamed.
+        identity = f"nandou:{organization_id}:{subject}"
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            account = self.user(identity)
+            if not account:
+                uid = uuid.uuid4().hex
+                self.db.execute("""INSERT INTO users(id,email,password_hash,role,swarm_id,created_at,name)
+                    VALUES(?,?,'hosted','user',?,?,?)""", (uid, identity, "nd_" + uid, time.time(), name))
+            elif account["name"] != name:
+                self.db.execute("UPDATE users SET name=? WHERE id=?", (name, account["id"]))
+            return self.user(identity)
+
     def bind_name(self, uid, name):
         with self.db:
             self.db.execute("UPDATE users SET name=? WHERE id=? AND name='' AND role!='admin'", (name, uid))
@@ -135,7 +150,7 @@ class Store:
         now = time.time()
         expires_at = now + 30 * 60
         with self.db:
-            updated = self.db.execute("UPDATE users SET password_hash=? WHERE id=? AND role!='admin'",
+            updated = self.db.execute("UPDATE users SET password_hash=? WHERE id=? AND role!='admin' AND password_hash!='hosted'",
                                       (f"reset${uuid.uuid4().hex}", uid))
             if updated.rowcount != 1:
                 return None
@@ -242,11 +257,12 @@ class Store:
         return value
 
     def overview(self):
-        users = self.all("""SELECT u.id,u.email,u.name,u.role,u.created_at,u.last_seen,u.last_ip,
+        users = self.all("""SELECT u.id,CASE WHEN u.password_hash='hosted' THEN '' ELSE u.email END email,
+          u.password_hash='hosted' hosted,u.name,u.role,u.created_at,u.last_seen,u.last_ip,
           COUNT(t.id) tasks,COALESCE(SUM(t.completed),0) images,
           CASE WHEN COUNT(t.id)=0 THEN 0 WHEN COUNT(t.credits)<COUNT(t.id) THEN NULL ELSE SUM(t.credits) END credits
           FROM users u LEFT JOIN tasks t ON t.owner_id=u.id GROUP BY u.id ORDER BY u.created_at""")
-        tasks = self.all("""SELECT t.id,u.email owner_email,u.name owner_name,u.role owner_role,t.model,t.status,t.requested,t.completed,t.started_at,t.seconds,t.credits,v.hidden_at
+        tasks = self.all("""SELECT t.id,CASE WHEN u.password_hash='hosted' THEN '' ELSE u.email END owner_email,u.name owner_name,u.role owner_role,t.model,t.status,t.requested,t.completed,t.started_at,t.seconds,t.credits,v.hidden_at
           FROM tasks t JOIN users u ON u.id=t.owner_id LEFT JOIN task_visibility v ON v.task_id=t.id AND v.viewer_id=t.owner_id ORDER BY t.started_at DESC""")
         summary = {"users": len(users), "tasks": len(tasks), "images": sum(t["completed"] for t in tasks),
                    "credits": None if any(t["credits"] is None for t in tasks) else sum(t["credits"] for t in tasks)}

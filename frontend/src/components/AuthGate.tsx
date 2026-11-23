@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { AUTH_CHANGE_KEY, AUTH_REQUIRED_EVENT, AuthError, authRequest, isEmail, notifyAuthChanged, type AuthSnapshot, type StudioUser } from '../auth';
+import { AUTH_CHANGE_KEY, AUTH_REQUIRED_EVENT, AuthError, authRequest, checkHostedLaunch, isEmail, notifyAuthChanged, type AuthSnapshot, type StudioUser } from '../auth';
 import { setAccountStorageUser } from '../account-storage';
 import Icon from './Icon';
 import GlassTabs from './GlassTabs';
@@ -125,7 +125,7 @@ export default function AuthGate({ children }: { children: (workspace: AuthWorks
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState('');
   const [epoch, setEpoch] = useState(0);
-  const [retry, setRetry] = useState<'check' | 'logout'>('check');
+  const [retry, setRetry] = useState<'check' | 'logout' | 'reopen'>('check');
   const revision = useRef(0);
   const mounted = useRef(true);
   const requestController = useRef<AbortController | null>(null);
@@ -136,13 +136,21 @@ export default function AuthGate({ children }: { children: (workspace: AuthWorks
     const controller = new AbortController(); requestController.current = controller;
     clearWorkspace(); setChecking(true); setError(''); setRetry('check');
     try {
+      await checkHostedLaunch();
       const value = await authRequest<AuthSnapshot>('me', undefined, controller.signal);
       if (mounted.current && revision.current === current) {
         if (value.user?.is_admin && !value.admin_entry) value.user = null;
         setAccountStorageUser(value.user?.id ?? null); setSnapshot(value);
       }
     } catch (cause) {
-      if (mounted.current && revision.current === current && !controller.signal.aborted) setError(cause instanceof Error ? cause.message : '无法连接账号服务。');
+      if (mounted.current && revision.current === current && !controller.signal.aborted) {
+        if (new URL(window.location.href).searchParams.has('nandou_launch_pending')) {
+          setRetry('reopen');
+          setError('免登录未完成，请关闭 Studio 标签，再从南斗工作台打开。');
+        } else {
+          setError(cause instanceof Error ? cause.message : '无法连接账号服务。');
+        }
+      }
     } finally { if (mounted.current && revision.current === current) setChecking(false); }
   }, [clearWorkspace]);
   useEffect(() => {
@@ -160,7 +168,7 @@ export default function AuthGate({ children }: { children: (workspace: AuthWorks
     finally { if (mounted.current) setChecking(false); }
   };
   if (checking) return <div className="auth-shell"><header className="auth-header"><Brand /></header><main className="auth-pending" role="status"><span className="auth-spinner" />正在确认登录状态…</main></div>;
-  if (error) return <div className="auth-shell"><header className="auth-header"><Brand /></header><main className="auth-pending"><p role="alert">{error}</p><button className="auth-submit" onClick={() => { if (retry === 'logout') void logout(); else void check(); }}>{retry === 'logout' ? '重试退出' : '重新连接'}</button></main></div>;
+  if (error) return <div className="auth-shell"><header className="auth-header"><Brand /></header><main className="auth-pending"><p role="alert">{error}</p>{retry !== 'reopen' && <button className="auth-submit" onClick={() => { if (retry === 'logout') void logout(); else void check(); }}>{retry === 'logout' ? '重试退出' : '重新连接'}</button>}</main></div>;
   if (!snapshot?.user) return <AccountForm adminEntry={snapshot?.admin_entry ?? false} accept={accept} />;
   if (!snapshot.user.is_admin && !snapshot.user.name) return <BindName key={snapshot.user.id} user={snapshot.user} check={check} logout={logout} />;
   return <div key={`${snapshot.user.id}:${epoch}`}>{children({ user: snapshot.user, adminEntry: snapshot.admin_entry, logout })}</div>;
